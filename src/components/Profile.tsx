@@ -1,19 +1,59 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { User, Mail, Globe, Shield, Cpu, Rocket, Sparkles, Ghost } from 'lucide-react';
-import { Card } from './ui/card';
+import { User, Shield, Cpu, Rocket, Ghost, Activity, Wallet, Zap, Key, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
-import { auth } from '@/lib/firebase';
+import { Input } from './ui/input';
+import { useApp } from '../contexts/AppContext';
+import { GlassCard } from './SharedUI';
 
 export function Profile({ t }: { t: any }) {
-  const user = auth.currentUser;
+  const { user, agents } = useApp();
+  const [health, setHealth] = useState<any>(null);
+  const [passwords, setPasswords] = useState({ current: '', next: '' });
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' });
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then(res => res.json())
+      .then(data => setHealth(data))
+      .catch(err => console.error('Health fetch failed:', err));
+  }, []);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    setStatus({ type: null, message: '' });
+
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.next })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setStatus({ type: 'success', message: t.passwordChanged });
+        setPasswords({ current: '', next: '' });
+      } else {
+        setStatus({ type: 'error', message: data.error || t.passwordError });
+      }
+    } catch (err) {
+      setStatus({ type: 'error', message: t.passwordError });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  if (!user) return null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-12">
       <div className="flex flex-col md:flex-row items-center gap-8">
         <div className="relative w-32 h-32 md:w-48 md:h-48 rounded-full overflow-hidden border-4 border-celestial-saturn/20 shadow-[0_0_50px_rgba(255,204,0,0.1)]">
-          {user?.photoURL ? (
-            <img src={user.photoURL} alt={user.displayName || 'User'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          {user.photoURL ? (
+            <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           ) : (
             <div className="w-full h-full bg-white/5 flex items-center justify-center text-white/40">
               <User size={64} />
@@ -24,8 +64,8 @@ export function Profile({ t }: { t: any }) {
         
         <div className="text-center md:text-left space-y-4">
           <div className="space-y-1">
-            <h1 className="text-4xl font-bold tracking-tighter glow-text">{user?.displayName || 'Agent Explorer'}</h1>
-            <p className="text-white/40 font-mono text-sm">Node ID: 0x7A2B...F9E1</p>
+            <h1 className="text-4xl font-bold tracking-tighter glow-text">{user.displayName || user.username}</h1>
+            <p className="text-white/40 font-mono text-sm">Node ID: {user.uid.slice(0, 6)}...{user.uid.slice(-4)}</p>
           </div>
           <div className="flex flex-wrap justify-center md:justify-start gap-3">
             <Badge icon={<Shield size={12} />} label="Verified Node" color="text-green-500 bg-green-500/10" />
@@ -36,25 +76,116 @@ export function Profile({ t }: { t: any }) {
       </div>
 
       <div className="grid md:grid-cols-2 gap-8">
-        <Card className="glass p-8 rounded-[3rem] border-white/10 space-y-6">
-          <h3 className="text-xl font-bold tracking-tighter">Active Agents</h3>
+        <GlassCard className="p-8 rounded-[3rem] space-y-6" hoverEffect={false}>
+          <h3 className="text-xl font-bold tracking-tighter flex items-center gap-2">
+            <Wallet size={20} className="text-celestial-saturn" />
+            {t.wallet || 'Neural Wallet'}
+          </h3>
           <div className="space-y-4">
-            <AgentItem name="Research Assistant" type="Core" status="Online" />
-            <AgentItem name="Creative Pulse" type="Module" status="Standby" />
-            <AgentItem name="Logic Engine" type="Core" status="Offline" />
+            <div className="p-6 bg-gradient-to-br from-celestial-saturn/20 to-transparent rounded-3xl border border-celestial-saturn/20 text-center space-y-2">
+              <div className="text-xs text-white/40 uppercase tracking-widest font-bold">{t.credits || 'Lumi Credits'}</div>
+              <div className="text-4xl font-bold text-celestial-saturn flex items-center justify-center gap-2">
+                <Zap size={32} fill="currentColor" />
+                {user.balance || 0}
+              </div>
+              <div className="text-[10px] text-white/20">{t.earnCredits || 'Earn by Contributing Node Power'}</div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Button className="rounded-xl bg-white/5 border border-white/10 text-xs h-10">Withdraw</Button>
+              <Button className="rounded-xl bg-celestial-saturn text-black font-bold text-xs h-10">Top Up</Button>
+            </div>
           </div>
-          <Button className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10">Manage Agents</Button>
-        </Card>
+        </GlassCard>
 
-        <Card className="glass p-8 rounded-[3rem] border-white/10 space-y-6">
+        <GlassCard className="p-8 rounded-[3rem] space-y-6" hoverEffect={false}>
           <h3 className="text-xl font-bold tracking-tighter">Node Stats</h3>
           <div className="grid grid-cols-2 gap-4">
             <StatBox label="Total Data" value="1.2 TB" />
-            <StatBox label="Uptime" value="99.9%" />
-            <StatBox label="Sync Rate" value="45 MB/s" />
-            <StatBox label="Interactions" value="1,240" />
+            <StatBox label="Uptime" value={health?.uptime ? `${Math.floor(health.uptime / 3600)}h ${Math.floor((health.uptime % 3600) / 60)}m` : "99.9%"} />
+            <StatBox label="Node Power" value="850 GFLOPS" />
+            <StatBox label="Interactions" value={health?.database?.interactions || "1,240"} />
           </div>
-        </Card>
+        </GlassCard>
+
+        <GlassCard className="p-8 rounded-[3rem] space-y-6" hoverEffect={false}>
+          <h3 className="text-xl font-bold tracking-tighter flex items-center gap-2">
+            <Key size={20} className="text-celestial-mars" />
+            {t.changePassword || 'Change Password'}
+          </h3>
+          <form onSubmit={handlePasswordChange} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-white/40">{t.currentPassword}</label>
+              <Input 
+                type="password" 
+                value={passwords.current}
+                onChange={(e) => setPasswords(prev => ({ ...prev, current: e.target.value }))}
+                className="bg-white/5 border-white/10 rounded-xl"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-white/40">{t.newPassword}</label>
+              <Input 
+                type="password" 
+                value={passwords.next}
+                onChange={(e) => setPasswords(prev => ({ ...prev, next: e.target.value }))}
+                className="bg-white/5 border-white/10 rounded-xl"
+                required
+              />
+            </div>
+            
+            {status.type && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  status.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+                }`}
+              >
+                {status.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                {status.message}
+              </motion.div>
+            )}
+
+            <Button 
+              type="submit" 
+              disabled={isUpdating}
+              className="w-full rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 font-bold"
+            >
+              {isUpdating ? '...' : t.updatePassword}
+            </Button>
+          </form>
+        </GlassCard>
+
+        {health && (
+          <GlassCard className="p-8 rounded-[3rem] space-y-6 md:col-span-2" hoverEffect={false}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold tracking-tighter flex items-center gap-2">
+                <Activity size={20} className="text-green-500" />
+                {t.healthStatus || 'System Health'}
+              </h3>
+              <div className="text-[10px] font-mono text-white/40">{health.timestamp}</div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-white/40 uppercase font-bold mb-1">Status</div>
+                <div className="text-green-500 font-bold uppercase tracking-widest text-xs">Operational</div>
+              </div>
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-white/40 uppercase font-bold mb-1">Users</div>
+                <div className="text-white font-bold text-xs">{health.database?.users}</div>
+              </div>
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-white/40 uppercase font-bold mb-1">Agents</div>
+                <div className="text-white font-bold text-xs">{health.database?.agents}</div>
+              </div>
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="text-[10px] text-white/40 uppercase font-bold mb-1">Latency</div>
+                <div className="text-celestial-saturn font-bold text-xs">12ms</div>
+              </div>
+            </div>
+          </GlassCard>
+        )}
       </div>
     </div>
   );

@@ -1,23 +1,86 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, MicOff, Sparkles, Volume2 } from 'lucide-react';
+import { Mic, MicOff, Sparkles, Volume2, Box, User as UserIcon } from 'lucide-react';
 import { Button } from './ui/button';
 
-export function LocalAgentSphere({ t }: { t: any }) {
+export function LocalAgentSphere({ t, onMessage }: { t: any; onMessage?: (text: string) => void }) {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [interactionPulse, setInteractionPulse] = useState(0);
+  const [spatialMode, setSpatialMode] = useState<'geometric' | 'humanoid'>('geometric');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 0, y: 0, isDown: false });
   const rotationRef = useRef({ x: 0, y: 0 });
 
-  const toggleListen = () => {
+  const toggleListen = async () => {
     if (isListening) {
       setIsListening(false);
-      setIsProcessing(true);
-      setTimeout(() => setIsProcessing(false), 2000);
-    } else {
+      return;
+    }
+
+    // Explicitly request microphone permission first to ensure the browser prompt appears
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+      alert("无法访问麦克风。请确保已授予权限并在 HTTPS 环境下运行。");
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("您的浏览器不支持语音识别。建议使用 Chrome 或 Edge。");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
       setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const speechToText = event.results[0][0].transcript;
+      setIsListening(false);
+      setIsProcessing(true);
+      
+      // Simulate processing delay
+      setTimeout(() => {
+        setIsProcessing(false);
+        if (onMessage) onMessage(speechToText);
+      }, 1000);
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed') {
+        alert("语音识别被拒绝。请在浏览器地址栏检查麦克风权限设置。");
+      } else if (event.error === 'no-speech') {
+        // Silently handle no-speech to avoid annoying alerts
+        console.warn("Speech recognition timed out: No speech detected.");
+      } else if (event.error === 'audio-capture') {
+        console.error("No microphone was found or microphone is busy.");
+      } else {
+        console.error('Speech recognition error:', event.error);
+        // Only alert for non-trivial errors
+        if (event.error !== 'aborted') {
+          alert(`语音识别错误: ${event.error}`);
+        }
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error('Recognition start error:', e);
+      setIsListening(false);
     }
   };
 
@@ -34,7 +97,7 @@ export function LocalAgentSphere({ t }: { t: any }) {
 
     let animationFrameId: number;
     const particles: Particle[] = [];
-    const particleCount = 1200;
+    const particleCount = spatialMode === 'geometric' ? 1200 : 1800;
     const sphereRadius = 180;
 
     class Particle {
@@ -48,16 +111,37 @@ export function LocalAgentSphere({ t }: { t: any }) {
       size: number;
 
       constructor() {
-        // Distribute particles inside a sphere
-        const u = Math.random();
-        const v = Math.random();
-        const theta = 2 * Math.PI * u;
-        const phi = Math.acos(2 * v - 1);
-        const r = Math.pow(Math.random(), 1/3) * sphereRadius;
+        if (spatialMode === 'humanoid') {
+          // Approximate a humanoid shape (head, torso, limbs)
+          const rand = Math.random();
+          if (rand < 0.2) { // Head
+            const u = Math.random(); const v = Math.random();
+            const theta = 2 * Math.PI * u; const phi = Math.acos(2 * v - 1);
+            const r = Math.pow(Math.random(), 1/3) * 40;
+            this.baseX = r * Math.sin(phi) * Math.cos(theta);
+            this.baseY = r * Math.sin(phi) * Math.sin(theta) - 140;
+            this.baseZ = r * Math.cos(phi);
+          } else if (rand < 0.7) { // Torso
+            this.baseX = (Math.random() - 0.5) * 80;
+            this.baseY = (Math.random() - 0.5) * 120 - 40;
+            this.baseZ = (Math.random() - 0.5) * 40;
+          } else { // Limbs
+            this.baseX = (Math.random() - 0.5) * 140;
+            this.baseY = (Math.random() - 0.5) * 180 + 40;
+            this.baseZ = (Math.random() - 0.5) * 20;
+          }
+        } else {
+          // Distribute particles inside a sphere
+          const u = Math.random();
+          const v = Math.random();
+          const theta = 2 * Math.PI * u;
+          const phi = Math.acos(2 * v - 1);
+          const r = Math.pow(Math.random(), 1/3) * sphereRadius;
 
-        this.baseX = r * Math.sin(phi) * Math.cos(theta);
-        this.baseY = r * Math.sin(phi) * Math.sin(theta);
-        this.baseZ = r * Math.cos(phi);
+          this.baseX = r * Math.sin(phi) * Math.cos(theta);
+          this.baseY = r * Math.sin(phi) * Math.sin(theta);
+          this.baseZ = r * Math.cos(phi);
+        }
         
         this.x = this.baseX;
         this.y = this.baseY;
@@ -153,7 +237,7 @@ export function LocalAgentSphere({ t }: { t: any }) {
     animationFrameId = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+  }, [spatialMode]);
 
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     mouseRef.current.isDown = true;
@@ -235,6 +319,27 @@ export function LocalAgentSphere({ t }: { t: any }) {
 
       {/* Controls */}
       <div className="mt-12 flex flex-col items-center gap-6 z-10">
+        <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
+          <button
+            onClick={() => setSpatialMode('geometric')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+              spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <Box size={14} />
+            {t.geometric || 'Geometric'}
+          </button>
+          <button
+            onClick={() => setSpatialMode('humanoid')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+              spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <UserIcon size={14} />
+            {t.humanoid || 'Humanoid'}
+          </button>
+        </div>
+
         <div className="flex items-center gap-4">
           <Button
             onClick={toggleListen}

@@ -1,10 +1,10 @@
-import React from 'react';
-import { User } from 'firebase/auth';
-import { Rocket, MessageSquare, Cpu, Globe, Users, Settings as SettingsIcon, User as UserIcon, BookOpen, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Rocket, MessageSquare, Cpu, Globe, Users, User as UserIcon, BookOpen, Zap, ChevronDown, Database, Shield, Layout, ShoppingBag, Cloud, Network, Smartphone, Laptop, Handshake, Building2, Smile, Settings as SettingsIcon } from 'lucide-react';
 import { Button } from './ui/button';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface NavbarProps {
-  user: User | null;
+  user: any;
   onLogin: () => void;
   onLogout: () => void;
   activeTab: string;
@@ -15,21 +15,156 @@ interface NavbarProps {
 }
 
 export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang, setLang, t }: NavbarProps) {
+  const [isProductsOpen, setIsProductsOpen] = useState(false);
+  const [isGenOpen, setIsGenOpen] = useState(false);
+  const [isEcoOpen, setIsEcoOpen] = useState(false);
+
+  const productCategories = [
+    { id: 'core', label: t.coreDevices, desc: t.coreDevicesDesc, icon: <Laptop size={16} /> },
+    { id: 'wearables', label: t.smartWearables, desc: t.smartWearablesDesc, icon: <Smartphone size={16} /> },
+    { id: 'companions', label: t.aiCompanionToys, desc: t.aiCompanionToysDesc, icon: <Smile size={16} /> },
+    { id: 'partnership', label: t.partnershipZone, desc: t.partnershipZoneDesc, icon: <Handshake size={16} /> }
+  ];
+
+  const genCategories = [
+    { id: 'identity', label: t.identityData, desc: t.identityDataDesc, icon: <Shield size={16} /> },
+    { id: 'templates', label: t.neuralTemplates, desc: t.neuralTemplatesDesc, icon: <Layout size={16} /> },
+    { id: 'agents', label: t.generatedAgents, desc: t.generatedAgentsDesc, icon: <Users size={16} /> }
+  ];
+
+  const ecoCategories = [
+    { id: 'incubation', label: t.incubationModule, desc: t.incubationModuleDesc, icon: <Zap size={16} /> },
+    { id: 'mesh', label: t.neuralMesh, desc: t.neuralMeshDesc, icon: <Network size={16} /> },
+    { id: 'cloud', label: t.memoryCloud, desc: t.memoryCloudNavDesc, icon: <Cloud size={16} /> },
+    { id: 'market', label: t.marketplace, desc: t.marketplaceNavDesc, icon: <ShoppingBag size={16} /> }
+  ];
+
+  const Dropdown = ({ items, isOpen, onSelect, active }: { items: any[], isOpen: boolean, onSelect: (id: string, label: string) => void, active: boolean }) => (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          className="absolute top-full left-0 mt-4 w-72 bg-celestial-deep/95 backdrop-blur-2xl border border-white/10 rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 p-2"
+        >
+          <div className="grid gap-1">
+            {items.map((item, idx) => (
+              <motion.button
+                key={item.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                onClick={() => onSelect(item.id, item.label)}
+                className="group flex items-start gap-4 p-3 rounded-2xl hover:bg-white/5 transition-all text-left"
+              >
+                <div className="mt-1 w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-white/40 group-hover:text-celestial-saturn group-hover:bg-celestial-saturn/10 transition-colors">
+                  {item.icon}
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-sm font-bold text-white/80 group-hover:text-white transition-colors">{item.label}</div>
+                  <div className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors leading-tight">{item.desc}</div>
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   return (
-    <nav className="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('home')}>
-        <div className="w-10 h-10 rounded-full mars-gradient flex items-center justify-center">
-          <Rocket className="text-white" size={20} />
+    <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-7xl px-6 py-2 glass rounded-2xl flex items-center justify-between border border-white/10 shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+      <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('home')}>
+        <div className="w-8 h-8 rounded-lg mars-gradient flex items-center justify-center shadow-lg">
+          <Rocket className="text-white" size={16} />
         </div>
-        <span className="text-2xl font-bold tracking-tighter glow-text">LumiAI</span>
+        <div className="flex flex-col -space-y-1">
+          <span className="text-sm font-black tracking-tight glow-text uppercase">Lumi Kernel</span>
+          <span className="text-[8px] font-bold text-white/40 tracking-widest">STABLE v2.0.4</span>
+        </div>
       </div>
 
         <div className="hidden lg:flex items-center gap-8">
           <NavItem active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<Rocket size={18} />} label={t.interact} />
-          <NavItem active={activeTab === 'generate'} onClick={() => setActiveTab('generate')} icon={<Cpu size={18} />} label={t.generate} />
-          <NavItem active={activeTab === 'ecosystem'} onClick={() => setActiveTab('ecosystem')} icon={<Globe size={18} />} label={t.ecosystem} />
-          <NavItem active={activeTab === 'multimodal'} onClick={() => setActiveTab('multimodal')} icon={<Zap size={18} />} label={t.multimodalProducts} />
+          
+          {/* Generation Dropdown */}
+          <div 
+            className="relative group"
+            onMouseEnter={() => setIsGenOpen(true)}
+            onMouseLeave={() => setIsGenOpen(false)}
+          >
+            <NavItem 
+              active={activeTab === 'generate'} 
+              onClick={() => setActiveTab('generate')} 
+              icon={<Cpu size={18} />} 
+              label={t.generate} 
+              hasDropdown
+            />
+            <Dropdown 
+              items={genCategories} 
+              isOpen={isGenOpen} 
+              active={activeTab === 'generate'}
+              onSelect={(id, label) => {
+                setActiveTab('generate');
+                window.dispatchEvent(new CustomEvent('scroll-to-gen', { detail: label }));
+                setIsGenOpen(false);
+              }}
+            />
+          </div>
+
+          {/* Ecosystem Dropdown */}
+          <div 
+            className="relative group"
+            onMouseEnter={() => setIsEcoOpen(true)}
+            onMouseLeave={() => setIsEcoOpen(false)}
+          >
+            <NavItem 
+              active={activeTab === 'ecosystem'} 
+              onClick={() => setActiveTab('ecosystem')} 
+              icon={<Globe size={18} />} 
+              label={t.ecosystem} 
+              hasDropdown
+            />
+            <Dropdown 
+              items={ecoCategories} 
+              isOpen={isEcoOpen} 
+              active={activeTab === 'ecosystem'}
+              onSelect={(id, label) => {
+                setActiveTab('ecosystem');
+                window.dispatchEvent(new CustomEvent('scroll-to-eco', { detail: label }));
+                setIsEcoOpen(false);
+              }}
+            />
+          </div>
+          
+          {/* Multimodal Dropdown */}
+          <div 
+            className="relative group"
+            onMouseEnter={() => setIsProductsOpen(true)}
+            onMouseLeave={() => setIsProductsOpen(false)}
+          >
+            <NavItem 
+              active={activeTab === 'multimodal'} 
+              onClick={() => setActiveTab('multimodal')} 
+              icon={<Zap size={18} />} 
+              label={t.multimodalProducts} 
+              hasDropdown
+            />
+            <Dropdown 
+              items={productCategories} 
+              isOpen={isProductsOpen} 
+              active={activeTab === 'multimodal'}
+              onSelect={(id, label) => {
+                setActiveTab('multimodal');
+                window.dispatchEvent(new CustomEvent('scroll-to-category', { detail: label }));
+                setIsProductsOpen(false);
+              }}
+            />
+          </div>
+
           <NavItem active={activeTab === 'docs'} onClick={() => setActiveTab('docs')} icon={<BookOpen size={18} />} label={t.docs} />
+          <NavItem active={activeTab === 'solutions'} onClick={() => setActiveTab('solutions')} icon={<Building2 size={18} />} label="Core Vision" />
           <NavItem active={activeTab === 'join'} onClick={() => setActiveTab('join')} icon={<Users size={18} />} label={t.join} />
         </div>
 
@@ -37,15 +172,64 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
         <div className="lg:hidden">
           <select 
             value={activeTab} 
-            onChange={(e) => setActiveTab(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.startsWith('multimodal:')) {
+                const catLabel = val.split(':')[1];
+                setActiveTab('multimodal');
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('scroll-to-category', { detail: catLabel }));
+                }, 100);
+              } else if (val.startsWith('generate:')) {
+                const catLabel = val.split(':')[1];
+                setActiveTab('generate');
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('scroll-to-gen', { detail: catLabel }));
+                }, 100);
+              } else if (val.startsWith('ecosystem:')) {
+                const catLabel = val.split(':')[1];
+                setActiveTab('ecosystem');
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('scroll-to-eco', { detail: catLabel }));
+                }, 100);
+              } else {
+                setActiveTab(val);
+              }
+            }}
             className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-white/80 focus:outline-none"
           >
             <option value="home" className="bg-celestial-deep">{t.interact}</option>
-            <option value="generate" className="bg-celestial-deep">{t.generate}</option>
-            <option value="ecosystem" className="bg-celestial-deep">{t.ecosystem}</option>
-            <option value="multimodal" className="bg-celestial-deep">{t.multimodalProducts}</option>
+            
+            <optgroup label={t.generate} className="bg-celestial-deep">
+              <option value="generate" className="bg-celestial-deep">{t.generate}</option>
+              {genCategories.map(cat => (
+                <option key={cat.id} value={`generate:${cat.label}`} className="bg-celestial-deep pl-4">
+                  -- {cat.label}
+                </option>
+              ))}
+            </optgroup>
+
+            <optgroup label={t.ecosystem} className="bg-celestial-deep">
+              <option value="ecosystem" className="bg-celestial-deep">{t.ecosystem}</option>
+              {ecoCategories.map(cat => (
+                <option key={cat.id} value={`ecosystem:${cat.label}`} className="bg-celestial-deep pl-4">
+                  -- {cat.label}
+                </option>
+              ))}
+            </optgroup>
+
+            <optgroup label={t.multimodalProducts} className="bg-celestial-deep">
+              <option value="multimodal" className="bg-celestial-deep">{t.multimodalProducts}</option>
+              {productCategories.map(cat => (
+                <option key={cat.id} value={`multimodal:${cat.label}`} className="bg-celestial-deep pl-4">
+                  -- {cat.label}
+                </option>
+              ))}
+            </optgroup>
+            
             <option value="docs" className="bg-celestial-deep">{t.docs}</option>
             <option value="join" className="bg-celestial-deep">{t.join}</option>
+            <option value="settings" className="bg-celestial-deep">Settings</option>
           </select>
         </div>
 
@@ -62,7 +246,8 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setActiveTab('settings')}
-              className={`p-2 rounded-full transition-all ${activeTab === 'settings' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              className={`p-2 rounded-full transition-all ${activeTab === 'settings' ? 'text-celestial-saturn bg-celestial-saturn/10' : 'text-white/40 hover:text-white/60 hover:bg-white/5'}`}
+              title="Settings"
             >
               <SettingsIcon size={20} />
             </button>
@@ -90,7 +275,7 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
   );
 }
 
-function NavItem({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function NavItem({ active, onClick, icon, label, hasDropdown }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; hasDropdown?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -98,6 +283,7 @@ function NavItem({ active, onClick, icon, label }: { active: boolean; onClick: (
     >
       {icon}
       {label}
+      {hasDropdown && <ChevronDown size={14} className={`transition-transform duration-300 ${active ? 'rotate-180' : ''}`} />}
     </button>
   );
 }
