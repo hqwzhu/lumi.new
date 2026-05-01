@@ -5,6 +5,7 @@ import { Navbar } from '../../components/Navbar';
 import { Footer } from '../../components/Footer';
 import { LandingSections } from '../../components/LandingSections';
 import { LocalAgentSphere } from '../../components/LocalAgentSphere';
+import { UnifiedAgent } from '../../components/UnifiedAgent';
 import { DesktopIntro } from '../desktop/DesktopIntro';
 import { MobileIntro } from '../mobile/MobileIntro';
 
@@ -99,69 +100,79 @@ export function WebPlatform({
       <main className="container mx-auto px-4 pt-24 pb-20">
         {activeTab === 'home' ? (
           <div className="space-y-32">
-            <header className="flex flex-col items-center justify-center min-h-[85vh] text-center relative">
-              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-celestial-saturn/5 blur-[120px] rounded-full" />
+            {user ? (
+              <div className="pt-8">
+                <UnifiedAgent 
+                  t={t} 
+                  user={user} 
+                  onEnterSanctuary={() => setActiveTab('founders')} 
+                />
               </div>
-              <div className="mb-16 z-10">
-                <LocalAgentSphere t={t} />
-              </div>
-               <div className="z-10 space-y-8">
-                  <div className="flex flex-col items-center gap-4 mb-4">
-                     <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full scale-110 backdrop-blur-md shadow-[0_0_30px_rgba(255,204,0,0.1)]">
-                        <div className="flex -space-x-1">
-                           {[1, 2, 3].map(i => (
-                              <div key={i} className="w-2.5 h-2.5 rounded-full bg-celestial-saturn animate-pulse shadow-[0_0_12px_#ffcc00]" style={{ animationDelay: `${i * 0.3}s` }} />
-                           ))}
-                        </div>
-                        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/90">Active Nodes: 42,901</span>
-                        <div className="w-px h-3 bg-white/20 mx-1" />
-                        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-celestial-saturn">{user ? (user.role === 'admin' ? 'Founding Architect' : 'Verified Node') : 'Verified'}</span>
-                     </div>
-                     
-                     <div className="flex gap-8">
-                        <button onClick={() => setActiveTab('solutions')} className="text-[10px] font-bold text-white/40 hover:text-celestial-saturn uppercase tracking-[0.3em] transition-all border-b border-transparent hover:border-celestial-saturn/60 pb-1">
-                           Core Vision • 核心愿景
-                        </button>
-                        <button onClick={() => setActiveTab('founders')} className="text-[10px] font-bold text-white/40 hover:text-celestial-saturn uppercase tracking-[0.3em] transition-all border-b border-transparent hover:border-celestial-saturn/60 pb-1">
-                           Founder's Sanctuary • 创始人圣殿
-                        </button>
-                     </div>
-                  </div>
-                 
-                 <h1 className="text-6xl md:text-9xl font-black bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/30 drop-shadow-2xl mb-6">
-                   {t.heroTitle}
-                 </h1>
-                 <p className="text-xl text-white/40 max-w-2xl mx-auto italic mb-12">
-                   {t.heroSubtitle}
-                 </p>
-                  <div className="flex flex-col items-center gap-6">
-                     {isElectron ? (
-                       <div className="flex flex-col items-center gap-8">
-                         <button
-                           onClick={() => setIntroView('desktop')}
-                           className="group px-12 py-6 bg-white text-black font-black rounded-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 shadow-[0_0_60px_rgba(255,255,255,0.3)]"
-                         >
-                           <Rocket size={24} className="text-celestial-saturn group-hover:rotate-12 transition-transform" />
-                           <span className="text-lg">INITIALIZE NEURAL OS</span>
-                         </button>
+            ) : (
+              <header className="flex flex-col items-center justify-center min-h-[85vh] text-center relative">
+                <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-celestial-saturn/5 blur-[120px] rounded-full" />
+                </div>
+                <div className="mb-16 z-10">
+                  <LocalAgentSphere t={t} />
+                </div>
+                 <div className="z-10 space-y-8">
+                    <div className="flex flex-col items-center gap-4 mb-4">
+                       <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full scale-110 backdrop-blur-md shadow-[0_0_30px_rgba(255,204,0,0.1)]">
+                          <div className="flex -space-x-1">
+                             {[1, 2, 3].map(i => (
+                                <div key={i} className="w-2.5 h-2.5 rounded-full bg-celestial-saturn animate-pulse shadow-[0_0_12px_#ffcc00]" style={{ animationDelay: `${i * 0.3}s` }} />
+                             ))}
+                          </div>
+                          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/90">Active Nodes: 42,901</span>
+                          <div className="w-px h-3 bg-white/20 mx-1" />
+                          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-celestial-saturn">{user ? (user.role === 'admin' ? 'Founding Architect' : 'Verified Node') : 'Verified'}</span>
                        </div>
-                     ) : (
-                       <>
-                         <div className="flex flex-wrap justify-center gap-6">
+                       
+                       <div className="flex gap-8">
+                          <button onClick={() => setActiveTab('solutions')} className="text-[10px] font-bold text-white/40 hover:text-celestial-saturn uppercase tracking-[0.3em] transition-all border-b border-transparent hover:border-celestial-saturn/60 pb-1">
+                             Core Vision • 核心愿景
+                          </button>
+                          <button onClick={() => setActiveTab('founders')} className="text-[10px] font-bold text-white/40 hover:text-celestial-saturn uppercase tracking-[0.3em] transition-all border-b border-transparent hover:border-celestial-saturn/60 pb-1">
+                             Founder's Sanctuary • 创始人圣殿
+                          </button>
+                       </div>
+                    </div>
+                   
+                   <h1 className="text-6xl md:text-9xl font-black bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/30 drop-shadow-2xl mb-6">
+                     {t.heroTitle}
+                   </h1>
+                   <p className="text-xl text-white/40 max-w-2xl mx-auto italic mb-12">
+                     {t.heroSubtitle}
+                   </p>
+                    <div className="flex flex-col items-center gap-6">
+                       {isElectron ? (
+                         <div className="flex flex-col items-center gap-8">
                            <button
-                             onClick={user ? () => setActiveTab('generate') : onLogin}
-                             className="px-8 py-5 bg-white text-black font-black rounded-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-[0_0_50px_rgba(255,255,255,0.2)]"
+                             onClick={() => setIntroView('desktop')}
+                             className="group px-12 py-6 bg-white text-black font-black rounded-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 shadow-[0_0_60px_rgba(255,255,255,0.3)]"
                            >
-                             <Sparkles size={20} />
-                             {user ? (t.enterSpace || 'Enter Lab') : t.getStarted}
+                             <Rocket size={24} className="text-celestial-saturn group-hover:rotate-12 transition-transform" />
+                             <span className="text-lg">INITIALIZE NEURAL OS</span>
                            </button>
                          </div>
-                       </>
-                     )}
-                  </div>
-              </div>
-            </header>
+                       ) : (
+                         <>
+                           <div className="flex flex-wrap justify-center gap-6">
+                             <button
+                               onClick={user ? () => setActiveTab('generate') : onLogin}
+                               className="px-8 py-5 bg-white text-black font-black rounded-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-[0_0_50px_rgba(255,255,255,0.2)]"
+                             >
+                               <Sparkles size={20} />
+                               {user ? (t.enterSpace || 'Enter Lab') : t.getStarted}
+                             </button>
+                           </div>
+                         </>
+                       )}
+                    </div>
+                 </div>
+              </header>
+            )}
             <LandingSections 
               t={t} 
               onNavigateToSolutions={() => setActiveTab('solutions')} 
