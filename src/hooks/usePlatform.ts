@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type Platform = 'web' | 'electron' | 'ios' | 'android';
+export type Platform = 'web' | 'electron' | 'tauri' | 'ios' | 'android';
 
 export interface SensorData {
   latitude?: number;
@@ -11,8 +11,13 @@ export interface SensorData {
 
 export function usePlatform() {
   const [platform, setPlatform] = useState<Platform>(() => {
-    if (typeof window !== 'undefined' && ((window as any).lumiElectron || navigator.userAgent.toLowerCase().includes('electron'))) {
-      return 'electron';
+    if (typeof window !== 'undefined') {
+      if ((window as any).lumiElectron || navigator.userAgent.toLowerCase().includes('electron')) {
+        return 'electron';
+      }
+      if ((window as any).__TAURI_IPC__ || (window as any).__TAURI__) {
+        return 'tauri';
+      }
     }
     return 'web';
   });
@@ -23,6 +28,12 @@ export function usePlatform() {
     // Check for Electron
     if (window && (window as any).lumiElectron) {
       setPlatform('electron');
+      return;
+    }
+
+    // Check for Tauri
+    if (window && ((window as any).__TAURI_IPC__ || (window as any).__TAURI__)) {
+      setPlatform('tauri');
       return;
     }
 
@@ -38,7 +49,7 @@ export function usePlatform() {
   }, []);
 
   const simulateLocalFileAccess = useCallback(async () => {
-    if (platform === 'electron') {
+    if (platform === 'electron' || platform === 'tauri') {
       // Real IPC would go here
       return { success: true, path: '/usr/local/lumi/vault/mem_0x1.bin', size: '2.4GB' };
     }
@@ -87,6 +98,8 @@ export function usePlatform() {
   return {
     platform,
     isElectron: platform === 'electron',
+    isTauri: platform === 'tauri',
+    isDesktop: platform === 'electron' || platform === 'tauri',
     isMobile: platform === 'ios' || platform === 'android',
     isWeb: platform === 'web',
     electronAPI: (window as any).lumiElectron || null,

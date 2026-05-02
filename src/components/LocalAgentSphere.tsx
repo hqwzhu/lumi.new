@@ -4,14 +4,31 @@ import { Mic, MicOff, Sparkles, Volume2, Box, User as UserIcon } from 'lucide-re
 import { Button } from './ui/button';
 import { sounds } from '../services/soundService';
 
-export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: any; onMessage?: (text: string) => void; sentiment?: 'default' | 'excited' | 'focused' | 'zen' }) {
-  const [isListening, setIsListening] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+export function LocalAgentSphere({ 
+  t, 
+  onMessage, 
+  sentiment = 'default',
+  callState = 'idle',
+  audioLevel = 0,
+  highPerformance = false,
+  isWallpaperMode = false
+}: { 
+  t: any; 
+  onMessage?: (text: string) => void; 
+  sentiment?: 'default' | 'excited' | 'focused' | 'zen';
+  callState?: 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
+  audioLevel?: number;
+  highPerformance?: boolean;
+  isWallpaperMode?: boolean;
+}) {
   const [interactionPulse, setInteractionPulse] = useState(0);
   const [spatialMode, setSpatialMode] = useState<'geometric' | 'humanoid'>('geometric');
+  const [isListening, setIsListening] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 0, y: 0, isDown: false });
   const rotationRef = useRef({ x: 0, y: 0 });
+  const particleCount = highPerformance ? 2200 : 800;
 
   const toggleListen = async () => {
     if (isListening) {
@@ -99,7 +116,6 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
 
     let animationFrameId: number;
     const particles: Particle[] = [];
-    const particleCount = spatialMode === 'geometric' ? 1200 : 1800;
     const sphereRadius = 180;
 
     class Particle {
@@ -111,10 +127,11 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
       baseZ: number;
       color: string;
       size: number;
+      type: 'signal' | 'core' | 'void';
 
       constructor() {
         if (spatialMode === 'humanoid') {
-          // Approximate a humanoid shape (head, torso, limbs)
+          // Approximate a humanoid shape
           const rand = Math.random();
           if (rand < 0.2) { // Head
             const u = Math.random(); const v = Math.random();
@@ -133,7 +150,6 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
             this.baseZ = (Math.random() - 0.5) * 20;
           }
         } else {
-          // Distribute particles inside a sphere
           const u = Math.random();
           const v = Math.random();
           const theta = 2 * Math.PI * u;
@@ -150,23 +166,35 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
         this.z = this.baseZ;
 
         const rand = Math.random();
-        if (rand < 0.4) this.color = '#ff4d4d'; // Red
-        else if (rand < 0.8) this.color = '#ffffff'; // White
-        else this.color = '#000000'; // Black
+        if (rand < 0.4) {
+          this.type = 'signal';
+          this.color = callState === 'listening' ? '#ffcc00' : callState === 'speaking' ? '#ffffff' : '#ff4d4d';
+        } else if (rand < 0.8) {
+          this.type = 'core';
+          this.color = '#ffffff';
+        } else {
+          this.type = 'void';
+          this.color = '#000000';
+        }
         
         this.size = Math.random() * 1.5 + 0.5;
       }
 
-      update(time: number, rotX: number, rotY: number) {
-        // Wave effect
-        const wave = Math.sin(time * 0.002 + (this.baseX + this.baseY + this.baseZ) * 0.01) * 15;
+      update(time: number, rotX: number, rotY: number, currentCallState: string, currentAudioLevel: number) {
+        // Dynamic color based on state
+        if (this.type === 'signal') {
+          this.color = currentCallState === 'listening' ? '#ffcc00' : currentCallState === 'speaking' ? '#ffffff' : '#ff4d4d';
+        }
+
+        const audioWave = currentAudioLevel * 50;
+        const wave = Math.sin(time * 0.002 + (this.baseX + this.baseY + this.baseZ) * 0.01) * (15 + audioWave);
         const rFactor = (sphereRadius + wave) / sphereRadius;
         
         let tx = this.baseX * rFactor;
         let ty = this.baseY * rFactor;
         let tz = this.baseZ * rFactor;
 
-        // Rotation X
+        // Rotation
         const cosX = Math.cos(rotX);
         const sinX = Math.sin(rotX);
         const y1 = ty * cosX - tz * sinX;
@@ -174,7 +202,6 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
         ty = y1;
         tz = z1;
 
-        // Rotation Y
         const cosY = Math.cos(rotY);
         const sinY = Math.sin(rotY);
         const x2 = tx * cosY + tz * sinY;
@@ -201,7 +228,7 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
           ctx.stroke();
         } else {
           ctx.fillStyle = this.color;
-          ctx.globalAlpha = Math.max(0.1, perspective - 0.5);
+          ctx.globalAlpha = Math.max(0.1, perspective - 0.4);
           ctx.beginPath();
           ctx.arc(x, y, size, 0, Math.PI * 2);
           ctx.fill();
@@ -215,51 +242,20 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
 
     const render = (time: number) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
 
-      // Sentimental speed factors
-      const speedFactor = sentiment === 'excited' ? 3 : sentiment === 'focused' ? 2 : sentiment === 'zen' ? 0.5 : 1;
+      const speedFactor = callState === 'thinking' ? 4 : sentiment === 'excited' ? 3 : sentiment === 'focused' ? 2 : sentiment === 'zen' ? 0.5 : 1;
       
-      // Auto rotation + Mouse rotation
       if (!mouseRef.current.isDown) {
         rotationRef.current.y += 0.005 * speedFactor;
         rotationRef.current.x += 0.002 * speedFactor;
       }
 
-      // Sort particles by Z for basic depth
       particles.sort((a, b) => a.z - b.z);
 
       particles.forEach(p => {
-        // Pass speed factor to update for wave effect
-        const wave = Math.sin(time * 0.002 * speedFactor + (p.baseX + p.baseY + p.baseZ) * 0.01) * 15 * (speedFactor > 1 ? 1.5 : 1);
-        const rFactor = (sphereRadius + wave) / sphereRadius;
-        
-        let tx = p.baseX * rFactor;
-        let ty = p.baseY * rFactor;
-        let tz = p.baseZ * rFactor;
-
-        // Rotation X
-        const cosX = Math.cos(rotationRef.current.x);
-        const sinX = Math.sin(rotationRef.current.x);
-        const y1 = ty * cosX - tz * sinX;
-        const z1 = ty * sinX + tz * cosX;
-        ty = y1;
-        tz = z1;
-
-        // Rotation Y
-        const cosY = Math.cos(rotationRef.current.y);
-        const sinY = Math.sin(rotationRef.current.y);
-        const x2 = tx * cosY + tz * sinY;
-        const z2 = -tx * sinY + tz * cosY;
-        tx = x2;
-        tz = z2;
-
-        p.x = tx;
-        p.y = ty;
-        p.z = tz;
-        
+        p.update(time, rotationRef.current.x, rotationRef.current.y, callState, audioLevel);
         p.draw(ctx, centerX, centerY);
       });
 
@@ -296,9 +292,9 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
   };
 
   return (
-    <div className="relative w-full flex flex-col items-center justify-center py-20 overflow-hidden">
+    <div className={`relative w-full flex flex-col items-center justify-center py-20 overflow-hidden transition-all duration-1000 ${isWallpaperMode ? 'opacity-40 scale-[0.8] blur-[1px]' : 'opacity-100 scale-100'}`}>
       {/* Background Glow */}
-      <div className="absolute inset-0 bg-gradient-to-b from-red-500/5 via-transparent to-transparent pointer-events-none" />
+      <div className={`absolute inset-0 bg-gradient-to-b from-red-500/5 via-transparent to-transparent pointer-events-none transition-opacity ${isWallpaperMode ? 'opacity-0' : 'opacity-100'}`} />
       
       {/* The Sphere Container - Particle Star Aesthetic */}
       <div 
@@ -349,77 +345,79 @@ export function LocalAgentSphere({ t, onMessage, sentiment = 'default' }: { t: a
         />
       </div>
 
-      {/* Controls */}
-      <div className="mt-12 flex flex-col items-center gap-6 z-10">
-        <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
-          <button
-            onClick={() => setSpatialMode('geometric')}
-            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-              spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-            }`}
-          >
-            <Box size={14} />
-            {t.geometric || 'Geometric'}
-          </button>
-          <button
-            onClick={() => setSpatialMode('humanoid')}
-            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-              spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-            }`}
-          >
-            <UserIcon size={14} />
-            {t.humanoid || 'Humanoid'}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <Button
-            onClick={toggleListen}
-            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
-              isListening 
-                ? 'bg-red-500 text-white shadow-[0_0_30px_rgba(239,68,68,0.5)] scale-110' 
-                : 'bg-white/5 text-white/60 hover:bg-white/10'
-            }`}
-          >
-            {isListening ? <Mic size={24} className="animate-pulse" /> : <MicOff size={24} />}
-          </Button>
-          
-          <div className="flex flex-col">
-            <span className="text-xs font-bold uppercase tracking-widest text-white/40">
-              {isListening ? t.listening : isProcessing ? t.processing : t.voiceInteract}
-            </span>
-            <span className="text-sm font-medium text-white/80">
-              {isListening ? "I'm listening to your request..." : "Click to start voice command"}
-            </span>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {(isListening || isProcessing) && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="flex gap-1"
+      {/* Controls - Only show if not in an external call session */}
+      {callState === 'idle' && (
+        <div className="mt-12 flex flex-col items-center gap-6 z-10">
+          <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
+            <button
+              onClick={() => setSpatialMode('geometric')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+                spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+              }`}
             >
-              {[...Array(5)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="w-1 bg-red-500 rounded-full"
-                  animate={{
-                    height: isListening ? [10, 30, 10] : [10, 15, 10],
-                  }}
-                  transition={{
-                    duration: 0.5,
-                    repeat: Infinity,
-                    delay: i * 0.1,
-                  }}
-                />
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              <Box size={14} />
+              {t.geometric || 'Geometric'}
+            </button>
+            <button
+              onClick={() => setSpatialMode('humanoid')}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+                spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+              }`}
+            >
+              <UserIcon size={14} />
+              {t.humanoid || 'Humanoid'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={toggleListen}
+              className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
+                isListening 
+                  ? 'bg-red-500 text-white shadow-[0_0_30px_rgba(239,68,68,0.5)] scale-110' 
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              {isListening ? <Mic size={24} className="animate-pulse" /> : <MicOff size={24} />}
+            </Button>
+            
+            <div className="flex flex-col">
+              <span className="text-xs font-bold uppercase tracking-widest text-white/40">
+                {isListening ? t.listening : isProcessing ? t.processing : t.voiceInteract}
+              </span>
+              <span className="text-sm font-medium text-white/80">
+                {isListening ? "I'm listening to your request..." : "Click to start voice command"}
+              </span>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {(isListening || isProcessing) && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="flex gap-1"
+              >
+                {[...Array(5)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="w-1 bg-red-500 rounded-full"
+                    animate={{
+                      height: isListening ? [10, 30, 10] : [10, 15, 10],
+                    }}
+                    transition={{
+                      duration: 0.5,
+                      repeat: Infinity,
+                      delay: i * 0.1,
+                    }}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

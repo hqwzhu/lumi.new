@@ -31,6 +31,7 @@ import {
   Sun,
   Maximize2,
   ChevronRight,
+  ChevronDown,
   Clock,
   Calendar as CalendarIcon,
   Bell,
@@ -43,8 +44,13 @@ import {
 } from 'lucide-react';
 import { GlassCard } from './SharedUI';
 import { LocalAgentSphere } from './LocalAgentSphere';
+import { VoiceCallButton } from './VoiceCallButton';
+import { useSocket } from '@/hooks/useSocket';
+import { useVoiceCall } from '@/hooks/useVoiceCall';
+import { listVoices } from '@/services/voiceService';
 import { NeuralFileManager } from './NeuralFileManager';
 import { Settings } from './Settings';
+import { systemService } from '@/services/systemService';
 
 // Define the shape of the native API
 interface NativeFile {
@@ -570,6 +576,47 @@ export function DesktopUI({
   const [brightness, setBrightness] = useState(85);
   const [volume, setVolume] = useState(60);
   const [time, setTime] = useState(new Date());
+  const [isWallpaperMode, setIsWallpaperMode] = useState(false);
+
+  const socket = useSocket();
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>();
+  const [voices, setVoices] = useState<any[]>([]);
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
+
+  const { callState, audioLevel, startCall, endCall, error: callError } = useVoiceCall({
+    socket,
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        setTerminalOutput(prev => [...prev, `[You]: ${text}`]);
+      }
+    },
+    onResponse: (text) => {
+      setTerminalOutput(prev => [...prev, `[Lumi]: ${text}`]);
+    }
+  });
+
+  useEffect(() => {
+    listVoices().then(data => {
+      const all = [...data.cloned, ...data.premade];
+      setVoices(all);
+      if (all.length > 0 && !selectedVoiceId) {
+        setSelectedVoiceId(all[0].voiceId);
+      }
+    }).catch(() => {});
+  }, [selectedVoiceId]);
+
+  useEffect(() => {
+    if (callError) toast.error(callError);
+  }, [callError]);
+
+  const toggleWallpaperMode = async () => {
+    const nextMode = !isWallpaperMode;
+    setIsWallpaperMode(nextMode);
+    await systemService.setClickThrough(nextMode);
+    toast(nextMode ? 'Wallpaper Fusion Active' : 'Standard Focus Mode', {
+      icon: nextMode ? <Sparkles className="text-celestial-saturn" /> : <Box className="text-white/40" />
+    });
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -619,25 +666,18 @@ export function DesktopUI({
       return;
     }
 
-    if (window.lumiElectron) {
-      const result = await window.lumiElectron.runCommand(cmd);
-      setTerminalOutput(prev => [...prev, result.output]);
-    } else {
-      setTerminalOutput(prev => [...prev, 'Error: Native environment not detected.']);
-    }
+    const result = await systemService.runCommand(cmd);
+    setTerminalOutput(prev => [...prev, result.output]);
   };
 
   useEffect(() => {
     const fetchNativeData = async () => {
-      if (window.lumiElectron) {
-        try {
-          const files = await window.lumiElectron.listHomeFiles();
-          const info = await window.lumiElectron.getSystemInfo();
-          setNativeFiles(files);
-          setSystemInfo(info);
-        } catch (err) {
-          console.error('Failed to fetch native data:', err);
-        }
+      try {
+        const stats = await systemService.getSystemStats();
+        setSystemInfo(stats);
+        // We could also add listHomeFiles to systemService if needed
+      } catch (err) {
+        console.error('Failed to fetch native data:', err);
       }
     };
     fetchNativeData();
@@ -1227,33 +1267,110 @@ export function DesktopUI({
           transition={{ duration: 2, ease: "easeOut" }}
           className="relative pointer-events-auto scale-75 opacity-90 transition-all"
         >
-          {/* Central glow removed to stop flashing */}
-          <LocalAgentSphere 
-            t={t} 
-            sentiment={sphereSentiment}
-            onMessage={(text) => {
-            setTerminalOutput(prev => [...prev, `[Voice Input]: ${text}`]);
-            if (window.lumiElectron) {
-              window.lumiElectron.runCommand(text).then(res => {
-                setTerminalOutput(prev => [...prev, res.output]);
-              });
-            }
-          }} />
+          <div className="relative flex flex-col items-center">
+            <LocalAgentSphere 
+              t={t} 
+              sentiment={sphereSentiment}
+              callState={callState}
+              audioLevel={audioLevel}
+              highPerformance={isTauri}
+              isWallpaperMode={isWallpaperMode}
+              onMessage={(text) => {
+                setTerminalOutput(prev => [...prev, `[Voice Input]: ${text}`]);
+                systemService.runCommand(text).then(res => {
+                  setTerminalOutput(prev => [...prev, res.output]);
+                });
+              }} 
+            />
 
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="absolute -bottom-16 left-1/2 -translate-x-1/2 whitespace-nowrap"
-          >
-             <div className="flex flex-col items-center gap-1 group">
-               <span className="text-[10px] font-black tracking-[0.4em] text-white/40 uppercase group-hover:text-celestial-saturn transition-colors">
-                 Virtual Core Active
-               </span>
-               <div className="flex gap-1">
-                 {[1,2,3].map(i => <div key={i} className="w-1 h-1 rounded-full bg-celestial-saturn/40 animate-pulse" style={{ animationDelay: `${i*0.2}s` }} />)}
-               </div>
+            <div className="flex flex-col items-center gap-4 mt-8">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowVoicePicker(!showVoicePicker)}
+                    className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2 hover:bg-white/10 hover:text-white transition-all shadow-xl"
+                  >
+                    {voices.find(v => v.voiceId === selectedVoiceId)?.name || 'Nexus Voice'}
+                    <ChevronDown size={12} />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showVoicePicker && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute bottom-full left-0 mb-2 w-48 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2 z-50 shadow-2xl max-h-64 overflow-y-auto custom-scrollbar"
+                      >
+                        {voices.map(v => (
+                          <button
+                            key={v.voiceId}
+                            onClick={() => {
+                              setSelectedVoiceId(v.voiceId);
+                              setShowVoicePicker(false);
+                            }}
+                            className={`w-full text-left p-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
+                              selectedVoiceId === v.voiceId ? 'bg-celestial-saturn text-black' : 'text-white/60 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >
+                            {v.name}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <VoiceCallButton 
+                  callState={callState}
+                  audioLevel={audioLevel}
+                  onStart={() => startCall(selectedVoiceId)}
+                  onEnd={endCall}
+                  hasVoice={voices.length > 0}
+                />
+
+                {isTauri && (
+                  <button
+                    onClick={toggleWallpaperMode}
+                    className={`h-10 px-4 rounded-xl border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl ${
+                      isWallpaperMode 
+                        ? 'bg-celestial-saturn text-black border-celestial-saturn' 
+                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <Zap size={14} className={isWallpaperMode ? 'animate-pulse' : ''} />
+                    {isWallpaperMode ? 'Fusion On' : 'Wallpaper Mode'}
+                  </button>
+                )}
+              </div>
+
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="whitespace-nowrap"
+              >
+                 <div className="flex flex-col items-center gap-1 group">
+                   <span className="text-[10px] font-black tracking-[0.4em] text-white/40 uppercase group-hover:text-celestial-saturn transition-colors">
+                     {callState === 'idle' ? 'Lumi Neural Core' : `${callState.toUpperCase()} SESSION`}
+                   </span>
+                   <div className="flex gap-1">
+                     {callState !== 'idle' ? (
+                       [1,2,3,4,5].map(i => (
+                         <motion.div 
+                           key={i} 
+                           className="w-1 bg-celestial-saturn rounded-full" 
+                           animate={{ height: [8, 16 + audioLevel * 20, 8] }}
+                           transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                         />
+                       ))
+                     ) : (
+                       [1,2,3].map(i => <div key={i} className="w-1 h-1 rounded-full bg-celestial-saturn/40 animate-pulse" style={{ animationDelay: `${i*0.2}s` }} />)
+                     )}
+                   </div>
+                </div>
+              </motion.div>
             </div>
-          </motion.div>
+          </div>
         </motion.div>
       </div>
 
