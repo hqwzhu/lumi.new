@@ -1,5 +1,5 @@
 import { ToolRegistry } from '../tools/registry';
-import { ToolExecutionRecord } from '../tools/types';
+import { ToolExecutionRecord, ToolContext } from '../tools/types';
 import { NormalizedMessage, makeLLMCall, makeLLMCallStreaming, StreamCallback } from './providers';
 
 export interface LLMConfig {
@@ -25,6 +25,7 @@ export async function runWithTools(
   getAnthropic?: () => any,
   getQwen?: () => any,
   onStreamChunk?: StreamCallback,
+  context?: ToolContext,
 ): Promise<LLMResult> {
   const executionLog: ToolExecutionRecord[] = [];
   const conversationHistory: NormalizedMessage[] = [...messages];
@@ -91,7 +92,7 @@ export async function runWithTools(
       let error: string | undefined;
 
       try {
-        result = await toolRegistry.execute(tc.name, tc.arguments);
+        result = await toolRegistry.execute(tc.name, tc.arguments, context);
       } catch (e: any) {
         result = '';
         error = e.message;

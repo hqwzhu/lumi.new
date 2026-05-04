@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  Shield, 
-  Bell, 
-  Globe, 
-  Cpu, 
-  Lock, 
-  Eye, 
-  Database, 
-  Radio, 
-  Key, 
-  BrainCircuit, 
-  ChevronDown, 
+import {
+  Shield,
+  Bell,
+  Globe,
+  Cpu,
+  Lock,
+  Eye,
+  Database,
+  Radio,
+  Key,
+  BrainCircuit,
+  ChevronDown,
   Rocket,
   Music,
   Disc,
@@ -22,7 +22,8 @@ import {
   Camera,
   Mic,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  User
 } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
@@ -32,26 +33,62 @@ import { usePlatform } from '@/hooks/usePlatform';
 import { DeviceSyncCenter } from './DeviceSyncCenter';
 import { useApp } from '@/contexts/AppContext';
 import { VoiceForge } from './VoiceForge';
+import { MCPSettings } from './MCPSettings';
+import { MemoryExplorer } from './MemoryExplorer';
+import { PersonalityEditor } from './PersonalityEditor';
+import { PersonalityMarketplace } from './PersonalityMarketplace';
 
 export function Settings({ 
   t, 
   lang,
   setLang,
+  theme,
+  setTheme,
   activeSection = 'general', 
   onSectionChange 
 }: { 
   t: any; 
   lang: 'en' | 'zh';
   setLang: (l: 'en' | 'zh') => void;
+  theme?: string;
+  setTheme?: (theme: string) => void;
   activeSection?: string; 
   onSectionChange?: (section: string) => void;
 }) {
   const { platform, isElectron, isWeb } = usePlatform();
-  const { aiConfig, updateAIConfig } = useApp();
+  const { aiConfig, updateAIConfig, personalityId, setPersonalityId } = useApp();
   const [showApiKey, setShowApiKey] = useState(false);
+  const [personalities, setPersonalities] = useState<any[]>([]);
+  const [providerStatus, setProviderStatus] = useState<Record<string, { available: boolean; model: string }>>({});
+  const [observerMode, setObserverModeState] = useState(() => {
+    return localStorage.getItem('lumi_observer_mode') === 'true';
+  });
+
+  useEffect(() => {
+    fetch('/api/personalities')
+      .then(r => r.json())
+      .then(setPersonalities)
+      .catch(() => {});
+    fetch('/api/llm/providers')
+      .then(r => r.json())
+      .then(d => setProviderStatus(d.providers || {}))
+      .catch(() => {});
+  }, []);
 
   const handleSectionChange = (section: string) => {
     if (onSectionChange) onSectionChange(section);
+  };
+
+  const setObserverMode = (on: boolean) => {
+    setObserverModeState(on);
+    localStorage.setItem('lumi_observer_mode', String(on));
+    if (on) {
+      setPersonalityId('observer');
+      toast.info('Observer mode activated — Lumi will watch quietly and learn from patterns.');
+    } else {
+      setPersonalityId('lumi');
+      toast.info('Observer mode deactivated — Lumi is back to full interaction.');
+    }
   };
 
   return (
@@ -59,14 +96,19 @@ export function Settings({
       {/* Sidebar */}
       <div className="w-64 bg-white/5 border-r border-white/5 p-8 flex flex-col gap-2">
         <h2 className="text-xl font-black uppercase tracking-tighter text-white mb-6">Settings</h2>
-        <SidebarItem active={activeSection === 'general'} onClick={() => handleSectionChange('general')} icon={<Globe size={18} />} label="General" />
-        <SidebarItem active={activeSection === 'neural'} onClick={() => handleSectionChange('neural')} icon={<BrainCircuit size={18} />} label="Neural Engine" />
+        <SidebarItem active={activeSection === 'general'} onClick={() => handleSectionChange('general')} icon={<Globe size={18} />} label={t.general || "General"} />
+        <SidebarItem active={activeSection === 'personalization'} onClick={() => handleSectionChange('personalization')} icon={<Sparkle size={18} />} label={t.personalization || "Personalization"} />
+        <SidebarItem active={activeSection === 'neural'} onClick={() => handleSectionChange('neural')} icon={<BrainCircuit size={18} />} label={t.neuralEngine || "Neural Engine"} />
         <SidebarItem active={activeSection === 'voice'} onClick={() => handleSectionChange('voice')} icon={<Mic size={18} />} label={t.voiceForge || "Voice Forge"} />
         <SidebarItem active={activeSection === 'api'} onClick={() => handleSectionChange('api')} icon={<Key size={18} />} label="Neural API Matrix" />
         <SidebarItem active={activeSection === 'music'} onClick={() => handleSectionChange('music')} icon={<Music size={18} />} label="Media Services" />
         <SidebarItem active={activeSection === 'sync'} onClick={() => handleSectionChange('sync')} icon={<Radio size={18} />} label="Sync Hub" />
         <SidebarItem active={activeSection === 'security'} onClick={() => handleSectionChange('security')} icon={<Shield size={18} />} label="Security" />
         <SidebarItem active={activeSection === 'hardware'} onClick={() => handleSectionChange('hardware')} icon={<Camera size={18} />} label="Hardware Access" />
+        <SidebarItem active={activeSection === 'personality'} onClick={() => handleSectionChange('personality')} icon={<User size={18} />} label="Personality Editor" />
+        <SidebarItem active={activeSection === 'market'} onClick={() => handleSectionChange('market')} icon={<Globe size={18} />} label="Personality Market" />
+        <SidebarItem active={activeSection === 'memory'} onClick={() => handleSectionChange('memory')} icon={<Database size={18} />} label="Memory Explorer" />
+        <SidebarItem active={activeSection === 'mcp'} onClick={() => handleSectionChange('mcp')} icon={<Cpu size={18} />} label="MCP Servers" />
       </div>
 
       {/* Content */}
@@ -79,17 +121,70 @@ export function Settings({
                     <label className="text-[10px] font-black uppercase tracking-widest text-white/50 block mb-4">{t.selectLanguage}</label>
                     <div className="grid grid-cols-2 gap-4">
                       <button 
-                        onClick={() => setLang('en')}
-                        className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'en' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
+                         onClick={() => setLang('en')}
+                         className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'en' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
                       >
-                        English (US)
+                         English (US)
                       </button>
                       <button 
-                        onClick={() => setLang('zh')}
-                        className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'zh' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
+                         onClick={() => setLang('zh')}
+                         className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'zh' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}
                       >
-                        中文 (简体)
+                         中文 (简体)
                       </button>
+                    </div>
+                  </div>
+               </div>
+            </SettingsSection>
+          </div>
+        )}
+        {activeSection === 'personalization' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <SettingsSection title={t.appearanceThemes || "Appearance & Themes"} icon={<Sparkle size={18} className="text-celestial-saturn" />}>
+               <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/5 space-y-8">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/50 block mb-4">{t.selectMatrixVariant || "Select Global Matrix Variant"}</label>
+                    <div className="grid grid-cols-3 gap-4">
+                      {[
+                        { id: 'celestial', label: 'Celestial', color: 'from-orange-400 to-red-500' },
+                        { id: 'nebula', label: 'Nebula', color: 'from-indigo-500 to-purple-600' },
+                        { id: 'cyber', label: 'Cyber', color: 'from-emerald-400 to-teal-600' }
+                      ].map(themeItem => (
+                        <button 
+                          key={themeItem.id}
+                          onClick={() => setTheme && setTheme(themeItem.id)}
+                          className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all text-center ${
+                            theme === themeItem.id ? 'bg-white/10 border-white/20 shadow-lg' : 'border-white/5 hover:bg-white/5'
+                          }`}
+                        >
+                          <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${themeItem.color} shadow-lg ${theme === themeItem.id ? 'ring-2 ring-white/50 ring-offset-2 ring-offset-black' : ''}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${theme === themeItem.id ? 'text-white' : 'text-white/60'}`}>{themeItem.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/50 block mb-4">{t.desktopBackgroundProtocol || "Desktop Background Protocol"}</label>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3">
+                          <div className="w-full h-24 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center">
+                             <div className="w-full h-full bg-[radial-gradient(circle_at_center,rgba(255,200,80,0.1)_0%,transparent_70%)]" />
+                          </div>
+                          <div className="flex justify-between items-center">
+                             <span className="text-xs font-bold text-white/80">Default Neural Map</span>
+                             <div className="w-4 h-4 rounded-full bg-celestial-saturn" />
+                          </div>
+                       </div>
+                       <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-3 opacity-50">
+                          <div className="w-full h-24 bg-black/40 rounded-xl border border-white/5 flex items-center justify-center overflow-hidden">
+                             <div className="w-full h-full bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
+                          </div>
+                          <div className="flex justify-between items-center">
+                             <span className="text-xs font-bold text-white/40">Grid Matrix (Coming Soon)</span>
+                             <div className="w-4 h-4 rounded-full border border-white/20" />
+                          </div>
+                       </div>
                     </div>
                   </div>
                </div>
@@ -100,6 +195,56 @@ export function Settings({
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <SettingsSection title="Agent Framework (Lumi Protocol)" icon={<BrainCircuit className="text-celestial-saturn" />}>
                <div className="space-y-6">
+                 {/* Personality Selector */}
+                 <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-white/30 ml-2">Core Personality</label>
+                   <div className="relative">
+                     <User size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                     <select
+                       value={personalityId}
+                       onChange={(e) => setPersonalityId(e.target.value)}
+                       className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-sm font-bold appearance-none cursor-pointer focus:border-celestial-saturn/50 outline-none"
+                     >
+                       {personalities.map((p: any) => (
+                         <option key={p.id} value={p.id}>{p.name} — {p.coreMotivation?.slice(0, 60)}...</option>
+                       ))}
+                     </select>
+                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                   </div>
+                   {personalityId && personalities.length > 0 && (
+                     <p className="text-[9px] text-white/30 px-2 mt-1">
+                       {(() => { const p = personalities.find(x => x.id === personalityId); return p ? `${p.expressionStyle?.tone || ''} tone — ${p.expressionStyle?.verbosity || ''} verbosity` : ''; })()}
+                     </p>
+                   )}
+                 </div>
+
+                 {/* Observer Mode Toggle */}
+                 <div className={`p-6 rounded-2xl border transition-all ${observerMode ? 'bg-celestial-saturn/5 border-celestial-saturn/30' : 'bg-white/5 border-white/5'}`}>
+                   <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-3">
+                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${observerMode ? 'bg-celestial-saturn/20 text-celestial-saturn' : 'bg-white/5 text-white/20'}`}>
+                         <Eye size={20} />
+                       </div>
+                       <div>
+                         <div className="text-sm font-bold text-white/90">Observation Mode</div>
+                         <div className="text-[10px] text-white/40">Lumi watches quietly, learns from patterns, speaks only with insight.</div>
+                       </div>
+                     </div>
+                     <div
+                       onClick={() => setObserverMode(!observerMode)}
+                       className={`w-10 h-5 rounded-full p-1 transition-colors cursor-pointer ${observerMode ? 'bg-celestial-saturn' : 'bg-white/10'}`}
+                     >
+                       <div className={`w-3 h-3 rounded-full bg-white transition-transform ${observerMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                     </div>
+                   </div>
+                   {observerMode && (
+                     <div className="mt-3 flex items-center gap-2 text-[10px] text-celestial-saturn font-bold uppercase tracking-widest">
+                       <div className="w-1.5 h-1.5 rounded-full bg-celestial-saturn animate-pulse" />
+                       Actively Observing
+                     </div>
+                   )}
+                 </div>
+
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-2">
                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-white/40 tracking-widest">
@@ -179,10 +324,16 @@ export function Settings({
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <SettingsSection title="Neural API Matrix" icon={<Key className="text-celestial-saturn" />}>
               <div className="grid grid-cols-1 gap-6">
-                <ApiKeyField icon={<Sparkle size={18} className="text-purple-400" />} label="Anthropic / Claude 3.5 API" placeholder="sk-ant-..." />
-                <ApiKeyField icon={<MessagesSquare size={18} className="text-green-400" />} label="OpenAI / GPT-4o API" placeholder="sk-..." />
-                <ApiKeyField icon={<BrainCircuit size={18} className="text-blue-400" />} label="Google Gemini API" placeholder="Key detected in environment (Native Link)" disabled={true} />
-                <ApiKeyField icon={<Cpu size={18} className="text-orange-400" />} label="DeepSeek / LLM API" placeholder="sk-..." />
+                <ApiKeyField icon={<Sparkle size={18} className="text-purple-400" />} label="Anthropic / Claude 3.5 API" placeholder="sk-ant-..." storageKey="lumi_anthropic_key" />
+                <ApiKeyField icon={<MessagesSquare size={18} className="text-green-400" />} label="OpenAI / GPT-4o API" placeholder="sk-..." storageKey="lumi_openai_key" />
+                <ApiKeyField
+                  icon={<BrainCircuit size={18} className="text-blue-400" />}
+                  label={`Google Gemini API${providerStatus.gemini?.available ? ` (${providerStatus.gemini.model})` : ''}`}
+                  placeholder={providerStatus.gemini?.available ? 'Connected via environment' : 'No key configured'}
+                  disabled={providerStatus.gemini?.available}
+                  storageKey="lumi_gemini_key"
+                />
+                <ApiKeyField icon={<Cpu size={18} className="text-orange-400" />} label="DeepSeek / LLM API" placeholder="sk-..." storageKey="lumi_deepseek_key" />
               </div>
             </SettingsSection>
           </div>
@@ -239,6 +390,10 @@ export function Settings({
           </div>
         )}
         {activeSection === 'hardware' && <HardwareSettings t={t} />}
+        {activeSection === 'personality' && <PersonalityEditor />}
+        {activeSection === 'market' && <PersonalityMarketplace />}
+        {activeSection === 'memory' && <MemoryExplorer />}
+        {activeSection === 'mcp' && <MCPSettings />}
       </div>
     </div>
   );
@@ -377,21 +532,48 @@ function SidebarItem({ active, onClick, icon, label }: { active: boolean, onClic
   );
 }
 
-function ApiKeyField({ icon, label, placeholder, disabled = false }: { icon: React.ReactNode, label: string, placeholder: string, disabled?: boolean }) {
+function ApiKeyField({ icon, label, placeholder, disabled = false, storageKey }: { icon: React.ReactNode, label: string, placeholder: string, disabled?: boolean, storageKey: string }) {
+  const [value, setValue] = useState(() => {
+    try { return localStorage.getItem(storageKey) || ''; } catch { return ''; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    if (!value.trim()) {
+      localStorage.removeItem(storageKey);
+      toast.success('API key removed');
+    } else {
+      localStorage.setItem(storageKey, value.trim());
+      toast.success('API key saved');
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
     <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
       <div className="flex items-center gap-2">
         <div className="p-2 bg-white/5 rounded-lg">{icon}</div>
         <label className="text-[10px] font-black uppercase tracking-widest text-white/50">{label}</label>
+        {saved && <CheckCircle size={14} className="text-green-400 ml-auto" />}
       </div>
       <div className="relative">
-        <input 
+        <input
           disabled={disabled}
-          type="password" 
+          type="password"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSave()}
           placeholder={placeholder}
-          className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-celestial-saturn/50 transition-colors disabled:opacity-50" 
+          className="w-full bg-black/40 border border-white/10 rounded-xl p-4 pr-24 text-white font-mono text-sm outline-none focus:border-celestial-saturn/50 transition-colors disabled:opacity-50"
         />
-        <Button className="absolute right-2 top-2 h-10 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest border border-white/10 rounded-lg">Update</Button>
+        <Button
+          onClick={handleSave}
+          disabled={disabled}
+          className="absolute right-2 top-2 h-10 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest border border-white/10 rounded-lg"
+        >
+          {value ? 'Save' : 'Clear'}
+        </Button>
       </div>
     </div>
   );
@@ -426,15 +608,32 @@ function SettingsSection({ title, icon, children }: { title: string; icon: React
   );
 }
 
-function SettingsItem({ label, desc, active = false }: { label: string; desc: string; active?: boolean }) {
+function SettingsItem({ label, desc, active = false, storageKey, onChange }: { label: string; desc: string; active?: boolean; storageKey?: string; onChange?: (v: boolean) => void }) {
+  const [isActive, setIsActive] = useState(() => {
+    if (storageKey) {
+      try { return localStorage.getItem(storageKey) === 'true'; } catch { return active; }
+    }
+    return active;
+  });
+
+  const toggle = () => {
+    const next = !isActive;
+    setIsActive(next);
+    if (storageKey) {
+      localStorage.setItem(storageKey, String(next));
+    }
+    onChange?.(next);
+    toast.info(`${label}: ${next ? 'Enabled' : 'Disabled'}`);
+  };
+
   return (
     <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
       <div className="space-y-1">
         <div className="font-bold text-sm text-white/90">{label}</div>
         <div className="text-[10px] text-white/40 uppercase tracking-widest">{desc}</div>
       </div>
-      <div className={`w-10 h-5 rounded-full p-1 transition-colors cursor-pointer ${active ? 'bg-celestial-saturn' : 'bg-white/10'}`}>
-        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${active ? 'translate-x-5' : 'translate-x-0'}`} />
+      <div onClick={toggle} className={`w-10 h-5 rounded-full p-1 transition-colors cursor-pointer ${isActive ? 'bg-celestial-saturn' : 'bg-white/10'}`}>
+        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
       </div>
     </div>
   );

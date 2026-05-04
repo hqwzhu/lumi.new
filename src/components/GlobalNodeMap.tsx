@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 
-export function GlobalNodeMap({ variant = 'default' }: { variant?: 'default' | 'subtle' }) {
-  // Mock data for global nodes
+export function GlobalNodeMap({ variant = 'default', nodeCount }: { variant?: 'default' | 'subtle'; nodeCount?: number }) {
   const dots = useMemo(() => {
     return [...Array(60)].map((_, i) => ({
       id: i,
@@ -71,8 +70,8 @@ export function GlobalNodeMap({ variant = 'default' }: { variant?: 'default' | '
       {variant === 'default' && (
         <>
           <div className="absolute top-8 left-8 space-y-1">
-            <div className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Live Mesh Distribution</div>
-            <div className="text-xl font-black text-white italic">42,901 ACTIVE NODES</div>
+            <div className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">Device Mesh</div>
+            <div className="text-xl font-black text-white italic">{nodeCount ?? 1} DEVICE{nodeCount !== 1 ? 'S' : ''} ONLINE</div>
           </div>
 
           <div className="absolute bottom-8 right-8 flex gap-4">

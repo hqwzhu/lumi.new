@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart, Shield, Zap, Cpu, MessageSquare, Radio, Power,
 import { Button } from './ui/button';
 import { GlassCard, IconBox, FeatureItem } from './SharedUI';
 import { socketService } from '@/services/socketService';
+import { useApp } from '@/contexts/AppContext';
 
 const iconMap: { [key: string]: React.ReactNode } = {
   Hologram: <Monitor size={100} />,
@@ -34,6 +35,7 @@ export function ProductDetailPage({ t, product, onBack }: ProductDetailPageProps
   const [isTyping, setIsTyping] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const socket = React.useRef<any>(null);
+  const { personalityId } = useApp();
 
   useEffect(() => {
     socket.current = socketService.connect();
@@ -63,7 +65,7 @@ export function ProductDetailPage({ t, product, onBack }: ProductDetailPageProps
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text
       })),
-      personalityId: 'manual' // Using manual personality for product support/interaction
+      personalityId
     });
   };
 
@@ -159,7 +161,7 @@ export function ProductDetailPage({ t, product, onBack }: ProductDetailPageProps
           <GlassCard className="p-8 rounded-[2.5rem] space-y-4" hoverEffect={false}>
             <h3 className="text-lg font-bold tracking-tight flex items-center gap-2">
               <Info size={20} className="text-celestial-saturn" />
-              产品概述
+              {t.productOverview || 'Product Overview'}
             </h3>
             <p className="text-white/80 leading-relaxed text-lg">
               {product.description}

@@ -1,11 +1,12 @@
 import { io, Socket } from "socket.io-client";
+import { getSocketOrigin } from "./apiBridge";
 
 class SocketService {
   private socket: Socket | null = null;
 
   connect() {
     if (!this.socket) {
-      this.socket = io(window.location.origin);
+      this.socket = io(getSocketOrigin(), { withCredentials: true });
       
       this.socket.on("connect", () => {
         console.log("[Socket] Connected to server");

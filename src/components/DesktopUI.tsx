@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
-import { toast } from 'sonner';
 import { HardcoreBootSequence } from './HardcoreBootSequence';
 import { GlobalNodeMap } from './GlobalNodeMap';
 import { sounds } from '../services/soundService';
-import {
-  Rocket,
-  MessageSquare,
-  Cpu,
-  Globe,
-  Users,
-  BookOpen,
+import { 
+  Rocket, 
+  MessageSquare, 
+  Cpu, 
+  Globe, 
+  Users, 
+  BookOpen, 
   Settings as SettingsIcon,
   Shield,
   Award,
@@ -37,6 +36,7 @@ import {
   Calendar as CalendarIcon,
   Bell,
   Music,
+  Plus,
   MessagesSquare,
   Disc,
   Headphones,
@@ -44,11 +44,14 @@ import {
   Sparkles,
   Box
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
 import { LocalAgentSphere } from './LocalAgentSphere';
-import { VoiceCallButton } from './VoiceCallButton';
+import { VoiceTrainingDialog } from './VoiceTrainingDialog';
+import { DesktopOnboarding } from './DesktopOnboarding';
 import { useSocket } from '@/hooks/useSocket';
 import { useVoiceCall } from '@/hooks/useVoiceCall';
+import { useApp } from '@/contexts/AppContext';
 import { listVoices } from '@/services/voiceService';
 import { NeuralFileManager } from './NeuralFileManager';
 import { Settings } from './Settings';
@@ -199,6 +202,9 @@ function ControlCenter({ isOpen, onClose, t, brightness, setBrightness, volume, 
   lang: 'en' | 'zh';
   setLang: (l: 'en' | 'zh') => void;
 }) {
+  const [nightShift, setNightShift] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+
   if (!isOpen) return null;
 
   const themes = [
@@ -231,8 +237,19 @@ function ControlCenter({ isOpen, onClose, t, brightness, setBrightness, volume, 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="col-span-1 bg-white/5 rounded-2xl p-4 flex flex-col gap-3">
           <div className="flex gap-3">
-             <button className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white active:scale-95 transition-transform" title={t.wifi}><Wifi size={18} /></button>
-             <button className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/40 active:scale-95 transition-transform" title={t.bluetooth}><Bluetooth size={18} /></button>
+             <button
+               onClick={async () => {
+                 try { const r = await fetch('/api/health'); if (r.ok) toast.info('Server connection: OK'); else toast.info('Server: Degraded'); }
+                 catch { toast.error('Server: Offline'); }
+               }}
+               className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white active:scale-95 transition-transform"
+               title={t.wifi}
+             ><Wifi size={18} /></button>
+             <button
+               onClick={() => toast.info('Bluetooth device discovery requires the desktop app (Tauri/Electron).')}
+               className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/40 active:scale-95 transition-transform"
+               title={t.bluetooth}
+             ><Bluetooth size={18} /></button>
           </div>
           <div className="flex gap-3">
              <button 
@@ -276,11 +293,14 @@ function ControlCenter({ isOpen, onClose, t, brightness, setBrightness, volume, 
              <div className="h-4 w-full bg-white/5 rounded-full relative group cursor-pointer" onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const percent = (e.clientX - rect.left) / rect.width;
-                setVolume(Math.min(100, Math.max(0, percent * 100)));
+                const v = Math.min(100, Math.max(0, percent * 100));
+                setVolume(v);
+                document.documentElement.style.setProperty('--lumi-volume', String(v / 100));
+                try { localStorage.setItem('lumi_volume', String(v)); } catch {}
              }}>
-               <motion.div 
+               <motion.div
                  animate={{ width: `${volume}%` }}
-                 className="h-full bg-celestial-saturn rounded-full" 
+                 className="h-full bg-celestial-saturn rounded-full"
                />
              </div>
            </div>
@@ -308,19 +328,38 @@ function ControlCenter({ isOpen, onClose, t, brightness, setBrightness, volume, 
       </div>
 
       <div className="space-y-1">
-        <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+        <div
+          onClick={() => {
+            const next = !nightShift;
+            setNightShift(next);
+            document.documentElement.style.filter = next ? 'sepia(0.3) hue-rotate(-10deg)' : '';
+            toast.info(next ? 'Night Shift: ON' : 'Night Shift: OFF');
+          }}
+          className="flex items-center justify-between p-3 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
+        >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-500"><Sun size={16} /></div>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${nightShift ? 'bg-orange-500/30 text-orange-400' : 'bg-orange-500/20 text-orange-500'}`}><Sun size={16} /></div>
             <span className="text-xs font-bold text-white/80">{t.nightShift || 'Night Shift'}</span>
           </div>
-          <ChevronRight size={14} className="text-white/20" />
+          <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${nightShift ? 'bg-orange-500' : 'bg-white/10'}`}>
+            <div className={`w-3 h-3 rounded-full bg-white transition-transform ${nightShift ? 'translate-x-4' : 'translate-x-0'}`} />
+          </div>
         </div>
-        <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+        <div
+          onClick={() => {
+            const next = !focusMode;
+            setFocusMode(next);
+            toast.info(next ? 'Focus Mode: ON' : 'Focus Mode: OFF');
+          }}
+          className="flex items-center justify-between p-3 bg-white/5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors"
+        >
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-500"><Maximize2 size={16} /></div>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${focusMode ? 'bg-purple-500/30 text-purple-400' : 'bg-purple-500/20 text-purple-500'}`}><Maximize2 size={16} /></div>
             <span className="text-xs font-bold text-white/80">{t.focusMode || 'Focus Mode'}</span>
           </div>
-          <ChevronRight size={14} className="text-white/20" />
+          <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${focusMode ? 'bg-purple-500' : 'bg-white/10'}`}>
+            <div className={`w-3 h-3 rounded-full bg-white transition-transform ${focusMode ? 'translate-x-4' : 'translate-x-0'}`} />
+          </div>
         </div>
       </div>
       
@@ -359,14 +398,41 @@ function DesktopIcon({ label, icon, colorClass, onClick }: DesktopIconProps) {
 
 function KernelMonitorApp({ t }: { t: any }) {
   const [data, setData] = useState<number[]>([]);
+  const [stats, setStats] = useState({ cpu: 0, ram: 'N/A', disk: 'N/A' });
+  const [tasks, setTasks] = useState<any[]>([]);
   
   useEffect(() => {
-    const interval = setInterval(() => {
-      setData(prev => {
-        const next = [...prev, Math.random() * 50 + 25];
-        return next.slice(-30);
-      });
-    }, 400);
+    const fetchStats = async () => {
+      const res = await systemService.getSystemStats();
+      if (res) {
+        setStats({
+          cpu: res.cpu || 0,
+          ram: res.ram || 'N/A',
+          disk: res.disk || 'N/A'
+        });
+        setData(prev => {
+          const next = [...prev, res.cpu || 0];
+          return next.slice(-30);
+        });
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const res = await fetch('/api/scheduler/tasks');
+        if (!res.ok) return;
+        const data = await res.json();
+        setTasks(data.tasks || []);
+      } catch {}
+    };
+    fetchTasks();
+    const interval = setInterval(fetchTasks, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -384,75 +450,70 @@ function KernelMonitorApp({ t }: { t: any }) {
         </div>
         <div className="text-right">
           <div className="text-[10px] font-black text-celestial-saturn uppercase tracking-widest leading-none mb-1">{t.status || 'Status'}: {t.optimal || 'Optimal'}</div>
-          <div className="text-xs font-mono text-white/40">0.02ms {t.meshLatency || 'Latency'} / 824.2 TOPs</div>
+          <div className="text-xs font-mono text-white/40">NODE_READY / {stats.cpu.toFixed(1)}% LOAD</div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: t.neuralThroughput || 'Neural Throughput', value: '82.4 GB/s', color: 'bg-celestial-saturn' },
-          { label: t.synapticLoad || 'Synaptic Load', value: '14.2%', color: 'bg-emerald-500' },
-          { label: t.meshLatency || 'Mesh Latency', value: '0.12 ms', color: 'bg-blue-500' }
+          { label: t.neuralThroughput || 'CPU Utilization', value: `${stats.cpu.toFixed(1)}%`, color: 'bg-celestial-saturn' },
+          { label: t.synapticLoad || 'Memory Status', value: stats.ram, color: 'bg-emerald-500' },
+          { label: t.meshLatency || 'Storage Node', value: stats.disk, color: 'bg-blue-500' }
         ].map((stat, i) => (
           <div key={i} className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-3 hover:bg-white/10 transition-colors cursor-default">
             <div className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">{stat.label}</div>
             <div className="text-xl font-black text-white tracking-tighter">{stat.value}</div>
             <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
                <motion.div 
-                 initial={{ width: 0 }}
-                 animate={{ width: `${Math.random() * 60 + 20}%` }}
-                 transition={{ duration: 2, repeat: Infinity, repeatType: 'reverse' }}
-                 className={`h-full ${stat.color} shadow-[0_0_10px_currentColor]`} 
-                />
+                initial={{ width: 0 }}
+                animate={{ width: i === 0 ? `${stats.cpu}%` : '40%' }}
+                className={`h-full ${stat.color}`} 
+               />
             </div>
           </div>
         ))}
       </div>
 
-      <div className="flex-1 bg-black/40 rounded-[2.5rem] border border-white/5 p-8 relative overflow-hidden flex flex-col">
-        <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,200,80,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,200,80,0.05)_1px,transparent_1px)] bg-[size:30px_30px]" />
-        
-        <div className="relative z-10 space-y-6 h-full flex flex-col text-white/90">
-           <div className="flex justify-between items-center">
-             <div className="flex items-center gap-3">
-               <Activity size={14} className="text-celestial-saturn animate-pulse" />
-               <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em] italic">{t.memoryAllocShards || 'Memory Allocation Shards'}</span>
-             </div>
-             <span className="text-[10px] font-mono text-celestial-saturn opacity-50 tracking-widest whitespace-nowrap overflow-hidden w-32 border-b border-celestial-saturn/20">0xEF4A92F...01</span>
-           </div>
+      <div className="flex-1 bg-black/40 rounded-[2.5rem] border border-white/5 p-6 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10">
+          <div className="w-full h-full" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+        </div>
+        <div className="relative h-full flex items-end gap-1">
+          {data.map((val, i) => (
+            <motion.div
+              key={i}
+              initial={{ height: 0 }}
+              animate={{ height: `${val}%` }}
+              className="flex-1 bg-gradient-to-t from-celestial-saturn/40 to-celestial-saturn rounded-t-sm"
+              style={{ minWidth: '4px' }}
+            />
+          ))}
+        </div>
+      </div>
 
-           <div className="grid grid-cols-10 gap-2 flex-1 items-start content-start">
-              {[...Array(60)].map((_, i) => (
-                <motion.div 
-                  key={i}
-                  animate={{ 
-                    opacity: [0.2, 0.8, 0.2],
-                    backgroundColor: Math.random() > 0.85 ? '#ffcc00' : 'rgba(255,255,255,0.05)'
-                  }}
-                  transition={{ duration: 2 + Math.random() * 4, repeat: Infinity, delay: i * 0.05 }}
-                  className="aspect-square rounded shadow-inner"
-                />
-              ))}
-           </div>
-           
-           <div className="mt-auto pt-8 border-t border-white/5 flex justify-between items-end">
-              <div className="space-y-2">
-                 <div className="text-[9px] font-black text-white/20 uppercase tracking-widest">{t.activeMeshPeers || 'Active Mesh Peers Registered'}</div>
-                 <div className="flex gap-2 text-[10px] font-mono text-emerald-500">
-                    <span className="animate-pulse">●</span>
-                    <span className="font-black">LUMI_GATEWAY_NODE_MOBILE_0x2</span>
-                 </div>
+      <div className="bg-black/40 rounded-[2rem] border border-white/5 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Autonomy Runtime</div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-celestial-saturn">{tasks.filter(t => t.active).length} active</div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {tasks.map(task => (
+            <div key={task.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/70 truncate">{task.id}</div>
+                <div className="text-[9px] text-white/25 font-mono">{task.cron}{task.lastRun ? ` / ${new Date(task.lastRun).toLocaleTimeString()}` : ''}</div>
               </div>
-              <button className="h-10 bg-celestial-saturn/10 border border-celestial-saturn/20 text-celestial-saturn text-[10px] font-black uppercase tracking-widest px-6 rounded-2xl hover:bg-celestial-saturn hover:text-black transition-all active:scale-95 shadow-xl">
-                {t.forceCacheReshard || 'FORCE CACHE RE-SHARD'}
-              </button>
-           </div>
+              <div className={`w-2 h-2 rounded-full shrink-0 ${task.active ? 'bg-green-500 animate-pulse' : 'bg-white/20'}`} />
+            </div>
+          ))}
+          {tasks.length === 0 && (
+            <div className="col-span-2 text-[10px] text-white/25 font-bold uppercase tracking-widest">Scheduler not reporting yet</div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
 function Spotlight({ isOpen, onClose, onSelect, apps, t }: { isOpen: boolean; onClose: () => void; onSelect: (id: string) => void; apps: any[]; t: any }) {
   const [query, setQuery] = useState('');
   
@@ -468,7 +529,7 @@ function Spotlight({ isOpen, onClose, onSelect, apps, t }: { isOpen: boolean; on
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4"
+      className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4 pointer-events-auto"
       onClick={onClose}
     >
       <motion.div 
@@ -565,6 +626,7 @@ export function DesktopUI({
   const worldOpacity = useTransform(cameraZ, [0, -1000], [0.1, 1]);
   const worldScale = useTransform(cameraZ, [0, -1000], [2, 1]);
   const { isTauri } = usePlatform();
+  const { personalityId } = useApp();
 
   const [openWindows, setOpenWindows] = useState<string[]>(activeTab !== 'home' ? [activeTab] : []);
   const [minimizedWindows, setMinimizedWindows] = useState<string[]>([]);
@@ -581,13 +643,17 @@ export function DesktopUI({
   const [volume, setVolume] = useState(60);
   const [time, setTime] = useState(new Date());
   const [isWallpaperMode, setIsWallpaperMode] = useState(false);
+  const [isTrainingOpen, setIsTrainingOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return localStorage.getItem('lumi_onboarding_seen') !== 'true';
+  });
 
   const socket = useSocket();
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>();
   const [voices, setVoices] = useState<any[]>([]);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
 
-  const { callState, audioLevel, startCall, endCall, error: callError } = useVoiceCall({
+  const { callState, audioLevel, startCall, endCall, error: callError, transcript } = useVoiceCall({
     socket,
     onTranscript: (text, isFinal) => {
       if (isFinal) {
@@ -599,7 +665,7 @@ export function DesktopUI({
     }
   });
 
-  useEffect(() => {
+  const refreshVoices = () => {
     listVoices().then(data => {
       const all = [...data.cloned, ...data.premade];
       setVoices(all);
@@ -607,6 +673,10 @@ export function DesktopUI({
         setSelectedVoiceId(all[0].voiceId);
       }
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshVoices();
   }, [selectedVoiceId]);
 
   useEffect(() => {
@@ -617,7 +687,7 @@ export function DesktopUI({
     const nextMode = !isWallpaperMode;
     setIsWallpaperMode(nextMode);
     await systemService.setClickThrough(nextMode);
-    toast(nextMode ? 'Wallpaper Fusion Active' : 'Standard Focus Mode', {
+    toast(nextMode ? (t.wallpaperFusionActive || 'Wallpaper Fusion Active') : (t.standardFocusMode || 'Standard Focus Mode'), {
       icon: nextMode ? <Sparkles className="text-celestial-saturn" /> : <Box className="text-white/40" />
     });
   };
@@ -655,23 +725,39 @@ export function DesktopUI({
     setTerminalInput('');
 
     if (cmd === 'lumi --vision') {
-      setTerminalOutput(prev => [...prev, 'LUMI_WORLD_READY: The universe is decentralized. Every node is a heartbeat.']);
+      try {
+        const res = await fetch('/api/founder/vision');
+        const data = await res.json();
+        setTerminalOutput(prev => [...prev, `FOUNDER_VISION: ${data.vision || '(not set)'}`]);
+      } catch {
+        setTerminalOutput(prev => [...prev, 'ERROR: Could not fetch founder vision.']);
+      }
       return;
     }
     if (cmd === 'node --status') {
-      setTerminalOutput(prev => [...prev, 'SCANNING_MESH_NODES...', 'ACTIVE: 42,901', 'ORPHAN_NODES: 0', 'HEALTH: 100%']);
+      try {
+        const res = await fetch('/api/devices');
+        const data = await res.json();
+        const count = data.devices?.length || 0;
+        const online = data.devices?.filter((d: any) => d.status === 'online').length || 0;
+        setTerminalOutput(prev => [...prev, `SCANNING_MESH...`, `ONLINE: ${online}`, `TOTAL: ${count}`, `HEALTH: ${online > 0 ? 'OK' : 'NO_DEVICES'}`]);
+      } catch {
+        setTerminalOutput(prev => [...prev, 'SCANNING_MESH...', 'ERROR: Device API unavailable']);
+      }
       sounds.playSuccess();
       return;
     }
     if (cmd === 'shard --rebuild') {
-      setTerminalOutput(prev => [...prev, 'INITIATING_REBUILD_SEQUENCE...', 'PARSING_LOCAL_ENTROPY...', 'RE-BUILDING_SHARDS_0-4096...', 'SYNCHRONIZATION_COMPLETE.']);
-      sounds.playPulse();
-      // Visual feedback: toggle a state or trigger animation?
+      setTerminalOutput(prev => [...prev, 'REBUILD requires desktop app (Tauri) for local file system access.', 'On web, use the File Manager to manage uploads.']);
       return;
     }
 
     const result = await systemService.runCommand(cmd);
-    setTerminalOutput(prev => [...prev, result.output]);
+    if (result.error) {
+      setTerminalOutput(prev => [...prev, `ERROR: ${result.error}`]);
+    } else {
+      setTerminalOutput(prev => [...prev, result.output]);
+    }
   };
 
   useEffect(() => {
@@ -720,7 +806,13 @@ export function DesktopUI({
 
   const appIcons = [
     { id: 'home', label: t.neuralCore || 'Neural Core', icon: <Sparkles size={24} />, color: 'from-celestial-saturn to-yellow-600' },
+    { id: 'generate', label: t.incubationModule || 'Agent Factory', icon: <BrainCircuit size={24} />, color: 'from-celestial-saturn to-orange-500' },
     { id: 'fs', label: t.fileExplorer || 'Neural FS', icon: <Folder size={24} />, color: 'from-blue-400 to-indigo-500' },
+    { id: 'voice', label: t.voiceForge || 'Voice Forge', icon: <Headphones size={24} />, color: 'from-pink-500 to-rose-500' },
+    { id: 'memory', label: t.memory || 'Memory Core', icon: <FileText size={24} />, color: 'from-emerald-400 to-teal-600' },
+    { id: 'personality', label: t.personality || 'Personality Lab', icon: <UserIcon size={24} />, color: 'from-violet-500 to-fuchsia-600' },
+    { id: 'mcp', label: 'MCP Hub', icon: <Box size={24} />, color: 'from-cyan-500 to-blue-600' },
+    { id: 'sync', label: t.syncHub || 'Sync Hub', icon: <Wifi size={24} />, color: 'from-green-500 to-emerald-600' },
     { id: 'kernel', label: t.kernelMonitor || 'Kernel Monitor', icon: <Activity size={24} />, color: 'from-orange-500 to-red-600' },
     { id: 'protocols', label: t.lostProtocols || 'Lost Protocols', icon: <Disc size={24} />, color: 'from-purple-500 to-indigo-600' },
     { id: 'terminal', label: t.terminal || 'Neural Terminal', icon: <Rocket size={24} />, color: 'from-blue-600 to-cyan-400' },
@@ -768,7 +860,33 @@ export function DesktopUI({
     sync: { w: '1100px', h: '800px' },
     security: { w: '750px', h: '600px' },
     hardware: { w: '900px', h: '750px' },
-    voice: { w: '1000px', h: '800px' }
+    voice: { w: '1000px', h: '800px' },
+    memory: { w: '1050px', h: '760px' },
+    personality: { w: '1050px', h: '780px' },
+    market: { w: '980px', h: '720px' },
+    mcp: { w: '900px', h: '680px' }
+  };
+
+  const settingsWindowSections: Record<string, string> = {
+    voice: 'voice',
+    memory: 'memory',
+    personality: 'personality',
+    mcp: 'mcp',
+    sync: 'sync',
+  };
+
+  const getWindowSize = (windowId: string) => {
+    const settingsSectionForWindow = settingsWindowSections[windowId];
+    if (settingsSectionForWindow) {
+      return settingsSizes[settingsSectionForWindow] || { w: '900px', h: '700px' };
+    }
+    if (windowId === 'settings') return settingsSizes[settingsSection] || { w: '800px', h: '600px' };
+    if (windowId === 'music') return { w: '800px', h: '600px' };
+    if (windowId === 'claude') return { w: '800px', h: '600px' };
+    if (windowId === 'fs') return { w: '1000px', h: '700px' };
+    if (windowId === 'kernel') return { w: '900px', h: '700px' };
+    if (windowId === 'generate') return { w: '1050px', h: '760px' };
+    return { w: '900px', h: '700px' };
   };
 
   return (
@@ -1209,14 +1327,14 @@ export function DesktopUI({
           className="relative pointer-events-auto scale-75 opacity-90 transition-all"
         >
           <div className="relative flex flex-col items-center">
-            <LocalAgentSphere
-              t={t}
+            <LocalAgentSphere 
+              t={t} 
               sentiment={sphereSentiment}
               callState={callState}
               audioLevel={audioLevel}
               highPerformance={isTauri}
               isWallpaperMode={isWallpaperMode}
-              onStartCall={() => startCall(selectedVoiceId)}
+              onStartCall={() => startCall(selectedVoiceId, personalityId)}
               onEndCall={endCall}
               onMessage={(text) => {
                 setTerminalOutput(prev => [...prev, `[Voice Input]: ${text}`]);
@@ -1264,15 +1382,7 @@ export function DesktopUI({
                   </AnimatePresence>
                 </div>
 
-                <VoiceCallButton 
-                  callState={callState}
-                  audioLevel={audioLevel}
-                  onStart={() => startCall(selectedVoiceId)}
-                  onEnd={endCall}
-                  hasVoice={voices.length > 0}
-                />
-
-                {isTauri && (
+                <div className="flex gap-2">
                   <button
                     onClick={toggleWallpaperMode}
                     className={`h-10 px-4 rounded-xl border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl ${
@@ -1282,9 +1392,19 @@ export function DesktopUI({
                     }`}
                   >
                     <Zap size={14} className={isWallpaperMode ? 'animate-pulse' : ''} />
-                    {isWallpaperMode ? 'Fusion On' : 'Wallpaper Mode'}
+                    {isWallpaperMode ? (t.fusionActive || 'Fusion Active') : (t.wallpaperMode || 'Wallpaper Mode')}
                   </button>
-                )}
+                  
+                  {isTauri && (
+                    <button
+                      onClick={() => setIsTrainingOpen(true)}
+                      className="h-10 px-4 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2 hover:bg-white/10 hover:text-white transition-all shadow-xl"
+                    >
+                      <Plus size={14} />
+                      Train Voice
+                    </button>
+                  )}
+                </div>
               </div>
 
               <motion.div 
@@ -1310,6 +1430,26 @@ export function DesktopUI({
                        [1,2,3].map(i => <div key={i} className="w-1 h-1 rounded-full bg-celestial-saturn/40 animate-pulse" style={{ animationDelay: `${i*0.2}s` }} />)
                      )}
                    </div>
+
+                   <AnimatePresence>
+                     {callState !== 'idle' && transcript && (
+                       <motion.div
+                         initial={{ opacity: 0, y: 20 }}
+                         animate={{ opacity: 1, y: 0 }}
+                         exit={{ opacity: 0, scale: 0.9 }}
+                         className="mt-6 max-w-sm px-6 py-4 bg-white/5 backdrop-blur-3xl border border-white/10 rounded-2xl text-center shadow-2xl"
+                       >
+                         <p className="text-white/80 text-sm font-medium leading-relaxed italic">
+                           "{transcript}"
+                         </p>
+                         <div className="mt-2 flex justify-center gap-1">
+                            <div className="w-1 h-1 rounded-full bg-celestial-saturn animate-pulse" />
+                            <div className="w-1 h-1 rounded-full bg-celestial-saturn animate-pulse delay-75" />
+                            <div className="w-1 h-1 rounded-full bg-celestial-saturn animate-pulse delay-150" />
+                         </div>
+                       </motion.div>
+                     )}
+                   </AnimatePresence>
                 </div>
               </motion.div>
             </div>
@@ -1325,7 +1465,7 @@ export function DesktopUI({
                 label="Neural Vault" 
                 icon={<Shield size={24} />} 
                 colorClass="from-indigo-600 to-blue-500" 
-                onClick={() => toggleWindow('vault')} 
+                onClick={() => toggleWindow('fs')}
               />
               <DesktopIcon 
                 label="OS Kernel" 
@@ -1347,8 +1487,7 @@ export function DesktopUI({
                  </GlassCard>
                  <GlassCard className="p-4 rounded-[2rem] border-white/5 bg-black/20 flex flex-col items-center justify-center text-center gap-2">
                     <div className="text-celestial-glow"><Battery size={20} /></div>
-                    <div className="text-xl font-black text-white/80">98%</div>
-                    <span className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Optimized</span>
+                    <BatteryWidget />
                  </GlassCard>
               </div>
 
@@ -1362,14 +1501,14 @@ export function DesktopUI({
                 <div className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex justify-between items-center text-[10px] font-bold">
-                        <span className="text-white/40">Collective IQ Sync</span>
-                        <span className="text-celestial-saturn">0.89 TFLOPS</span>
+                        <span className="text-white/40">Compute Cores</span>
+                        <span className="text-celestial-saturn">{navigator.hardwareConcurrency || 1} Threads</span>
                       </div>
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <motion.div 
+                        <motion.div
                           initial={{ width: 0 }}
-                          animate={{ width: '85%' }}
-                          className="h-full bg-gradient-to-r from-celestial-mars to-celestial-saturn" 
+                          animate={{ width: `${Math.min((navigator.hardwareConcurrency || 1) * 12.5, 100)}%` }}
+                          className="h-full bg-gradient-to-r from-celestial-mars to-celestial-saturn"
                         />
                       </div>
                     </div>
@@ -1430,11 +1569,27 @@ export function DesktopUI({
         </div>
       </div>
 
-      {/* OS Windows Container */}
-      <div className="absolute inset-0 z-20 pointer-events-none">
+      <div className="absolute inset-0 z-[20] pointer-events-none">
+        <DesktopOnboarding 
+          isOpen={showOnboarding} 
+          onFinish={() => {
+            setShowOnboarding(false);
+            localStorage.setItem('lumi_onboarding_seen', 'true');
+          }}
+          t={t}
+        />
+        <VoiceTrainingDialog 
+          isOpen={isTrainingOpen} 
+          onClose={() => setIsTrainingOpen(false)} 
+          onSuccess={refreshVoices}
+        />
         <AnimatePresence>
           {openWindows.map(windowId => (
             <div key={windowId} className="pointer-events-auto h-full w-full absolute inset-0">
+              {(() => {
+                const size = getWindowSize(windowId);
+                const settingsSectionForWindow = settingsWindowSections[windowId];
+                return (
               <OSWindow
                 id={windowId}
                 title={appIcons.find(a => a.id === windowId)?.label || windowId}
@@ -1445,8 +1600,8 @@ export function DesktopUI({
                 onMinimize={(id) => setMinimizedWindows(prev => [...prev, id])}
                 onClose={() => closeWindow(windowId)}
                 colorClass={appIcons.find(a => a.id === windowId)?.color}
-                width={windowId === 'settings' ? (settingsSizes[settingsSection]?.w || '800px') : windowId === 'music' ? '800px' : windowId === 'claude' ? '800px' : windowId === 'fs' ? '1000px' : windowId === 'kernel' ? '900px' : '900px'}
-                height={windowId === 'settings' ? (settingsSizes[settingsSection]?.h || '600px') : windowId === 'music' ? '600px' : windowId === 'claude' ? '600px' : windowId === 'fs' ? '700px' : windowId === 'kernel' ? '700px' : '700px'}
+                width={size.w}
+                height={size.h}
                 t={t}
               >
                 <div className="p-8 h-full">
@@ -1455,39 +1610,44 @@ export function DesktopUI({
                   ) : windowId === 'kernel' ? (
                     <KernelMonitorApp t={t} />
                   ) : windowId === 'settings' ? (
-                    <Settings t={t} lang={lang} setLang={setLang} activeSection={settingsSection} onSectionChange={setSettingsSection} />
+                    <Settings t={t} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} activeSection={settingsSection} onSectionChange={setSettingsSection} />
+                  ) : settingsSectionForWindow ? (
+                    <Settings t={t} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} activeSection={settingsSectionForWindow} onSectionChange={setSettingsSection} />
                   ) : windowId === 'music' ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-12 animate-in zoom-in-95 duration-500">
+                    <div className="flex flex-col items-center justify-center h-full text-center space-y-8 animate-in zoom-in-95 duration-500">
                        <div className="relative">
                           <Disc size={120} className="text-celestial-saturn animate-[spin_8s_linear_infinite]" />
                           <Headphones size={40} className="absolute -bottom-4 -right-4 text-white p-2 bg-black rounded-full" />
                        </div>
-                       <div className="space-y-4">
-                          <h2 className="text-5xl font-black uppercase tracking-tighter text-white">Lumi Music Lab</h2>
-                          <p className="text-white/40 max-w-md mx-auto italic">Synchronize your frequencies. Neural integration with streaming providers is active in standby mode.</p>
+                       <div className="space-y-2">
+                          <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Media Center</h2>
+                          <p className="text-white/40 max-w-md text-sm">Voice synthesis, media playback, and audio settings.</p>
                        </div>
                        <div className="flex gap-4">
-                          <div className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-[#1DB954]">Spotify API</div>
-                          <div className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-[#FA243C]">Apple Music</div>
+                          <button onClick={() => { toggleWindow('settings'); setSettingsSection('voice'); }} className="px-6 py-3 bg-celestial-saturn/10 border border-celestial-saturn/30 rounded-2xl text-[10px] font-black uppercase tracking-widest text-celestial-saturn hover:bg-celestial-saturn/20 transition-all">
+                             Voice Forge
+                          </button>
+                          <button onClick={() => { toggleWindow('settings'); setSettingsSection('music'); }} className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white/40 hover:bg-white/10 transition-all">
+                             Media Services
+                          </button>
                        </div>
-                       <button onClick={() => toggleWindow('settings')} className="bg-celestial-saturn text-black font-black px-12 py-5 rounded-2xl hover:scale-105 active:scale-95 transition-all">
-                          Link Media Keys
-                       </button>
                     </div>
                   ) : windowId === 'claude' ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-12 animate-in zoom-in-95 duration-500">
-                       <MessagesSquare size={120} className="text-orange-500 animate-pulse" />
-                       <div className="space-y-4">
-                          <h2 className="text-5xl font-black uppercase tracking-tighter text-white">Claude Link</h2>
-                          <p className="text-white/40 max-w-md mx-auto italic">Unlock Anthropic's reasoning core. Use your own Claude 3.5 API key for prioritized kernel access.</p>
+                    <div className="flex flex-col items-center justify-center h-full text-center space-y-8 animate-in zoom-in-95 duration-500">
+                       <MessagesSquare size={80} className="text-orange-500" />
+                       <div className="space-y-2">
+                          <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Claude API</h2>
+                          <p className="text-white/40 max-w-md text-sm">Configure your Anthropic Claude API key for advanced reasoning.</p>
                        </div>
-                       <button onClick={() => toggleWindow('settings')} className="bg-orange-500 text-white font-black px-12 py-5 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_50px_rgba(249,115,22,0.3)]">
-                          Configure Claude API Key
+                       <button onClick={() => { toggleWindow('settings'); setSettingsSection('api'); }} className="bg-orange-500 text-white font-black px-10 py-4 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(249,115,22,0.3)]">
+                          Configure API Key
                        </button>
                     </div>
                   ) : renderTabContent(windowId)}
                 </div>
               </OSWindow>
+                );
+              })()}
             </div>
           ))}
         </AnimatePresence>
@@ -1497,5 +1657,31 @@ export function DesktopUI({
       </motion.div>
 
     </div>
+  );
+}
+
+function BatteryWidget() {
+  const [level, setLevel] = useState<number | null>(null);
+  const [charging, setCharging] = useState(false);
+
+  useEffect(() => {
+    const nav = navigator as any;
+    if (nav.getBattery) {
+      nav.getBattery().then((b: any) => {
+        setLevel(Math.round(b.level * 100));
+        setCharging(b.charging);
+        b.addEventListener('levelchange', () => setLevel(Math.round(b.level * 100)));
+        b.addEventListener('chargingchange', () => setCharging(b.charging));
+      }).catch(() => setLevel(null));
+    }
+  }, []);
+
+  if (level === null) return <><div className="text-xl font-black text-white/80">--%</div><span className="text-[8px] font-bold text-white/30 uppercase tracking-widest">Web Mode</span></>;
+
+  return (
+    <>
+      <div className="text-xl font-black text-white/80">{level}%</div>
+      <span className="text-[8px] font-bold text-white/30 uppercase tracking-widest">{charging ? 'Charging' : 'Battery'}</span>
+    </>
   );
 }

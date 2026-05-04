@@ -7,20 +7,25 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build && npm run build:server && npm run prepare:desktop",
+    "beforeBundleCommand": "node scripts/copy-webview2-dll.mjs"
   },
   "app": {
     "windows": [
       {
         "title": "Lumi OS",
-        "fullscreen": true,
-        "transparent": true,
-        "decorations": false,
-        "resizable": false,
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640,
+        "fullscreen": false,
+        "transparent": false,
+        "decorations": true,
+        "resizable": true,
         "center": true,
-        "alwaysOnBottom": true,
-        "skipTaskbar": true,
-        "shadow": false
+        "alwaysOnBottom": false,
+        "skipTaskbar": false,
+        "shadow": true
       }
     ],
     "security": {
@@ -29,16 +34,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
     "resources": [
-      "../dist-server/**/*",
-      "../gpt-sovits-src/**/*",
-      "../data/voice_training/**/*"
+      "../desktop-resources/dist-server/**/*",
+      "../desktop-resources/gpt-sovits-src/**/*",
+      "../desktop-resources/data/voice_training/**/*",
+      "../desktop-resources/WebView2Loader.dll"
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "./includes/include-dll.nsh"
       }
     }
   },

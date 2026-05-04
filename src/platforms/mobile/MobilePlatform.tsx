@@ -29,6 +29,10 @@ import {
 } from 'lucide-react';
 import { sounds } from '../../services/soundService';
 
+import { useSocket } from '../../hooks/useSocket';
+import { useVoiceCall } from '../../hooks/useVoiceCall';
+import { useApp } from '../../contexts/AppContext';
+
 interface MobilePlatformProps {
   t: any;
   user: any;
@@ -45,6 +49,15 @@ export function MobilePlatform({ t, user, lang, setLang, onLogin, onExit, render
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+
+  const socket = useSocket();
+  const { personalityId } = useApp();
+  const { callState, startCall, endCall } = useVoiceCall({
+    socket,
+    onResponse: (text) => {
+      // Logic to show response in mobile UI if needed
+    }
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -197,14 +210,27 @@ export function MobilePlatform({ t, user, lang, setLang, onLogin, onExit, render
             </motion.div>
 
             <div className="w-full space-y-4">
-               <button className="w-full p-6 glass-dark rounded-[2.5rem] border border-white/5 flex items-center justify-between group active:bg-white/5 transition-all">
+                <button 
+                  onClick={() => {
+                    triggerHaptic(10);
+                    if (callState === 'idle') startCall(undefined, personalityId);
+                    else endCall();
+                  }}
+                  className={`w-full p-6 glass-dark rounded-[2.5rem] border transition-all flex items-center justify-between group active:bg-white/5 ${
+                    callState !== 'idle' ? 'border-celestial-saturn/50 bg-celestial-saturn/5' : 'border-white/5'
+                  }`}
+                >
                   <div className="flex items-center gap-4">
-                     <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/40">
-                       <Mic size={20} />
+                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors ${
+                       callState !== 'idle' ? 'bg-celestial-saturn text-black' : 'bg-white/5 text-white/40'
+                     }`}>
+                       <Mic size={20} className={callState !== 'idle' ? 'animate-pulse' : ''} />
                      </div>
-                     <span className="text-xs font-black uppercase tracking-widest">Initialize Sync</span>
+                     <span className={`text-xs font-black uppercase tracking-widest ${callState !== 'idle' ? 'text-celestial-saturn' : ''}`}>
+                       {callState === 'idle' ? 'Initialize Sync' : 'Session Active'}
+                     </span>
                   </div>
-                  <ChevronDown className="text-white/20 -rotate-90" size={16} />
+                  <ChevronDown className={`text-white/20 -rotate-90 transition-transform ${callState !== 'idle' ? 'rotate-0' : ''}`} size={16} />
                </button>
             </div>
           </motion.div>
@@ -218,7 +244,7 @@ export function MobilePlatform({ t, user, lang, setLang, onLogin, onExit, render
             exit={{ opacity: 0, y: -20 }}
             className="h-full pt-4"
           >
-            {renderTabContent('agent-gen')}
+            {renderTabContent('generate')}
           </motion.div>
         );
       case 'agents':
@@ -236,7 +262,7 @@ export function MobilePlatform({ t, user, lang, setLang, onLogin, onExit, render
                  <Shield size={18} />
               </div>
             </div>
-            {renderTabContent('marketplace')}
+            {renderTabContent('ecosystem')}
           </motion.div>
         );
       case 'profile':
@@ -301,7 +327,7 @@ export function MobilePlatform({ t, user, lang, setLang, onLogin, onExit, render
       <div className="absolute inset-0 z-0 bg-[#020205]">
         <div className="absolute top-[-15%] left-[-10%] w-[80%] h-[50%] bg-celestial-saturn/5 blur-[120px] rounded-full" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[40%] bg-purple-900/10 blur-[100px] rounded-full" />
-        <div className="absolute inset-0 opacity-[0.15] brightness-50 bg-neutral-900/50" />
+        <div className="absolute inset-0 bg-transparent opacity-[0.15] brightness-50" />
       </div>
 
       {/* Main Viewport Container */}

@@ -91,5 +91,6 @@ export function registerCodeOpsTools(registry: ToolRegistry): void {
     },
     handler: codeExecutionHandler,
     permission: 'user',
+    securityLevel: 'confirm',
   });
 }

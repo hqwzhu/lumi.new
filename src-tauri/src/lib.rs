@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -105,20 +106,24 @@ fn run_command(command: String) -> CommandResult {
 }
 
 fn spawn_python(python_exe: &std::path::Path, api_py: &std::path::Path, work_dir: &std::path::Path) -> Option<Child> {
+    let normalized_python = normalize_unc(python_exe);
+    let normalized_api = normalize_unc(api_py);
+    let normalized_cwd = normalize_unc(work_dir);
     println!(
-        "[LumiOS] Starting GPT-SoVITS API: {} {}",
-        python_exe.display(),
-        api_py.display()
+        "[LumiOS] Starting GPT-SoVITS API: {} {} (cwd: {})",
+        normalized_python.display(),
+        normalized_api.display(),
+        normalized_cwd.display(),
     );
-    match Command::new(python_exe)
-        .arg(api_py)
+    match Command::new(normalized_python)
+        .arg(normalized_api)
         .arg("-a")
         .arg("127.0.0.1")
         .arg("-p")
         .arg("9880")
-        .arg("-d")
-        .arg("cuda")
-        .current_dir(work_dir)
+        .arg("-c")
+        .arg("GPT_SoVITS/configs/tts_infer.yaml")
+        .current_dir(normalized_cwd)
         .spawn()
     {
         Ok(child) => {
@@ -130,6 +135,50 @@ fn spawn_python(python_exe: &std::path::Path, api_py: &std::path::Path, work_dir
             None
         }
     }
+}
+
+fn resolve_resource_dir(resource_dir: &Path, name: &str) -> PathBuf {
+    let direct = resource_dir.join(name);
+    if direct.exists() {
+        return direct;
+    }
+
+    let staged = resource_dir.join("desktop-resources").join(name);
+    if staged.exists() {
+        return staged;
+    }
+
+    // NSIS bundles resources inside a _up_ subdirectory (update-ready layout)
+    let nsis = resource_dir.join("_up_").join("desktop-resources").join(name);
+    if nsis.exists() {
+        return nsis;
+    }
+
+    // Fallback: check relative to the executable's directory (some install scenarios)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let exe_relative = exe_dir.join(name);
+            if exe_relative.exists() {
+                return exe_relative;
+            }
+            let exe_nsis = exe_dir.join("_up_").join("desktop-resources").join(name);
+            if exe_nsis.exists() {
+                return exe_nsis;
+            }
+        }
+    }
+
+    direct
+}
+
+/// Strip Windows extended-length path prefix (\\?\) that external tools (Node.js) can't handle
+fn normalize_unc(path: &Path) -> &Path {
+    if let Some(s) = path.to_str() {
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return Path::new(stripped);
+        }
+    }
+    path
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -149,25 +198,49 @@ pub fn run() {
             set_ignore_cursor_events,
         ])
         .setup(|app| {
-            // Spawn Node.js backend
             let resource_dir = app
                 .path()
                 .resource_dir()
                 .unwrap_or_default();
-            let dist_server = resource_dir.join("dist-server");
+
+            // Ensure WebView2Loader.dll is alongside the EXE (Tauri v2 NSIS bundler puts it in resources)
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let dll_dest = exe_dir.join("WebView2Loader.dll");
+                    if !dll_dest.exists() {
+                        // resource_dir for NSIS already includes _up_, so just join desktop-resources
+                        let dll_src = resource_dir
+                            .join("desktop-resources")
+                            .join("WebView2Loader.dll");
+                        if dll_src.exists() {
+                            println!("[LumiOS] Copying WebView2Loader.dll to EXE directory");
+                            let _ = std::fs::copy(&dll_src, &dll_dest);
+                        }
+                    }
+                }
+            }
+
+            // Spawn Node.js backend
+            let dist_server = resolve_resource_dir(&resource_dir, "dist-server");
             let node_exe = dist_server.join("node.exe");
             let server_js = dist_server.join("entry.cjs");
-            let server_mjs = dist_server.join("server.mjs");
+            let server_bundle = dist_server.join("server.mjs");
 
-            if node_exe.exists() && server_js.exists() && server_mjs.exists() {
+            if node_exe.exists() && server_js.exists() && server_bundle.exists() {
+                let normalized_node = normalize_unc(&node_exe);
+                let normalized_entry = normalize_unc(&server_js);
+                let normalized_cwd = normalize_unc(&dist_server);
                 println!(
-                    "[LumiOS] Starting backend: {} {}",
-                    node_exe.display(),
-                    server_js.display()
+                    "[LumiOS] Starting backend: {} {} (cwd: {})",
+                    normalized_node.display(),
+                    normalized_entry.display(),
+                    normalized_cwd.display(),
                 );
-                match Command::new(&node_exe)
-                    .arg(&server_js)
-                    .current_dir(&dist_server)
+                match Command::new(normalized_node)
+                    .arg(normalized_entry)
+                    .env("LUMI_DESKTOP", "1")
+                    .env("HOST", "127.0.0.1")
+                    .current_dir(normalized_cwd)
                     .spawn()
                 {
                     Ok(child) => {
@@ -184,22 +257,22 @@ pub fn run() {
                     "[LumiOS] Backend not found. node.exe: {}, entry.cjs: {}, server.mjs: {}",
                     node_exe.exists(),
                     server_js.exists(),
-                    server_mjs.exists()
+                    server_bundle.exists()
                 );
             }
 
             // Spawn GPT-SoVITS Python API server
-            let gpt_sovits_dir = resource_dir.join("gpt-sovits-api");
+            let gpt_sovits_dir = resolve_resource_dir(&resource_dir, "gpt-sovits-src");
             let python_exe = gpt_sovits_dir.join("venv/Scripts/python.exe");
-            let api_py = gpt_sovits_dir.join("api.py");
+            let api_py = gpt_sovits_dir.join("api_v2.py");
             // Also check development paths
             let dev_python = std::path::PathBuf::from("../gpt-sovits-src/venv/Scripts/python.exe");
-            let dev_api = std::path::PathBuf::from("../gpt-sovits-src/api.py");
+            let dev_api = std::path::PathBuf::from("../gpt-sovits-src/api_v2.py");
 
             let python_child = if python_exe.exists() && api_py.exists() {
-                spawn_python(&python_exe, &api_py, &gpt_sovits_dir)
+                spawn_python(&python_exe, &api_py, normalize_unc(&gpt_sovits_dir))
             } else if dev_python.exists() && dev_api.exists() {
-                spawn_python(&dev_python, &dev_api, &std::path::PathBuf::from("../gpt-sovits-src"))
+                spawn_python(&dev_python, &dev_api, Path::new("../gpt-sovits-src"))
             } else {
                 eprintln!(
                     "[LumiOS] GPT-SoVITS API not found at {} or {}",

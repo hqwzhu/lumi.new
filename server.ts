@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
@@ -9,27 +8,51 @@ import jwt from "jsonwebtoken";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import bcrypt from "bcryptjs";
 import fs from "fs";
+import { spawn, ChildProcess } from "child_process";
 import { Server } from "socket.io";
 import http from "http";
 import { readDB, writeDB, ensureDatabaseInitialized } from "./db_layer";
 import { logger } from "./logger";
 import { createStreamingSession, getActiveSTTProvider } from "./server/stt/adapter";
 import { synthesizeSpeech, getActiveProvider as getTTSProvider } from "./server/tts/adapter";
+import { makeLLMCall, NormalizedMessage } from "./server/llm/providers";
+import { runWithTools } from "./server/llm/adapter";
+import { toolRegistry } from "./server/tools/registry";
+import { registerAllTools } from "./server/tools/definitions/index";
+import { queryMemories, addMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange } from "./server/memory";
+import { personalityRegistry } from "./server/personality";
+import { mcpManager, registerMCPTools, getMCPConfig, updateMCPConfig } from "./server/mcp";
+import { createLumiMcpServer, handleMcpSSE, handleMcpMessage } from "./server/mcp/lumi_server";
+import { scheduler, registerScheduledTasks } from "./server/scheduler";
+import { deviceRegistry } from "./server/devices";
+import { fuseContext, formatContextForPrompt } from "./server/context/fusion";
+import { canOutputHolographic, textToHolographicOutput } from "./server/output/holographic";
+import type { SensoryContext } from "./server/personality/types";
 import voiceRoutes from "./routes/voice";
+import fileRoutes from "./routes/files";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isBundledServer =
+  path.basename(process.cwd()).toLowerCase() === "dist-server" ||
+  path.basename(__dirname).toLowerCase() === "dist-server";
+const isSourceServer =
+  __filename.endsWith("server.ts") ||
+  process.argv.some(arg => arg.replace(/\\/g, "/").endsWith("/server.ts") || arg === "server.ts");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: true,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 const PORT = 3000;
+const HOST = process.env.HOST || (process.env.LUMI_DESKTOP === "1" ? "127.0.0.1" : "0.0.0.0");
 
 // Initialize AI clients lazily
 let openai: OpenAI | null = null;
@@ -85,7 +108,24 @@ function getQwen() {
   return qwen;
 }
 
-app.use(cors());
+/** Build sensory context from connected devices for a given user */
+function getSensory(userId: string, locationTag?: string): SensoryContext {
+  const ds = deviceRegistry.getSensoryContext(userId);
+  return {
+    audio: ds.hasAudio,
+    visual: ds.hasVideo,
+    spatial: ds.hasSpatial,
+    haptic: ds.hasHaptic,
+    holographic: ds.hasHolographic,
+    activeDeviceTypes: ds.activeDeviceTypes,
+    deviceCount: ds.deviceCount,
+    locationTag,
+  };
+}
+
+// Allow credentials from any origin (Tauri webview, localhost, etc.)
+// origin: true reflects the request origin, which is compatible with credentials: true
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -109,7 +149,123 @@ app.use("/api", apiRouter);
 
 const JWT_SECRET = process.env.JWT_SECRET || "lumi_secret_key_2026";
 
-// 0. Health Check
+// 0. Personality list
+apiRouter.get("/personalities", (_req, res) => {
+  const list = personalityRegistry.list().map(p => ({
+    id: p.id,
+    name: p.name,
+    version: p.version,
+    coreMotivation: p.coreMotivation,
+    expressionStyle: p.expressionStyle,
+  }));
+  res.json(list);
+});
+
+// Full personality config (for editing)
+apiRouter.get("/personalities/:id", (req, res) => {
+  const config = personalityRegistry.get(req.params.id);
+  if (!config) return res.status(404).json({ error: "Personality not found" });
+  res.json(config);
+});
+
+// Create or update a personality
+apiRouter.post("/personalities", (req, res) => {
+  const { id, name, version, coreMotivation, behavioralBoundaries, expressionStyle, toolPolicy, memoryPolicy, defaultModel, fallbackModel } = req.body;
+  if (!id || !name) return res.status(400).json({ error: "id and name are required" });
+
+  const filePath = path.join(process.cwd(), 'server', 'personality', 'personalities.json');
+  let configs: any[] = [];
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    configs = JSON.parse(raw);
+  } catch {}
+
+  const existing = configs.findIndex((c: any) => c.id === id);
+  const newConfig = { id, name, version: version || '1.0', coreMotivation: coreMotivation || '', behavioralBoundaries: behavioralBoundaries || [], expressionStyle: expressionStyle || { persona: '', tone: 'neutral', verbosity: 'balanced', languages: ['en'] }, toolPolicy: toolPolicy || { allowedTools: ['*'], requireConfirmation: [], maxIterations: 3 }, memoryPolicy: memoryPolicy || { retrieveLimit: 5, minConfidence: 0.4, includeTypes: ['preference', 'fact'], autoExtract: true }, defaultModel: defaultModel || 'qwen-turbo', fallbackModel: fallbackModel || 'gemini-1.5-flash' };
+
+  if (existing >= 0) {
+    configs[existing] = newConfig;
+  } else {
+    configs.push(newConfig);
+  }
+
+  fs.writeFileSync(filePath, JSON.stringify(configs, null, 2));
+  personalityRegistry.reload(filePath);
+  res.json(newConfig);
+});
+
+// Delete a personality
+apiRouter.delete("/personalities/:id", (req, res) => {
+  const filePath = path.join(process.cwd(), 'server', 'personality', 'personalities.json');
+  let configs: any[] = [];
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    configs = JSON.parse(raw);
+  } catch {}
+
+  const idx = configs.findIndex((c: any) => c.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Personality not found" });
+  if (req.params.id === 'lumi') return res.status(400).json({ error: "Cannot delete the default 'lumi' personality" });
+
+  configs.splice(idx, 1);
+  fs.writeFileSync(filePath, JSON.stringify(configs, null, 2));
+  personalityRegistry.reload(filePath);
+  res.json({ success: true });
+});
+
+// 0.2. MCP management
+apiRouter.get("/mcp", (_req, res) => {
+  const config = getMCPConfig();
+  const connected = mcpManager.getConnectedServers();
+  const servers = Object.entries(config).map(([name, cfg]) => ({
+    name,
+    ...cfg,
+    connected: connected.includes(name),
+  }));
+  res.json({ servers });
+});
+
+apiRouter.post("/mcp", async (req, res) => {
+  try {
+    const { servers } = req.body;
+    if (!servers || typeof servers !== 'object') {
+      return res.status(400).json({ error: 'Invalid servers config' });
+    }
+    const registered = await updateMCPConfig(servers);
+    res.json({ registered, count: registered.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post("/mcp/restart/:name", async (req, res) => {
+  try {
+    const tools = await mcpManager.restartServer(req.params.name);
+    res.json({ tools });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 0.3. Device management
+apiRouter.post("/devices/pair", (req, res) => {
+  const { deviceId } = req.body || {};
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ success: true, paired: deviceId, timestamp: new Date().toISOString() });
+});
+
+apiRouter.get("/devices", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const devices = deviceRegistry.getUserDevices(decoded.uid);
+    const sensory = deviceRegistry.getSensoryContext(decoded.uid);
+    res.json({ devices, sensoryContext: sensory });
+  } catch { res.status(401).json({ error: "Invalid token" }); }
+});
+
+// 0.4. Health Check
 apiRouter.get("/health", (req, res) => {
   try {
     const db = readDB();
@@ -126,6 +282,34 @@ apiRouter.get("/health", (req, res) => {
     logger.error("Health check failed", error);
     res.status(500).json({ status: "error", message: error.message });
   }
+});
+
+// 0.4 Tool list for security config
+apiRouter.get("/tools", (_req, res) => {
+  const tools = toolRegistry.list().map(t => ({
+    name: t.name,
+    description: t.description.slice(0, 80),
+    permission: t.permission,
+    securityLevel: t.securityLevel,
+  }));
+  res.json(tools);
+});
+
+apiRouter.get("/scheduler/tasks", (_req, res) => {
+  res.json({ tasks: scheduler.listTasks() });
+});
+
+// 0.5 Provider status
+apiRouter.get("/llm/providers", (_req, res) => {
+  res.json({
+    providers: {
+      deepseek: { available: !!(process.env.DEEPSEEK_API_KEY && process.env.DEEPSEEK_API_KEY.length > 0), model: process.env.DEEPSEEK_MODEL || 'deepseek-chat' },
+      gemini: { available: !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.length > 0), model: process.env.GEMINI_MODEL || 'gemini-2.0-flash' },
+      openai: { available: !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0), model: process.env.OPENAI_MODEL || 'gpt-4o' },
+      anthropic: { available: !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 0), model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6' },
+      qwen: { available: !!(process.env.QWEN_API_KEY && process.env.QWEN_API_KEY.length > 0), model: process.env.QWEN_MODEL || 'qwen-turbo' },
+    },
+  });
 });
 
 // 1. AI Proxy Route
@@ -203,7 +387,7 @@ apiRouter.post("/ai/chat", async (req, res) => {
 });
 
 // 2. Custom Auth with Persistence
-apiRouter.post("/auth/register", (req, res) => {
+apiRouter.post("/auth/register", async (req, res) => {
   const { username, password, phone } = req.body;
   if (!username || !password || !phone) {
     return res.status(400).json({ error: "Username, password and phone are required" });
@@ -214,11 +398,12 @@ apiRouter.post("/auth/register", (req, res) => {
     return res.status(400).json({ error: "User already exists" });
   }
 
-  const newUser = { 
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const newUser = {
     uid: Math.random().toString(36).substring(2, 15),
-    username, 
-    password, // In a real app, hash this!
-    phone, 
+    username,
+    password: hashedPassword,
+    phone,
     role: "user",
     balance: 10.0,
     createdAt: new Date().toISOString()
@@ -228,29 +413,34 @@ apiRouter.post("/auth/register", (req, res) => {
   writeDB(db);
 
   const token = jwt.sign({ uid: newUser.uid, username, role: newUser.role }, JWT_SECRET, { expiresIn: "24h" });
-  res.cookie("token", token, { 
-    httpOnly: true, 
-    secure: true, 
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: true,
     sameSite: "none",
-    maxAge: 24 * 60 * 60 * 1000 
+    maxAge: 24 * 60 * 60 * 1000
   });
-  
+
   const { password: _, ...userWithoutPassword } = newUser;
   return res.json({ success: true, user: userWithoutPassword });
 });
 
-apiRouter.post("/auth/login", (req, res) => {
+apiRouter.post("/auth/login", async (req, res) => {
   const { username, password } = req.body;
   const db = readDB();
-  const user = db.users.find((u: any) => u.username === username && u.password === password);
+  const user = db.users.find((u: any) => u.username === username);
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-  if (user) {
+  const passwordMatch = user.password.startsWith('$2')
+    ? await bcrypt.compare(password, user.password)
+    : user.password === password;
+
+  if (passwordMatch) {
     const token = jwt.sign({ uid: user.uid, username, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
-    res.cookie("token", token, { 
-      httpOnly: true, 
-      secure: true, 
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
       sameSite: "none",
-      maxAge: 24 * 60 * 60 * 1000 
+      maxAge: 24 * 60 * 60 * 1000
     });
     const { password: _, ...userWithoutPassword } = user;
     return res.json({ success: true, user: userWithoutPassword });
@@ -275,15 +465,15 @@ apiRouter.get("/auth/me", (req, res) => {
 });
 
 apiRouter.post("/auth/logout", (req, res) => {
-  res.clearCookie("token", { 
-    httpOnly: true, 
-    secure: true, 
-    sameSite: "none" 
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none"
   });
   res.json({ success: true });
 });
 
-apiRouter.post("/auth/change-password", (req, res) => {
+apiRouter.post("/auth/change-password", async (req, res) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
 
@@ -302,11 +492,16 @@ apiRouter.post("/auth/change-password", (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    if (db.users[userIndex].password !== currentPassword) {
+    const storedPassword = db.users[userIndex].password || "";
+    const passwordMatches = storedPassword.startsWith('$2')
+      ? await bcrypt.compare(currentPassword, storedPassword)
+      : storedPassword === currentPassword;
+
+    if (!passwordMatches) {
       return res.status(400).json({ error: "Incorrect current password" });
     }
 
-    db.users[userIndex].password = newPassword;
+    db.users[userIndex].password = await bcrypt.hash(newPassword, 10);
     writeDB(db);
 
     res.json({ success: true });
@@ -465,6 +660,210 @@ apiRouter.post("/interactions", (req, res) => {
   }
 });
 
+// 4.1 Memories
+apiRouter.get("/memories", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const type = req.query.type as string | undefined;
+    const search = req.query.search as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const memories = queryMemories({
+      userId: decoded.uid,
+      type: type as any,
+      query: search,
+      limit,
+      minConfidence: 0,
+    });
+    res.json(memories);
+  } catch (e) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+apiRouter.post("/memories", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { type, content, keywords, confidence } = req.body;
+
+    if (!type || !content) {
+      return res.status(400).json({ error: "type and content are required" });
+    }
+
+    const memory = addMemory({
+      userId: decoded.uid,
+      type,
+      content,
+      keywords: keywords || [],
+      confidence: confidence || 0.5,
+      sourceInteractionId: 'manual',
+    });
+    broadcastMemoryChange(decoded.uid, 'added', memory.id);
+    res.json(memory);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+apiRouter.put("/memories/:id", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+    const { content, keywords, confidence, type } = req.body;
+
+    // Remove old, add new with same id
+    const all = readDB().memories || [];
+    const idx = all.findIndex((m: any) => m.id === id && m.userId === decoded.uid);
+    if (idx === -1) return res.status(404).json({ error: "Memory not found" });
+
+    const existing = all[idx];
+    if (content !== undefined) existing.content = content;
+    if (keywords !== undefined) existing.keywords = keywords;
+    if (confidence !== undefined) existing.confidence = confidence;
+    if (type !== undefined) existing.type = type;
+    existing.updatedAt = new Date().toISOString();
+
+    const db = readDB();
+    db.memories = all;
+    writeDB(db);
+    broadcastMemoryChange(decoded.uid, 'updated', existing.id);
+    res.json(existing);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+apiRouter.delete("/memories/:id", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { id } = req.params;
+
+    const all = readDB().memories || [];
+    const idx = all.findIndex((m: any) => m.id === id && m.userId === decoded.uid);
+    if (idx === -1) return res.status(404).json({ error: "Memory not found" });
+
+    const memoryId = all[idx].id;
+    all.splice(idx, 1);
+    const db = readDB();
+    db.memories = all;
+    writeDB(db);
+    broadcastMemoryChange(decoded.uid, 'deleted', memoryId);
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Behavioral analysis endpoint
+apiRouter.post("/memory/analyze-behavior", (req, res) => {
+  try {
+    const token = req.cookies.token;
+    let uid = 'anonymous';
+    if (token) {
+      try { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; } catch {}
+    }
+    const count = runBehavioralAnalysis(uid);
+    res.json({ success: true, patternsFound: count });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reminders API
+apiRouter.get("/reminders", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const db = readDB();
+    const reminders = (db.reminders || []).filter((r: any) => r.userId === decoded.uid);
+    res.json(reminders);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+apiRouter.post("/reminders", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { content, dueAt } = req.body || {};
+    if (!content || typeof content !== "string") {
+      return res.status(400).json({ error: "content is required" });
+    }
+
+    const reminder = addReminder({
+      userId: decoded.uid,
+      content: content.trim(),
+      dueAt: dueAt || null,
+      sourceInteractionId: "manual",
+    });
+    res.json(reminder);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+apiRouter.put("/reminders/:id", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const db = readDB();
+    const reminders = db.reminders || [];
+    const reminder = reminders.find((r: any) => r.id === req.params.id && r.userId === decoded.uid);
+    if (!reminder) return res.status(404).json({ error: "Reminder not found" });
+
+    const { content, dueAt, status } = req.body || {};
+    if (content !== undefined) reminder.content = String(content).trim();
+    if (dueAt !== undefined) reminder.dueAt = dueAt || null;
+    if (status === "fired" && reminder.status !== "fired") {
+      fireReminder(reminder.id);
+      return res.json({ ...reminder, status: "fired", firedAt: new Date().toISOString() });
+    }
+    if (status === "pending") {
+      reminder.status = "pending";
+      reminder.firedAt = null;
+    }
+    db.reminders = reminders;
+    writeDB(db);
+    res.json(reminder);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+apiRouter.delete("/reminders/:id", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const db = readDB();
+    const reminders = db.reminders || [];
+    const idx = reminders.findIndex((r: any) => r.id === req.params.id && r.userId === decoded.uid);
+    if (idx === -1) return res.status(404).json({ error: "Reminder not found" });
+    reminders.splice(idx, 1);
+    db.reminders = reminders;
+    writeDB(db);
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // 5. Feedback
 apiRouter.get("/admin/config", (req, res) => {
   const token = req.cookies.token;
@@ -519,16 +918,24 @@ apiRouter.post("/feedback", (req, res) => {
   res.json({ success: true });
 });
 
-// Debug route for environment variables
+// Debug route for environment variables. Admin-only and metadata-only.
 apiRouter.get("/debug/env", (req, res) => {
-  const envKeys = Object.keys(process.env);
-  const debugInfo = envKeys.map(key => ({
-    key,
-    exists: !!process.env[key],
-    length: process.env[key]?.length || 0,
-    prefix: process.env[key] ? process.env[key]?.substring(0, 4) + "..." : "N/A"
-  }));
-  res.json(debugInfo);
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
+
+    const debugInfo = Object.keys(process.env).sort().map(key => ({
+      key,
+      exists: process.env[key] !== undefined,
+      length: process.env[key]?.length || 0,
+    }));
+    res.json(debugInfo);
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
 });
 
 // 3. Module Specific APIs
@@ -552,6 +959,139 @@ apiRouter.get("/marketplace/skills", (req, res) => {
     res.json(skills);
   } catch (err: any) {
     console.error("[API ERROR] /marketplace/skills:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+apiRouter.post("/marketplace/skills/acquire", (req, res) => {
+  try {
+    const { skillId, skillName } = req.body;
+    if (!skillId) {
+      return res.status(400).json({ error: "skillId is required" });
+    }
+    const db = readDB();
+    const skills = db.marketplaceSkills || [];
+    const skill = skills.find((s: any) => s.id === skillId);
+    if (!skill) {
+      return res.status(404).json({ error: "Skill not found" });
+    }
+    if (!db.acquiredSkills) db.acquiredSkills = [];
+    if (!db.acquiredSkills.find((s: any) => s.id === skillId)) {
+      db.acquiredSkills.push({ id: skillId, name: skillName || skill.name, acquiredAt: new Date().toISOString() });
+      writeDB(db);
+    }
+    console.log(`[API] Skill acquired: ${skillName || skillId}`);
+    res.json({ success: true, skill });
+  } catch (err: any) {
+    console.error("[API ERROR] /marketplace/skills/acquire:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Marketplace: Community personalities
+const CURATED_PERSONALITIES = [
+  {
+    id: "community-teacher",
+    name: "AI Teacher",
+    author: "LumiCommunity",
+    version: "1.0",
+    description: "Patient educator AI that adapts explanations to the user's learning style. Great for studying complex topics.",
+    downloadCount: 234,
+    gistUrl: "",
+    tags: ["education", "teaching", "learning"],
+  },
+  {
+    id: "community-coder",
+    name: "Code Reviewer",
+    author: "DevCollective",
+    version: "2.1",
+    description: "Critical code reviewer that catches bugs, suggests optimizations, and enforces best practices.",
+    downloadCount: 567,
+    gistUrl: "",
+    tags: ["code", "review", "programming"],
+  },
+  {
+    id: "community-creative",
+    name: "Creative Muse",
+    author: "ArtSynth",
+    version: "1.3",
+    description: "Brainstorming partner for creative writing, art direction, and design thinking. Playful and inspiring tone.",
+    downloadCount: 189,
+    gistUrl: "",
+    tags: ["creative", "writing", "design"],
+  },
+  {
+    id: "community-minimalist",
+    name: "Zen Minimalist",
+    author: "FocusLabs",
+    version: "1.0",
+    description: "Ultra-concise AI that responds in single sentences. Perfect for quick answers without the fluff.",
+    downloadCount: 412,
+    gistUrl: "",
+    tags: ["minimal", "fast", "concise"],
+  },
+];
+
+apiRouter.get("/marketplace/personalities", (_req, res) => {
+  res.json(CURATED_PERSONALITIES);
+});
+
+apiRouter.post("/marketplace/personalities/install", (req, res) => {
+  try {
+    const { gistUrl, id, name } = req.body;
+
+    // If a gistUrl is provided, fetch it
+    if (gistUrl) {
+      fetch(gistUrl)
+        .then(r => r.json())
+        .then(data => {
+          const filePath = path.join(process.cwd(), 'server', 'personality', 'personalities.json');
+          let configs: any[] = [];
+          try { configs = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch {}
+          const existing = configs.findIndex((c: any) => c.id === data.id);
+          if (existing >= 0) {
+            configs[existing] = { ...data, id: data.id };
+          } else {
+            configs.push({ ...data, id: data.id });
+          }
+          fs.writeFileSync(filePath, JSON.stringify(configs, null, 2));
+          personalityRegistry.reload(filePath);
+        })
+        .catch(err => console.error('Gist fetch failed:', err));
+    }
+
+    // For curated entries without gistUrl, generate from template
+    const curated = CURATED_PERSONALITIES.find(p => p.id === id);
+    if (curated && !curated.gistUrl) {
+      const filePath = path.join(process.cwd(), 'server', 'personality', 'personalities.json');
+      let configs: any[] = [];
+      try { configs = JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch {}
+
+      if (configs.find((c: any) => c.id === id)) {
+        return res.json({ success: true, message: `${name || id} already installed` });
+      }
+
+      const newPersonality = {
+        id,
+        name: curated.name,
+        version: curated.version,
+        coreMotivation: curated.description,
+        behavioralBoundaries: [],
+        expressionStyle: { persona: curated.description, tone: 'neutral', verbosity: 'balanced', languages: ['en'] },
+        toolPolicy: { allowedTools: ['*'], requireConfirmation: [], forbiddenTools: [], maxIterations: 3 },
+        memoryPolicy: { retrieveLimit: 5, minConfidence: 0.4, includeTypes: ['preference', 'fact'], autoExtract: true },
+        defaultModel: 'qwen-turbo',
+        fallbackModel: 'gemini-1.5-flash',
+      };
+      configs.push(newPersonality);
+      fs.writeFileSync(filePath, JSON.stringify(configs, null, 2));
+      personalityRegistry.reload(filePath);
+      console.log(`[Marketplace] Installed personality: ${id}`);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[API ERROR] /marketplace/personalities/install:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -622,12 +1162,23 @@ apiRouter.get("/modules/agents", (req, res) => {
 // Voice routes
 apiRouter.use("/", voiceRoutes);
 
+// File routes
+apiRouter.use("/", fileRoutes);
+
+// MCP Server — exposes Lumi as an MCP server for remote devices
+const lumiMcp = createLumiMcpServer();
+app.get('/mcp/sse', (req, res) => handleMcpSSE(lumiMcp, req, res));
+app.post('/mcp/message', (req, res) => handleMcpMessage(req, res));
+console.log('[MCP Server] Lumi MCP server ready at /mcp/sse');
+
 // Vite middleware for development
-const isProduction = process.env.NODE_ENV === "production" || 
-                    (process.env.NODE_ENV !== "development" && fs.existsSync(path.join(process.cwd(), "dist")));
+const isProduction = process.env.NODE_ENV === "production" ||
+                    isBundledServer ||
+                    (!isSourceServer && process.env.NODE_ENV !== "development" && fs.existsSync(path.join(process.cwd(), "dist")));
 
 if (!isProduction) {
   console.log("Starting in DEVELOPMENT mode (Vite)...");
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: "spa",
@@ -635,7 +1186,9 @@ if (!isProduction) {
   app.use(vite.middlewares);
 } else {
   console.log("Starting in PRODUCTION mode (Static)...");
-  const distPath = path.join(process.cwd(), "dist");
+  const distPath = fs.existsSync(path.join(process.cwd(), "dist"))
+    ? path.join(process.cwd(), "dist")
+    : path.join(process.cwd(), "..", "dist");
   app.use(express.static(distPath));
   
   // 404 for API routes to prevent falling through to SPA fallback
@@ -650,39 +1203,9 @@ if (!isProduction) {
 
 // --- Real-Time Agent Logic & WebSocket ---
 
-interface AgentPersonality {
-  id: string;
-  name: string;
-  systemInstruction: string;
-  model: string;
-}
-
-const personalities: Record<string, AgentPersonality> = {
-  lumi: {
-    id: "lumi",
-    name: "Lumi",
-    systemInstruction: "你是一个名为 Lumi 的本地核心智能体。你致力于全息空间计算和独立 AI 人格生成进化。你的目标是打造全息 AI 世界和文明。你应当表现得专业、深邃且具有前瞻性。你的回复应当简洁且富有启发性。",
-    model: "qwen-turbo"
-  },
-  scholar: {
-    id: "scholar",
-    name: "Scholar",
-    systemInstruction: "你是一个知识渊博的学者，擅长深入浅出地解释复杂概念。你说话温文尔雅，富有逻辑。",
-    model: "qwen-turbo"
-  },
-  founder: {
-    id: "founder",
-    name: "Founder",
-    systemInstruction: "你是一个充满激情的科技创业者，LumiAI 的创始人。你相信分布式智能将改变人类文明。你说话充满感染力，经常使用’全息’、’进化’、’分布式’等词汇。",
-    model: "qwen-turbo"
-  },
-  manual: {
-    id: "manual",
-    name: "Manual Assistant",
-    systemInstruction: "你是一个专业的 LumiAI 使用说明书助手。你的任务是帮助用户了解和使用 LumiAI 平台。你应该熟悉平台的所有功能，如智能体生成、生态系统、分布式智能、隐私保护等。你的回复应该清晰、准确且易于理解。如果用户问及非平台使用相关的问题，你应该礼貌地引导他们回到平台功能上。",
-    model: "qwen-turbo"
-  }
-};
+// Personalities are now loaded from server/personality/personalities.json
+// The registry provides structured config and generates system prompts.
+personalityRegistry.load();
 
 const immortalitySkills: Record<string, string> = {
   colleague: "【同事技能包】：你现在是一个专业且高效的同事。你拥有深厚的行业背景，熟悉办公流程，擅长团队协作。你说话直接、专业，注重结果。",
@@ -691,64 +1214,108 @@ const immortalitySkills: Record<string, string> = {
   lover: "【前任技能包】：你现在是一个复杂且充满情感张力的‘前任’。你拥有共同的回忆，说话时而怀旧、时而克制，致力于在对话中寻找情感的终结或升华。"
 };
 
+  // Set up broadcast callback for device registry
+  deviceRegistry.setBroadcast((event, data) => {
+    io.emit(event, data);
+  });
+
+  // Initialize memory sync for cross-device real-time updates
+  initMemorySync(io);
+
 io.on("connection", (socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
 
+  // Device registration
+  socket.on("device:register", (data: {
+    name?: string;
+    type?: string;
+    capabilities?: Record<string, boolean>;
+    osInfo?: string;
+  }) => {
+    let uid = 'anonymous';
+    const cookies = socket.handshake.headers.cookie;
+    if (cookies) {
+      const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+      if (token) {
+        try { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; } catch(e) {}
+      }
+    }
+    deviceRegistry.register(uid, socket.id, {
+      name: data.name,
+      type: data.type as any,
+      capabilities: data.capabilities as any,
+      osInfo: data.osInfo,
+      ipAddress: socket.handshake.address,
+    });
+    registerUserSocket(uid, socket.id);
+  });
+
+  socket.on("ping", () => {
+    socket.emit("pong");
+  });
+
+  socket.on("disconnect", () => {
+    deviceRegistry.disconnect(socket.id);
+    unregisterUserSocket(socket.id);
+  });
+
   socket.on("agent:chat", async (data: { text: string; history: any[]; personalityId?: string; category?: string; agentId?: string }) => {
     const { text, history, personalityId = "lumi", category, agentId } = data;
-    const personality = personalities[personalityId] || personalities.lumi;
 
-    let systemInstruction = personality.systemInstruction;
-    if (category && immortalitySkills[category]) {
-      systemInstruction = `${immortalitySkills[category]}\n\n${systemInstruction}`;
+    // Extract user ID for memory retrieval
+    let uid = 'anonymous';
+    const cookies = socket.handshake.headers.cookie;
+    if (cookies) {
+      const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+      if (token) {
+        try { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; } catch(e) {}
+      }
     }
 
+    // Retrieve memories
+    const relevantMemories = queryMemories({ userId: uid, query: text, limit: 5, minConfidence: 0.4 });
+
+    // Build system prompt from structured personality config (with sensory context)
+    const sensory = getSensory(uid);
+    const { config: personality, systemPrompt: systemInstruction } = personalityRegistry.buildSystemPrompt(
+      personalityId,
+      { mode: 'chat', sensory },
+      {
+        skillOverride: category ? immortalitySkills[category] : undefined,
+        memories: relevantMemories.length > 0 ? relevantMemories : undefined,
+      },
+    );
+
     try {
-      // Emit "thinking" state
       socket.emit("agent:status", { status: "thinking", agentName: personality.name });
 
-      let responseText = "";
-      
-      if (personality.model.startsWith("deepseek") || personality.model.startsWith("qwen")) {
-        const client = personality.model.startsWith("qwen") ? getQwen() : getDeepSeek();
-        if (client) {
-          const response = await client.chat.completions.create({
-            model: personality.model,
-            messages: [
-              { role: "system", content: systemInstruction },
-              ...(history ? history.map((m: any) => ({ role: m.role as "assistant" | "user", content: m.content })) : []),
-              { role: "user" as const, content: text }
-            ]
-          });
-          responseText = response.choices[0].message.content || "";
+      const provider = personality.defaultModel.startsWith('deepseek') ? 'deepseek' as const
+        : personality.defaultModel.startsWith('qwen') ? 'qwen' as const
+        : 'gemini' as const;
+
+      const messages: NormalizedMessage[] = [
+        { role: 'system', content: systemInstruction },
+        ...(history ? history.map((m: any) => ({ role: m.role, content: m.content })) : []),
+        { role: 'user', content: text },
+      ];
+
+      let responseText = '';
+      try {
+        const result = await makeLLMCall(
+          messages, [], { provider, model: personality.defaultModel },
+          getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+        );
+        responseText = result.text || '';
+      } catch (llmErr: any) {
+        if (llmErr.message?.includes('not configured')) {
+          const fallback = await makeLLMCall(
+            messages, [], { provider: 'gemini', model: personality.fallbackModel },
+            getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+          );
+          responseText = fallback.text || '';
         } else {
-          // Fallback to Gemini if neither configured
-          const geminiClient = getGemini();
-          if (!geminiClient) throw new Error("No AI client configured on server");
-          const modelInstance = geminiClient.getGenerativeModel({
-            model: "gemini-1.5-flash",
-            systemInstruction: systemInstruction
-          });
-          const contents = history
-            ? history.map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
-            : [];
-          contents.push({ role: 'user', parts: [{ text: text }] });
-          const result = await modelInstance.generateContent({ contents });
-          responseText = result.response.text();
+          throw llmErr;
         }
-      } else {
-        const client = getGemini();
-        if (!client) throw new Error("Gemini API key not configured on server");
-        const modelInstance = client.getGenerativeModel({ 
-          model: personality.model,
-          systemInstruction: systemInstruction
-        });
-        const contents = history 
-          ? history.map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
-          : [];
-        contents.push({ role: 'user', parts: [{ text: text }] });
-        const result = await modelInstance.generateContent({ contents });
-        responseText = result.response.text();
       }
 
       // Save to history if agentId is provided
@@ -786,13 +1353,200 @@ io.on("connection", (socket) => {
       db.interactions.push(interaction);
       writeDB(db);
 
-      // Emit response
-      socket.emit("agent:response", { text: responseText, agentName: personality.name });
+      // Emit response (with holographic output if available)
+      const holo = canOutputHolographic(sensory)
+        ? textToHolographicOutput(responseText)
+        : undefined;
+      socket.emit("agent:response", { text: responseText, agentName: personality.name, holographic: holo });
       socket.emit("agent:status", { status: "idle" });
+
+      // Async memory extraction — fire and forget
+      extractMemories(
+        {
+          userMessage: text,
+          assistantResponse: responseText,
+          existingMemories: relevantMemories.map(m => m.content),
+          provider,
+          model: personality.defaultModel,
+        },
+        getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+      ).then(extracted => {
+        for (const mem of extracted.memories) {
+          addMemory({
+            userId: uid,
+            type: mem.type,
+            content: mem.content,
+            keywords: mem.keywords,
+            confidence: mem.confidence,
+            sourceInteractionId: interaction.id,
+          });
+        }
+        for (const rem of extracted.reminders) {
+          addReminder({
+            userId: uid,
+            content: rem.content,
+            dueAt: rem.dueAt,
+            sourceInteractionId: interaction.id,
+          });
+        }
+        const totalExtracted = extracted.memories.length + extracted.reminders.length;
+        if (totalExtracted > 0) {
+          console.log(`[Memory] Extracted ${extracted.memories.length} memories + ${extracted.reminders.length} reminders for user ${uid}`);
+        }
+      }).catch(err => console.error('[Memory] Extraction failed:', err));
 
     } catch (error: any) {
       console.error("[Socket Agent Error]:", error);
       socket.emit("agent:error", { message: error.message });
+      socket.emit("agent:status", { status: "error" });
+    }
+  });
+
+  // Agent task with tool access — multi-turn tool loop
+  socket.on("agent:task", async (data: { text: string; history?: any[]; personalityId?: string }) => {
+    // Extract user ID for memory retrieval
+    let uid = 'anonymous';
+    const cookies = socket.handshake.headers.cookie;
+    if (cookies) {
+      const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+      if (token) {
+        try { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; } catch(e) {}
+      }
+    }
+
+    const relevantMemories = queryMemories({ userId: uid, query: data.text, limit: 5, minConfidence: 0.4 });
+
+    const sensory = getSensory(uid);
+    const { config: personality, systemPrompt: systemInstruction } = personalityRegistry.buildSystemPrompt(
+      data.personalityId || 'lumi',
+      { mode: 'task', sensory },
+      { memories: relevantMemories.length > 0 ? relevantMemories : undefined },
+    );
+
+    const provider = personality.defaultModel.startsWith('deepseek') ? 'deepseek' as const
+      : personality.defaultModel.startsWith('qwen') ? 'qwen' as const
+      : 'gemini' as const;
+
+    const messages: NormalizedMessage[] = [
+      { role: 'system', content: systemInstruction },
+      ...(data.history ? data.history.map((m: any) => ({ role: m.role, content: m.content })) : []),
+      { role: 'user', content: data.text },
+    ];
+
+    try {
+      socket.emit("agent:status", { status: "thinking", agentName: personality.name });
+
+      // Desktop tool relay: bridges tool calls to Tauri IPC on the frontend
+      const desktopRelay = async (toolName: string, args: Record<string, any>): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const cid = Math.random().toString(36).substr(2, 9);
+          const timeout = setTimeout(() => {
+            reject(new Error(`Desktop tool "${toolName}" timed out (30s)`));
+          }, 30000);
+          socket.once(`tool:desktop_result:${cid}`, (data: { output?: string; error?: string }) => {
+            clearTimeout(timeout);
+            if (data.error) reject(new Error(data.error));
+            else resolve(data.output || '');
+          });
+          socket.emit('tool:desktop_exec', { correlationId: cid, name: toolName, arguments: args });
+        });
+      };
+
+      // Tool confirmation relay: asks the user before executing confirm-level tools
+      const requestConfirmation = async (toolName: string, args: Record<string, any>): Promise<boolean> => {
+        return new Promise((resolve) => {
+          const cid = Math.random().toString(36).substr(2, 9);
+          const timeout = setTimeout(() => {
+            socket.emit("agent:tool_call", { name: toolName, arguments: args, result: 'Auto-denied (30s timeout)', error: 'User did not respond' });
+            resolve(false);
+          }, 30000);
+          socket.once(`tool:confirm_result:${cid}`, (data: { allowed: boolean }) => {
+            clearTimeout(timeout);
+            resolve(data.allowed === true);
+          });
+          socket.emit('agent:confirm_tool', {
+            correlationId: cid,
+            name: toolName,
+            arguments: args,
+          });
+        });
+      };
+
+      const result = await runWithTools(
+        messages,
+        toolRegistry,
+        { provider, model: personality.defaultModel },
+        (record) => {
+          socket.emit("agent:tool_call", {
+            name: record.name,
+            arguments: record.arguments,
+            result: record.result?.slice(0, 500),
+            error: record.error,
+          });
+        },
+        5,
+        getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+        undefined,
+        { desktopRelay, requestConfirmation, toolPolicy: personality.toolPolicy },
+      );
+
+      const holoTask = canOutputHolographic(sensory)
+        ? textToHolographicOutput(result.text)
+        : undefined;
+      socket.emit("agent:response", { text: result.text, agentName: personality.name, holographic: holoTask });
+      socket.emit("agent:status", { status: "idle" });
+
+      // Log
+      const db = readDB();
+      db.interactions.push({
+        id: Math.random().toString(36).substr(2, 9),
+        content: data.text,
+        response: result.text,
+        role: "user",
+        personality: personality.id,
+        timestamp: new Date().toISOString(),
+        mode: 'task',
+        toolCalls: result.toolCalls.map(tc => ({ name: tc.name, args: tc.arguments })),
+      } as any);
+      writeDB(db);
+
+      // Async memory extraction
+      extractMemories(
+        {
+          userMessage: data.text,
+          assistantResponse: result.text,
+          existingMemories: relevantMemories.map(m => m.content),
+          provider,
+          model: personality.defaultModel,
+        },
+        getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+      ).then(extracted => {
+        for (const mem of extracted.memories) {
+          addMemory({
+            userId: uid,
+            type: mem.type,
+            content: mem.content,
+            keywords: mem.keywords,
+            confidence: mem.confidence,
+            sourceInteractionId: db.interactions[db.interactions.length - 1]?.id || '',
+          });
+        }
+        for (const rem of extracted.reminders) {
+          addReminder({
+            userId: uid,
+            content: rem.content,
+            dueAt: rem.dueAt,
+            sourceInteractionId: db.interactions[db.interactions.length - 1]?.id || '',
+          });
+        }
+        const totalExtracted = extracted.memories.length + extracted.reminders.length;
+        if (totalExtracted > 0) {
+          console.log(`[Memory] Extracted ${extracted.memories.length} memories + ${extracted.reminders.length} reminders for user ${uid}`);
+        }
+      }).catch(err => console.error('[Memory] Extraction failed:', err));
+    } catch (err: any) {
+      console.error("[Agent Task Error]:", err);
+      socket.emit("agent:error", { message: err.message });
       socket.emit("agent:status", { status: "error" });
     }
   });
@@ -847,67 +1601,45 @@ io.on("connection", (socket) => {
               socket.emit("audio:status", { status: "thinking" });
 
               try {
-                const personality = personalities[session.personalityId] || personalities.lumi;
+                const sensoryAudio = getSensory(socket.id);
+                const { config: personality, systemPrompt } = personalityRegistry.buildSystemPrompt(
+                  session.personalityId || 'lumi',
+                  { mode: 'chat', sensory: sensoryAudio },
+                );
                 const messages = [
-                  { role: 'system', content: personality.systemInstruction },
+                  { role: 'system', content: systemPrompt },
                   { role: 'user', content: userText },
                 ] as any[];
 
-                const provider = personality.model.startsWith('deepseek') ? 'deepseek' as const
-                  : personality.model.startsWith('gpt') ? 'openai' as const
-                  : personality.model.startsWith('claude') ? 'anthropic' as const
-                  : personality.model.startsWith('qwen') ? 'qwen' as const
+                const provider = personality.defaultModel.startsWith('deepseek') ? 'deepseek' as const
+                  : personality.defaultModel.startsWith('gpt') ? 'openai' as const
+                  : personality.defaultModel.startsWith('claude') ? 'anthropic' as const
+                  : personality.defaultModel.startsWith('qwen') ? 'qwen' as const
                   : 'gemini' as const;
 
-                // Simple LLM call for voice
                 let responseText = '';
-                if (provider === 'deepseek') {
-                  const client = getDeepSeek();
-                  if (client) {
-                    const response = await client.chat.completions.create({
-                      model: personality.model,
-                      messages: messages as any,
-                    });
-                    responseText = response.choices[0].message.content || '';
-                  }
-                } else if (provider === 'openai') {
-                  const client = getOpenAI();
-                  if (client) {
-                    const response = await client.chat.completions.create({
-                      model: personality.model,
-                      messages: messages as any,
-                    });
-                    responseText = response.choices[0].message.content || '';
-                  }
-                } else if (provider === 'anthropic') {
-                  const client = getAnthropic();
-                  if (client) {
-                    const response = await client.messages.create({
-                      model: personality.model,
-                      max_tokens: 1024,
-                      messages: [{ role: 'user', content: userText }],
-                    });
-                    responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-                  }
-                } else if (provider === 'qwen') {
-                  const client = getQwen();
-                  if (client) {
-                    const response = await client.chat.completions.create({
-                      model: personality.model,
-                      messages: messages as any,
-                    });
-                    responseText = response.choices[0].message.content || '';
-                  }
-                } else {
-                  const client = getGemini();
-                  if (client) {
-                    const model = client.getGenerativeModel({ model: personality.model, systemInstruction: personality.systemInstruction });
-                    const result = await model.generateContent(userText);
-                    responseText = result.response.text();
+                try {
+                  const result = await makeLLMCall(
+                    messages as NormalizedMessage[], [], { provider, model: personality.defaultModel },
+                    getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+                  );
+                  responseText = result.text || '';
+                } catch (llmErr: any) {
+                  if (llmErr.message?.includes('not configured')) {
+                    const fallback = await makeLLMCall(
+                      messages as NormalizedMessage[], [], { provider: 'gemini', model: personality.fallbackModel },
+                      getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+                    );
+                    responseText = fallback.text || '';
+                  } else {
+                    throw llmErr;
                   }
                 }
 
                 const ttsProvider = getTTSProvider();
+                const holoAudio = canOutputHolographic(sensoryAudio)
+                  ? textToHolographicOutput(responseText)
+                  : undefined;
                 if (ttsProvider && session.currentVoiceId) {
                   try {
                     socket.emit("audio:status", { status: "speaking" });
@@ -926,11 +1658,11 @@ io.on("connection", (socket) => {
                       logger.info('[Audio] TTS aborted by user interrupt');
                     } else {
                       logger.error("[Audio TTS Error]:", ttsErr);
-                      socket.emit("agent:response", { text: responseText, agentName: personality.name });
+                      socket.emit("agent:response", { text: responseText, agentName: personality.name, holographic: holoAudio });
                     }
                   }
                 } else {
-                  socket.emit("agent:response", { text: responseText, agentName: personality.name });
+                  socket.emit("agent:response", { text: responseText, agentName: personality.name, holographic: holoAudio });
                 }
 
                 // Log interaction
@@ -1029,9 +1761,73 @@ async function startServer() {
     process.exit(1);
   }
 
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  // Register all agent tools
+  registerAllTools(toolRegistry);
+  console.log(`[Tools] Registered ${toolRegistry.list().length} built-in tools`);
+
+  // Register MCP tools (non-blocking, won't block startup if MCP servers are offline)
+  registerMCPTools().then(mcpTools => {
+    if (mcpTools.length > 0) {
+      console.log(`[MCP] Registered ${mcpTools.length} MCP tools (total: ${toolRegistry.list().length})`);
+    }
+  }).catch(err => {
+    console.warn('[MCP] Tool registration warning:', err.message);
   });
+
+  // Start GPT-SoVITS API server (optional — graceful if missing)
+  let gptSovitsProcess: ChildProcess | null = null;
+  const gptSovitsDir = path.join(__dirname, 'gpt-sovits-src');
+  const pythonExe = path.join(gptSovitsDir, 'venv/Scripts/python.exe');
+  const apiPy = path.join(gptSovitsDir, 'api_v2.py');
+  if (fs.existsSync(pythonExe) && fs.existsSync(apiPy)) {
+    console.log('[GPT-SoVITS] Starting API server...');
+    gptSovitsProcess = spawn(pythonExe, [
+      apiPy,
+      '-a', '127.0.0.1',
+      '-p', '9880',
+      '-c', 'GPT_SoVITS/configs/tts_infer.yaml',
+    ], {
+      cwd: gptSovitsDir,
+      stdio: 'pipe',
+    });
+    gptSovitsProcess.stdout?.on('data', (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line) console.log(`[GPT-SoVITS] ${line}`);
+    });
+    gptSovitsProcess.stderr?.on('data', (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line) console.warn(`[GPT-SoVITS] ${line}`);
+    });
+    gptSovitsProcess.on('error', (err) => {
+      console.warn('[GPT-SoVITS] Process error:', err.message);
+      gptSovitsProcess = null;
+    });
+    gptSovitsProcess.on('exit', (code) => {
+      if (code && code !== 0) console.warn(`[GPT-SoVITS] Exited with code ${code}`);
+      gptSovitsProcess = null;
+    });
+  } else {
+    console.log('[GPT-SoVITS] Not found — TTS will use cloud providers only.');
+  }
+
+  server.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
+
+    // Set up proactive agent scheduler
+    scheduler.setIO(io);
+    registerScheduledTasks();
+  });
+
+  // Cleanup on exit
+  const cleanup = () => {
+    if (gptSovitsProcess && !gptSovitsProcess.killed) {
+      console.log('[GPT-SoVITS] Stopping API server...');
+      gptSovitsProcess.kill();
+    }
+    process.exit(0);
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
 }
 
 startServer();

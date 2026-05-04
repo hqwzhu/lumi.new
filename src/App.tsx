@@ -20,6 +20,8 @@ import { Solutions } from './components/Solutions';
 import { FoundersSanctuary } from './components/FoundersSanctuary';
 import { LocalAgentSphere } from './components/LocalAgentSphere';
 import { FloatingAgent } from './components/FloatingAgent';
+import { ProactiveNotifications } from './components/ProactiveNotifications';
+import { ToolConfirmDialog } from './components/ToolConfirmDialog';
 import { motion, AnimatePresence } from 'motion/react';
 import { Rocket, Sparkles, Layout } from 'lucide-react';
 import { translations } from './lib/translations';
@@ -36,9 +38,10 @@ export default function App() {
     return isDesktop ? 'desktop' : 'web';
   });
 
-  // When platform detection resolves after mount, sync uiMode
   useEffect(() => {
-    if (isDesktop) setUiMode('desktop');
+    if (isDesktop) {
+      setUiMode('desktop');
+    }
   }, [isDesktop]);
   const [activeTab, setActiveTab] = useState('home');
   const [selectedAgent, setSelectedAgent] = useState<any>(null);
@@ -99,10 +102,12 @@ export default function App() {
     switch (tab) {
       case 'home':
         return null; // Home is the desktop itself
+      case 'agent-gen':
       case 'generate':
         return !user ? <LoginRequired t={t} onLogin={handleLogin} /> : <AgentGenerator t={t} onChatAgent={(agent) => { setSelectedAgent(agent); setActiveTab('agent-chat'); }} />;
       case 'protocols':
         return <ProtocolsWorld t={t} />;
+      case 'marketplace':
       case 'ecosystem':
       case 'network':
         return (
@@ -119,6 +124,10 @@ export default function App() {
           setActiveTab('product-detail');
         }} />;
       case 'product-detail':
+        if (!selectedProduct) return <MultimodalProducts t={t} onSelectProduct={(product) => {
+          setSelectedProduct(product);
+          setActiveTab('product-detail');
+        }} />;
         return (
           <ProductDetailPage 
             t={t} 
@@ -138,6 +147,12 @@ export default function App() {
         return !user ? <LoginRequired t={t} onLogin={handleLogin} /> : <Profile t={t} />;
       case 'settings':
         return !user ? <LoginRequired t={t} onLogin={handleLogin} /> : <Settings t={t} lang={lang} setLang={setLang} />;
+      case 'voice':
+      case 'memory':
+      case 'mcp':
+      case 'personality':
+      case 'sync':
+        return !user ? <LoginRequired t={t} onLogin={handleLogin} /> : <Settings t={t} lang={lang} setLang={setLang} activeSection={tab} />;
       default:
         return null;
     }
@@ -145,12 +160,14 @@ export default function App() {
 
   return (
     <div className={`min-h-screen overflow-x-hidden transition-all duration-1000 ${
-      isDesktop && uiMode === 'desktop'
-        ? 'bg-transparent'
-        : isDesktop
-          ? 'bg-celestial-deep/90 backdrop-blur-3xl'
+      isDesktop && uiMode === 'desktop' 
+        ? 'bg-transparent' 
+        : isDesktop 
+          ? 'bg-celestial-deep/90 backdrop-blur-3xl' 
           : 'bg-celestial-deep'
     }`}>
+      <ProactiveNotifications />
+      <ToolConfirmDialog />
       <AnimatePresence mode="wait">
         {uiMode === 'mobile' ? (
           <MobilePlatform 
@@ -185,7 +202,7 @@ export default function App() {
             onLogin={handleLogin}
             onLogout={handleLogout}
             renderTabContent={renderTabContent}
-            isElectron={isDesktop}
+            isDesktop={isDesktop}
             setUiMode={setUiMode}
           />
         )}

@@ -23,5 +23,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["src-tauri/target", "dist-server", "node_modules", "dist", "gpt-sovits-src", "desktop-resources"]
 }

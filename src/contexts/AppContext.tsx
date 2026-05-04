@@ -35,6 +35,7 @@ interface AppContextType {
   loading: boolean;
   agents: Agent[];
   aiConfig: AIConfig;
+  personalityId: string;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   createAgent: (name: string, category: string, data: any) => Promise<void>;
@@ -42,6 +43,7 @@ interface AppContextType {
   updateBalance: (amount: number) => Promise<void>;
   refreshUser: () => Promise<void>;
   updateAIConfig: (config: Partial<AIConfig>) => void;
+  setPersonalityId: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -53,6 +55,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     const saved = localStorage.getItem('lumi_ai_config');
     return saved ? JSON.parse(saved) : { provider: 'gemini', model: 'gemini-1.5-flash', apiKey: '' };
+  });
+  const [personalityId, setPersonalityIdState] = useState<string>(() => {
+    return localStorage.getItem('lumi_personality_id') || 'lumi';
   });
 
   const updateAIConfig = (newConfig: Partial<AIConfig>) => {
@@ -153,19 +158,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.info('Balance updates are handled by the core system.');
   };
 
+  const setPersonalityId = (id: string) => {
+    setPersonalityIdState(id);
+    localStorage.setItem('lumi_personality_id', id);
+  };
+
   return (
-    <AppContext.Provider value={{ 
-      user, 
-      loading, 
-      agents, 
+    <AppContext.Provider value={{
+      user,
+      loading,
+      agents,
       aiConfig,
-      login, 
-      logout, 
-      createAgent, 
-      deleteAgent, 
-      updateBalance, 
+      personalityId,
+      login,
+      logout,
+      createAgent,
+      deleteAgent,
+      updateBalance,
       refreshUser,
-      updateAIConfig
+      updateAIConfig,
+      setPersonalityId,
     }}>
       {children}
     </AppContext.Provider>

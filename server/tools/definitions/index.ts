@@ -4,6 +4,7 @@ import { registerSystemOpsTools } from './system_ops';
 import { registerWebOpsTools } from './web_tools';
 import { registerCodeOpsTools } from './code_tools';
 import { registerDataOpsTools } from './data_tools';
+import { registerDesktopTools } from './desktop_tools';
 
 export function registerAllTools(registry: ToolRegistry): void {
   registerFileOpsTools(registry);
@@ -11,4 +12,5 @@ export function registerAllTools(registry: ToolRegistry): void {
   registerWebOpsTools(registry);
   registerCodeOpsTools(registry);
   registerDataOpsTools(registry);
+  registerDesktopTools(registry);
 }

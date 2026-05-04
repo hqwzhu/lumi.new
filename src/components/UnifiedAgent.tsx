@@ -8,29 +8,59 @@ import { socketService } from '@/services/socketService';
 import { useTTS } from '@/hooks/useTTS';
 import { useModuleData } from '@/hooks/useModuleData';
 import { GlassCard } from './SharedUI';
+import { useApp } from '../contexts/AppContext';
+import { useVoiceCall } from '@/hooks/useVoiceCall';
+import { useSocket } from '@/hooks/useSocket';
 
 export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any; onEnterSanctuary?: () => void }) {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [personality, setPersonality] = useState('lumi');
+  const { user: appUser, personalityId: personality } = useApp();
   const [isVisionActive, setIsVisionActive] = useState(false);
   const [visionData, setVisionData] = useState<string[]>([]);
   const [founderVision, setFounderVision] = useState('');
   const [isFounderEditing, setIsFounderEditing] = useState(false);
-  const [isVoiceInput, setIsVoiceInput] = useState(false);
+  
+  const socket = useSocket();
+  const { callState, audioLevel, startCall, endCall, transcript } = useVoiceCall({
+    socket,
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        const userMsg = {
+          id: Date.now().toString(),
+          text,
+          userName: user?.displayName || 'User',
+          timestamp: new Date().toISOString(),
+          type: 'user'
+        };
+        setMessages(prev => [...prev, userMsg]);
+      }
+    },
+    onResponse: (text) => {
+      const agentMsg = {
+        id: Date.now().toString(),
+        text,
+        userName: 'Lumi',
+        timestamp: new Date().toISOString(),
+        type: 'agent'
+      };
+      setMessages(prev => [...prev, agentMsg]);
+    }
+  });
+
   const { speak, stop, isSpeaking } = useTTS();
   const { data: agents } = useModuleData<any[]>('/api/modules/agents');
   const agentConfig = agents?.[0];
   const scrollRef = useRef<HTMLDivElement>(null);
-  const socket = useRef<any>(null);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
 
   const [isPrivateMode, setIsPrivateMode] = useState(false);
 
   useEffect(() => {
-    socket.current = socketService.connect();
+    if (!socket) return;
 
-    socket.current.on("agent:response", (data: { text: string; agentName: string }) => {
+    const handleAgentResponse = (data: { text: string; agentName: string }) => {
       const agentMsg = {
         id: Date.now().toString(),
         text: data.text,
@@ -40,32 +70,31 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
       };
       setMessages(prev => [...prev, agentMsg]);
       
-      // Only speak if the last input was voice
-      setIsVoiceInput(prev => {
-        if (prev) {
-          speak(data.text);
-        }
-        return prev;
-      });
-    });
+      // Only speak if we are in voice mode or it was a voice trigger
+      if (isVoiceMode) {
+        speak(data.text);
+      }
+    };
 
-    socket.current.on("agent:status", (data: { status: string }) => {
+    const handleStatus = (data: { status: string }) => {
       setIsTyping(data.status === "thinking");
-    });
+    };
 
-    socket.current.on("agent:error", (data: { message: string }) => {
+    const handleError = (data: { message: string }) => {
       console.error("Socket Agent Error:", data.message);
       setIsTyping(false);
-    });
+    };
+
+    socket.on("agent:response", handleAgentResponse);
+    socket.on("agent:status", handleStatus);
+    socket.on("agent:error", handleError);
 
     return () => {
-      // We don't necessarily want to disconnect the global socket service here
-      // but we should remove listeners if needed.
-      socket.current.off("agent:response");
-      socket.current.off("agent:status");
-      socket.current.off("agent:error");
+      socket.off("agent:response", handleAgentResponse);
+      socket.off("agent:status", handleStatus);
+      socket.off("agent:error", handleError);
     };
-  }, [speak]);
+  }, [socket, speak, isVoiceMode]);
 
   const fetchInteractions = async () => {
     try {
@@ -124,8 +153,24 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
   const toggleVision = () => {
     setIsVisionActive(!isVisionActive);
     if (!isVisionActive) {
-      // Simulate object recognition
-      setVisionData(['Coffee Cup', 'MacBook Pro', 'Neural Ring', 'Project Blueprint']);
+      // Query active device capabilities from the mesh
+      fetch('/api/devices')
+        .then(res => res.json())
+        .then(data => {
+          const ctx = data.sensoryContext;
+          if (ctx && ctx.deviceCount > 0) {
+            const caps: string[] = [];
+            if (ctx.hasAudio) caps.push('Audio Input');
+            if (ctx.hasVideo) caps.push('Camera');
+            if (ctx.hasSpatial) caps.push('Spatial Tracking');
+            if (ctx.hasHaptic) caps.push('Haptic Feedback');
+            if (ctx.hasHolographic) caps.push('Holographic Output');
+            setVisionData(caps.length > 0 ? caps : ['No active sensors']);
+          } else {
+            setVisionData(['No devices connected']);
+          }
+        })
+        .catch(() => setVisionData(['Sensor API unavailable']));
     } else {
       setVisionData([]);
     }
@@ -142,7 +187,7 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
     const messageText = text || newMessage;
     if (!messageText.trim() || !user) return;
 
-    setIsVoiceInput(isVoice);
+    setIsVoiceMode(isVoice);
     
     // If typing, stop any ongoing speech
     if (!isVoice) {
@@ -160,8 +205,8 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
     setMessages(prev => [...prev, userMsg]);
     setNewMessage('');
     
-    if (socket.current) {
-      socket.current.emit("agent:chat", {
+    if (socket) {
+      socket.emit("agent:chat", {
         text: messageText,
         history: messages.map(m => ({
           role: m.type === 'user' ? 'user' : 'assistant',
@@ -287,21 +332,41 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
         
         <div className="flex flex-col lg:flex-row items-center justify-center gap-12">
           <div className="w-full lg:w-1/2">
-            <LocalAgentSphere t={t} onMessage={(text) => handleSendMessage(undefined, text, true)} />
+            <LocalAgentSphere 
+              t={t} 
+              callState={callState}
+              audioLevel={audioLevel}
+              onStartCall={() => startCall(undefined, personality)}
+              onEndCall={endCall}
+            />
           </div>
 
           {/* Message Board (Simplified Chat) */}
-          <div className="w-full lg:w-1/2 flex flex-col h-[500px] glass rounded-[2.5rem] border-white/10 overflow-hidden">
+          <div className="w-full lg:w-1/2 flex flex-col h-[500px] glass rounded-[2.5rem] border-white/10 overflow-hidden relative">
+            {/* Real-time Overlay for Transcript */}
+            <AnimatePresence>
+              {callState !== 'idle' && transcript && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-celestial-saturn text-black rounded-full shadow-2xl font-bold text-sm flex items-center gap-3 whitespace-nowrap"
+                >
+                  <div className="w-2 h-2 rounded-full bg-black animate-pulse" />
+                  {transcript}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
               <div className="flex items-center gap-3">
                 <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-celestial-mars animate-ping' : 'bg-celestial-saturn animate-pulse'}`} />
-                <span className="text-xs font-bold uppercase tracking-widest text-white/60">实时交互 / Real-time Node</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-white/60">{t.realTimeNode || 'Real-time Node'}</span>
                 {isSpeaking && (
                   <Button 
                     onClick={stop}
                     className="h-6 px-2 text-[8px] bg-red-500/20 text-red-500 hover:bg-red-500/40 rounded-full border border-red-500/20"
                   >
-                    停止播报 / STOP
+                    {t.stopSpeaking || 'STOP'}
                   </Button>
                 )}
               </div>
@@ -373,11 +438,7 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
       </section>
 
       {/* Stats / Info Row */}
-      <div className="grid md:grid-cols-3 gap-6">
-        <StatCard icon={<Cpu size={24} />} label="算力状态" value="98.4% Optimized" color="text-celestial-saturn" />
-        <StatCard icon={<Globe size={24} />} label="节点同步" value="Global Mesh Active" color="text-celestial-mars" />
-        <StatCard icon={<Zap size={24} />} label="响应延迟" value="< 12ms Local" color="text-celestial-glow" />
-      </div>
+      <StatsRow socket={socket} t={t} />
     </div>
   );
 }
@@ -393,5 +454,50 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
         <div className="text-lg font-bold">{value}</div>
       </div>
     </GlassCard>
+  );
+}
+
+function StatsRow({ socket, t }: { socket: any; t: any }) {
+  const [latency, setLatency] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!socket) return;
+    let done = false;
+    const measure = async () => {
+      const start = performance.now();
+      socket.emit('ping');
+      socket.once('pong', () => {
+        if (!done) { setLatency(Math.round(performance.now() - start)); done = true; }
+      });
+    };
+    measure();
+    const iv = setInterval(measure, 5000);
+    return () => { clearInterval(iv); done = true; };
+  }, [socket]);
+
+  const cpuCores = (navigator as any).hardwareConcurrency || '?';
+  const connected = socket?.connected ?? false;
+
+  return (
+    <div className="grid md:grid-cols-3 gap-6">
+      <StatCard
+        icon={<Cpu size={24} />}
+        label={t.computePower || 'Compute Power'}
+        value={`${cpuCores} Cores`}
+        color="text-celestial-saturn"
+      />
+      <StatCard
+        icon={<Globe size={24} />}
+        label={t.nodeSync || 'Node Sync'}
+        value={connected ? (t.meshActiveLabel || 'Mesh Connected') : (t.disconnected || 'Disconnected')}
+        color={connected ? 'text-celestial-mars' : 'text-white/40'}
+      />
+      <StatCard
+        icon={<Zap size={24} />}
+        label={t.responseLatency || 'Response Latency'}
+        value={latency ? `${latency}ms` : '--'}
+        color="text-celestial-glow"
+      />
+    </div>
   );
 }

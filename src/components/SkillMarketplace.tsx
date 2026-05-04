@@ -1,13 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Zap, ShoppingBag, User, Star, Tag, Download } from 'lucide-react';
+import { Zap, ShoppingBag, User, Star, Tag, Download, CheckCircle } from 'lucide-react';
 import { GlassCard, IconBox, LoadingSpinner } from './SharedUI';
 import { Button } from './ui/button';
 import { useModuleData } from '@/hooks/useModuleData';
+import { toast } from 'sonner';
 
 export function SkillMarketplace({ t }: { t: any }) {
   const { data: skills, loading } = useModuleData<any[]>('/api/marketplace/skills');
+  const [acquired, setAcquired] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('lumi_acquired_skills') || '[]')); } catch { return new Set(); }
+  });
   const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleAcquire = async (skill: any) => {
+    if (acquired.has(skill.id)) return;
+    try {
+      const res = await fetch('/api/marketplace/skills/acquire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skillId: skill.id, skillName: skill.name }),
+      });
+      if (res.ok) {
+        const next = new Set(acquired);
+        next.add(skill.id);
+        setAcquired(next);
+        localStorage.setItem('lumi_acquired_skills', JSON.stringify([...next]));
+        toast.success(`Acquired: ${skill.name}`);
+      } else {
+        toast.error('Failed to acquire');
+      }
+    } catch {
+      toast.error('Connection error');
+    }
+  };
 
   React.useEffect(() => {
     const handleScroll = (e: any) => {
@@ -38,14 +64,14 @@ export function SkillMarketplace({ t }: { t: any }) {
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
         {skills?.map((skill) => (
-          <SkillCard key={skill.id} skill={skill} t={t} />
+          <SkillCard key={skill.id} skill={skill} t={t} isAcquired={acquired.has(skill.id)} onAcquire={() => handleAcquire(skill)} />
         ))}
       </div>
     </div>
   );
 }
 
-function SkillCard({ skill, t }: { skill: any; t: any }) {
+function SkillCard({ skill, t, isAcquired, onAcquire }: { skill: any; t: any; isAcquired: boolean; onAcquire: () => void }) {
   return (
     <GlassCard className="p-6 space-y-6 flex flex-col h-full group">
       <div className="flex items-start justify-between">
@@ -68,10 +94,12 @@ function SkillCard({ skill, t }: { skill: any; t: any }) {
             <User size={14} />
             {skill.author}
           </div>
-          <div className="flex items-center gap-1 text-celestial-saturn">
-            <Star size={14} fill="currentColor" />
-            4.9
-          </div>
+          {skill.rating != null && (
+            <div className="flex items-center gap-1 text-celestial-saturn">
+              <Star size={14} fill="currentColor" />
+              {skill.rating}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between">
@@ -79,10 +107,20 @@ function SkillCard({ skill, t }: { skill: any; t: any }) {
             <Zap size={18} fill="currentColor" className="text-celestial-saturn" />
             {skill.price}
           </div>
-          <Button className="rounded-xl bg-celestial-saturn text-black font-bold h-10 px-6 hover:scale-105 transition-transform flex items-center gap-2">
-            <Download size={16} />
-            {t.acquire || "Acquire"}
-          </Button>
+          {isAcquired ? (
+            <div className="flex items-center gap-1 text-green-500 text-xs font-bold uppercase tracking-widest">
+              <CheckCircle size={14} />
+              Acquired
+            </div>
+          ) : (
+            <Button
+              onClick={onAcquire}
+              className="rounded-xl bg-celestial-saturn text-black font-bold h-10 px-6 hover:scale-105 transition-transform flex items-center gap-2"
+            >
+              <Download size={16} />
+              {t.acquire || "Acquire"}
+            </Button>
+          )}
         </div>
       </div>
     </GlassCard>

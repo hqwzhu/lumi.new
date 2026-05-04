@@ -48,52 +48,51 @@ export function usePlatform() {
     }
   }, []);
 
-  const simulateLocalFileAccess = useCallback(async () => {
-    if (platform === 'electron' || platform === 'tauri') {
-      // Real IPC would go here
-      return { success: true, path: '/usr/local/lumi/vault/mem_0x1.bin', size: '2.4GB' };
-    }
-    // Web simulation
-    return new Promise((resolve) => {
-      setTimeout(() => resolve({ success: true, path: 'virtual://vault/simulated_mem.bin', size: '128MB' }), 1000);
-    });
-  }, [platform]);
-
   const startSensorSync = useCallback(() => {
-    if (platform === 'web' && !navigator.geolocation) return;
-    
     setIsSyncing(true);
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setSensors(prev => ({
-          ...prev,
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          speed: pos.coords.speed || 0
-        }));
-      },
-      (err) => console.error("Sensor Sync Error:", err),
-      { enableHighAccuracy: true }
-    );
+    const cleanupFns: (() => void)[] = [];
 
-    // Mock Accelerometer if not available
-    const accInterval = setInterval(() => {
-      setSensors(prev => ({
-        ...prev,
-        acceleration: {
-          x: (Math.random() - 0.5) * 2,
-          y: (Math.random() - 0.5) * 2,
-          z: 9.8 + (Math.random() - 0.5)
+    // Real GPS via Geolocation API
+    if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setSensors(prev => ({
+            ...prev,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            speed: pos.coords.speed || 0,
+          }));
+        },
+        (err) => console.error('[Sensors] GPS error:', err.message),
+        { enableHighAccuracy: true },
+      );
+      cleanupFns.push(() => navigator.geolocation.clearWatch(watchId));
+    }
+
+    // Real accelerometer via DeviceMotionEvent
+    if ('DeviceMotionEvent' in window) {
+      const handleMotion = (e: DeviceMotionEvent) => {
+        const acc = e.accelerationIncludingGravity;
+        if (acc) {
+          setSensors(prev => ({
+            ...prev,
+            acceleration: {
+              x: acc.x ?? 0,
+              y: acc.y ?? 0,
+              z: acc.z ?? 9.8,
+            },
+          }));
         }
-      }));
-    }, 1000);
+      };
+      window.addEventListener('devicemotion', handleMotion);
+      cleanupFns.push(() => window.removeEventListener('devicemotion', handleMotion));
+    }
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
-      clearInterval(accInterval);
+      cleanupFns.forEach(fn => fn());
       setIsSyncing(false);
     };
-  }, [platform]);
+  }, []);
 
   return {
     platform,
@@ -103,7 +102,6 @@ export function usePlatform() {
     isMobile: platform === 'ios' || platform === 'android',
     isWeb: platform === 'web',
     electronAPI: (window as any).lumiElectron || null,
-    simulateLocalFileAccess,
     startSensorSync,
     sensors,
     isSyncing

@@ -1,0 +1,26 @@
+export type DeviceType = 'desktop' | 'mobile' | 'ar_glasses' | 'holographic_prototype' | 'web';
+
+export type DeviceStatus = 'online' | 'offline' | 'pairing';
+
+/** Which sensory modalities a device can provide */
+export interface DeviceCapabilities {
+  audio: boolean;
+  video: boolean;
+  spatial: boolean; // 3D position / room awareness
+  haptic: boolean;
+  holographic: boolean; // can render holographic output
+}
+
+export interface DeviceInfo {
+  id: string;
+  userId: string;
+  name: string;
+  type: DeviceType;
+  status: DeviceStatus;
+  capabilities: DeviceCapabilities;
+  socketId: string | null; // current Socket.IO connection
+  ipAddress: string | null;
+  osInfo: string | null;
+  firstSeen: string;
+  lastSeen: string;
+}

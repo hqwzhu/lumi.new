@@ -51,10 +51,10 @@ export function VoiceCallButton({ callState, audioLevel, onStart, onEnd, hasVoic
         whileTap={{ scale: 0.95 }}
         onClick={isActive ? onEnd : onStart}
         className={`relative w-12 h-12 rounded-2xl border flex items-center justify-center transition-all ${config.color} ${
-          !isActive && !hasVoice ? 'opacity-40 cursor-not-allowed' : ''
+          isActive ? '' : (!hasVoice ? 'opacity-40 hover:opacity-100' : '')
         }`}
-        disabled={!isActive && !hasVoice}
-        title={isActive ? 'End call' : hasVoice ? 'Start voice call' : 'No voice configured'}
+        disabled={isActive && callState === 'connecting'}
+        title={isActive ? 'End call' : 'Start voice call'}
       >
         {config.icon}
       </motion.button>

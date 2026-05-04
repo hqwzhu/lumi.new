@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Mic, MicOff, Sparkles, Volume2, Box, User as UserIcon } from 'lucide-react';
 import { Button } from './ui/button';
 
-export function LocalAgentSphere({
-  t,
-  onMessage,
+export function LocalAgentSphere({ 
+  t, 
+  onMessage, 
   sentiment = 'default',
   callState = 'idle',
   audioLevel = 0,
@@ -13,9 +13,9 @@ export function LocalAgentSphere({
   isWallpaperMode = false,
   onStartCall,
   onEndCall
-}: {
-  t: any;
-  onMessage?: (text: string) => void;
+}: { 
+  t: any; 
+  onMessage?: (text: string) => void; 
   sentiment?: 'default' | 'excited' | 'focused' | 'zen';
   callState?: 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
   audioLevel?: number;
@@ -30,14 +30,6 @@ export function LocalAgentSphere({
   const mouseRef = useRef({ x: 0, y: 0, isDown: false });
   const rotationRef = useRef({ x: 0, y: 0 });
   const particleCount = highPerformance ? 2200 : 800;
-
-  const toggleListen = () => {
-    if (callState === 'idle') {
-      onStartCall?.();
-    } else {
-      onEndCall?.();
-    }
-  };
 
   const handleSphereClick = () => {
     setInteractionPulse(prev => prev + 1);
@@ -283,81 +275,74 @@ export function LocalAgentSphere({
 
       {/* Controls */}
       <div className="mt-12 flex flex-col items-center gap-6 z-10">
-          <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
-            <button
-              onClick={() => setSpatialMode('geometric')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-                spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-              }`}
-            >
-              <Box size={14} />
-              {t.geometric || 'Geometric'}
-            </button>
-            <button
-              onClick={() => setSpatialMode('humanoid')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-                spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-              }`}
-            >
-              <UserIcon size={14} />
-              {t.humanoid || 'Humanoid'}
-            </button>
+        <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
+          <button
+            onClick={() => setSpatialMode('geometric')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+              spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <Box size={14} />
+            {t.geometric || 'Geometric'}
+          </button>
+          <button
+            onClick={() => setSpatialMode('humanoid')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
+              spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <UserIcon size={14} />
+            {t.humanoid || 'Humanoid'}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={callState === 'idle' ? onStartCall : onEndCall}
+            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
+              callState !== 'idle' 
+                ? 'bg-red-500 text-white shadow-[0_0_30px_rgba(239,68,68,0.5)] scale-110' 
+                : 'bg-white/5 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            {callState !== 'idle' ? <Mic size={24} className="animate-pulse" /> : <MicOff size={24} />}
+          </Button>
+          
+          <div className="flex flex-col">
+            <span className="text-xs font-bold uppercase tracking-widest text-white/40">
+              {callState === 'listening' ? t.listening : callState === 'thinking' ? t.processing : callState === 'idle' ? t.voiceInteract : 'ACTIVE'}
+            </span>
+            <span className="text-sm font-medium text-white/80">
+              {callState === 'idle' ? "Click to start voice session" : "Session active - Click to end"}
+            </span>
           </div>
+        </div>
 
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={toggleListen}
-              className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
-                callState !== 'idle'
-                  ? 'bg-red-500 text-white shadow-[0_0_30px_rgba(239,68,68,0.5)] scale-110'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
-              }`}
+        <AnimatePresence>
+          {callState !== 'idle' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="flex gap-1"
             >
-              {callState === 'listening' ? <Mic size={24} className="animate-pulse" /> :
-               callState === 'thinking' ? <Sparkles size={24} className="animate-spin" /> :
-               callState === 'speaking' ? <Volume2 size={24} className="animate-pulse" /> :
-               <MicOff size={24} />}
-            </Button>
-
-            <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-widest text-white/40">
-                {callState === 'listening' ? (t.listening || 'Listening') :
-                 callState === 'thinking' ? (t.thinking || 'Thinking') :
-                 callState === 'speaking' ? (t.speaking || 'Speaking') :
-                 callState === 'connecting' ? (t.connecting || 'Connecting') :
-                 t.voiceInteract || 'Voice Interact'}
-              </span>
-              <span className="text-sm font-medium text-white/80">
-                {callState !== 'idle' ? "AI voice pipeline active..." : "Click to start voice command"}
-              </span>
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {(callState !== 'idle') && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="flex gap-1"
-              >
-                {[...Array(5)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className="w-1 bg-red-500 rounded-full"
-                    animate={{
-                      height: callState === 'listening' ? [10, 30, 10] : [10, 15, 10],
-                    }}
-                    transition={{
-                      duration: 0.5,
-                      repeat: Infinity,
-                      delay: i * 0.1,
-                    }}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {[...Array(5)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="w-1 bg-red-500 rounded-full"
+                  animate={{
+                    height: callState === 'listening' ? [10, 30, 10] : [10, 15, 10],
+                  }}
+                  transition={{
+                    duration: 0.5,
+                    repeat: Infinity,
+                    delay: i * 0.1,
+                  }}
+                />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { GlassCard } from './SharedUI';
 import { socketService } from '@/services/socketService';
 import { useTTS } from '@/hooks/useTTS';
+import { useApp } from '@/contexts/AppContext';
 import Markdown from 'react-markdown';
 
 export function FloatingAgent({ t }: { t: any }) {
@@ -17,6 +18,7 @@ export function FloatingAgent({ t }: { t: any }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const { speak, isSpeaking } = useTTS();
+  const { personalityId } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
   const socket = useRef<any>(null);
 
@@ -73,7 +75,7 @@ export function FloatingAgent({ t }: { t: any }) {
           role: m.role,
           content: m.content
         })),
-        personalityId: 'manual'
+        personalityId
       });
     }
   };

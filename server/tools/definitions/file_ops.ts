@@ -164,6 +164,7 @@ export function registerFileOpsTools(registry: ToolRegistry): void {
     },
     handler: readFileHandler,
     permission: 'user',
+    securityLevel: 'safe',
   });
 
   registry.register({
@@ -179,6 +180,7 @@ export function registerFileOpsTools(registry: ToolRegistry): void {
     },
     handler: writeFileHandler,
     permission: 'user',
+    securityLevel: 'confirm',
   });
 
   registry.register({
@@ -193,6 +195,7 @@ export function registerFileOpsTools(registry: ToolRegistry): void {
     },
     handler: listDirectoryHandler,
     permission: 'user',
+    securityLevel: 'safe',
   });
 
   registry.register({
@@ -208,5 +211,6 @@ export function registerFileOpsTools(registry: ToolRegistry): void {
     },
     handler: searchFilesHandler,
     permission: 'user',
+    securityLevel: 'safe',
   });
 }

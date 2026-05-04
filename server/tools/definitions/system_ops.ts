@@ -83,6 +83,7 @@ export function registerSystemOpsTools(registry: ToolRegistry): void {
     },
     handler: runCommandHandler,
     permission: 'user',
+    securityLevel: 'confirm',
   });
 
   registry.register({
@@ -95,5 +96,6 @@ export function registerSystemOpsTools(registry: ToolRegistry): void {
     },
     handler: getSystemInfoHandler,
     permission: 'public',
+    securityLevel: 'safe',
   });
 }

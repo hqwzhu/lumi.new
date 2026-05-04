@@ -37,12 +37,11 @@ class SystemService {
       return await (window as any).lumiElectron.runCommand(command);
     }
 
-    // Web simulation
-    console.log(`[SIMULATION] Executing command: ${command}`);
-    return { 
-      success: true, 
-      output: `Web simulated response for: ${command}\nKernel status: OK`,
-      exitCode: 0
+    // Web: no shell access
+    return {
+      success: false,
+      output: '',
+      error: 'System commands require the desktop app (Tauri). Browser mode has no shell access.',
     };
   }
 
@@ -57,8 +56,14 @@ class SystemService {
       } catch (err) {
         console.error("Failed to set click-through:", err);
       }
+      return;
     }
-    // Electron click-through would use a different IPC call
+    // Web: toggle document-level class for wallpaper/overlay mode
+    if (enabled) {
+      document.documentElement.classList.add('lumi-wallpaper-mode');
+    } else {
+      document.documentElement.classList.remove('lumi-wallpaper-mode');
+    }
   }
 
   /**
@@ -71,13 +76,20 @@ class SystemService {
         return await invoke('get_system_info');
       } catch (err) {
         console.error("Failed to get system stats:", err);
-        return { cpu: 0, ram: 'N/A' };
+        return { cpu: 0, ram: 'N/A', disk: 'N/A' };
       }
     }
     if (this.isElectron) {
-      return { cpu: 12, ram: '8GB/16GB' }; // Simplified
+      return { cpu: 'N/A', ram: 'N/A', disk: 'N/A', platform: 'electron' };
     }
-    return { cpu: 0, ram: 'N/A' };
+    // Web: use browser APIs where available
+    const nav = navigator as any;
+    return {
+      cpu: nav.hardwareConcurrency || 'unknown',
+      ram: nav.deviceMemory ? `${nav.deviceMemory}GB` : 'unknown',
+      platform: navigator.platform,
+      userAgent: navigator.userAgent.slice(0, 80),
+    };
   }
 }
 

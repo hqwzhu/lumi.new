@@ -114,6 +114,7 @@ export function registerWebOpsTools(registry: ToolRegistry): void {
     },
     handler: webSearchHandler,
     permission: 'user',
+    securityLevel: 'safe',
   });
 
   registry.register({
@@ -129,5 +130,6 @@ export function registerWebOpsTools(registry: ToolRegistry): void {
     },
     handler: urlFetchHandler,
     permission: 'user',
+    securityLevel: 'confirm',
   });
 }

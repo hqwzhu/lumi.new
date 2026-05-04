@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, FileText, Rocket, Shield, Cpu, Heart, Users, User, Briefcase, Mic, X, Trash2, Sparkles, Database, Zap } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { toast } from 'sonner';
 import { GlassCard, IconBox, FeatureItem } from './SharedUI';
 import { useApp } from '../contexts/AppContext';
 
@@ -10,10 +11,11 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
   const { createAgent, deleteAgent, agents, user, login } = useApp();
   const [currentStep, setCurrentStep] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [files, setFiles] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [agentName, setAgentName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('friend');
   const [isCloning, setIsCloning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const generationTimeoutRef = React.useRef<any>(null);
   const sectionRefs = React.useRef<{ [key: string]: HTMLElement | null }>({});
 
@@ -31,12 +33,21 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
   };
 
   const handleUpload = () => {
-    const mockFiles = ['knowledge_base.pdf', 'personal_data.json', 'code_samples.ts'];
-    setFiles(prev => [...new Set([...prev, ...mockFiles])]);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    setFiles(prev => {
+      const existingNames = new Set(prev.map(f => f.name));
+      const newcomers = selected.filter(f => !existingNames.has(f.name));
+      return [...prev, ...newcomers];
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeFile = (fileName: string) => {
-    setFiles(prev => prev.filter(f => f !== fileName));
+    setFiles(prev => prev.filter(f => f.name !== fileName));
   };
 
   const handleGenerate = async () => {
@@ -46,17 +57,24 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
     }
     if (!agentName || files.length === 0) return;
     setIsGenerating(true);
-    
-    setTimeout(async () => {
-      try {
-        await createAgent(agentName, selectedCategory, { files, voiceCloned: isCloning });
-        setAgentName('');
-        setFiles([]);
-        setCurrentStep(1);
-      } finally {
-        setIsGenerating(false);
-      }
-    }, 5000);
+
+    try {
+      // Upload files first
+      const formData = new FormData();
+      files.forEach(f => formData.append('files', f));
+      const uploadRes = await fetch('/api/files/upload', { method: 'POST', body: formData });
+      if (!uploadRes.ok) throw new Error('Upload failed');
+      const uploaded = await uploadRes.json();
+
+      await createAgent(agentName, selectedCategory, { files: uploaded.uploaded, voiceCloned: isCloning });
+      setAgentName('');
+      setFiles([]);
+      setCurrentStep(1);
+    } catch (err: any) {
+      console.error('Synthesis error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const cancelGeneration = () => {
@@ -66,9 +84,36 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
     }
   };
 
-  const startVoiceCloning = () => {
-    setIsCloning(true);
-    setTimeout(() => setIsCloning(false), 4000);
+  const startVoiceCloning = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setIsCloning(true);
+      const mediaRecorder = new MediaRecorder(stream);
+      const chunks: BlobPart[] = [];
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', blob, 'voice_sample.webm');
+        try {
+          const res = await fetch('/api/voice/samples', { method: 'POST', body: formData });
+          if (res.ok) {
+            toast.success('Voice sample captured. Go to Voice Forge to clone.');
+          } else {
+            toast.error('Failed to upload voice sample');
+          }
+        } catch {
+          toast.error('Upload failed');
+        }
+        setIsCloning(false);
+      };
+      mediaRecorder.start();
+      setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 5000);
+      toast.info('Recording 5-second sample...');
+    } catch {
+      toast.error('Microphone access denied');
+    }
   };
 
   return (
@@ -301,7 +346,15 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                 <div className="grid md:grid-cols-2 gap-10">
                   <div className="space-y-6">
                     <label className="text-sm font-bold uppercase tracking-widest text-white/40">Knowledge Base</label>
-                    <div 
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept=".pdf,.json,.txt,.ts,.js,.py,.md,.csv,.yaml,.yml,.xml,.html,.css"
+                    />
+                    <div
                       onClick={handleUpload}
                       className="border-2 border-dashed border-white/10 rounded-[3rem] p-12 flex flex-col items-center justify-center gap-6 hover:border-celestial-saturn/30 hover:bg-white/5 transition-all cursor-pointer group aspect-square"
                     >
@@ -342,13 +395,16 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {files.map((file, i) => (
                         <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group/file">
-                          <div className="flex items-center gap-3">
-                            <FileText size={18} className="text-celestial-saturn" />
-                            <span className="text-sm text-white/60 font-medium">{file}</span>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <FileText size={18} className="text-celestial-saturn shrink-0" />
+                            <div className="min-w-0">
+                              <span className="text-sm text-white/60 font-medium truncate block">{file.name}</span>
+                              <span className="text-[10px] text-white/20">{formatFileSize(file.size)}</span>
+                            </div>
                           </div>
-                          <button 
-                            onClick={() => removeFile(file)}
-                            className="p-2 hover:bg-white/10 rounded-xl text-white/20 hover:text-red-500 transition-colors"
+                          <button
+                            onClick={() => removeFile(file.name)}
+                            className="p-2 hover:bg-white/10 rounded-xl text-white/20 hover:text-red-500 transition-colors shrink-0"
                           >
                             <X size={16} />
                           </button>
@@ -501,6 +557,12 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
       </section>
     </div>
   );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function SkillBadge({ label }: { label: string }) {

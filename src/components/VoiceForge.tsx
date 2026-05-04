@@ -301,9 +301,40 @@ export function VoiceForge({ t }: { t: any }) {
 
 function VoiceCard({ voice, onDelete, isCloned = false }: { voice: any, onDelete?: () => void, isCloned?: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const handlePlay = async () => {
+    if (isPlaying) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/voice/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voiceId: voice.voiceId || voice.id, text: '你好，这是我的声音样本。Hello, this is my voice sample.' }),
+      });
+      if (!res.ok) throw new Error('Synthesis failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { setIsPlaying(false); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setIsPlaying(false); URL.revokeObjectURL(url); toast.error('Playback failed'); };
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      toast.error('Failed to play voice sample');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       whileInView={{ opacity: 1, x: 0 }}
       viewport={{ once: true }}
@@ -326,11 +357,12 @@ function VoiceCard({ voice, onDelete, isCloned = false }: { voice: any, onDelete
           </div>
 
           <div className="flex items-center gap-2">
-             <button 
-               onClick={() => setIsPlaying(!isPlaying)}
-               className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+             <button
+               onClick={handlePlay}
+               disabled={isLoading}
+               className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-50"
              >
-                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                {isLoading ? <Loader2 size={18} className="animate-spin" /> : isPlaying ? <Pause size={18} /> : <Play size={18} />}
              </button>
              {isCloned && onDelete && (
                <button 

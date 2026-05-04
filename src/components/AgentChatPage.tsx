@@ -21,7 +21,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
   const [messages, setMessages] = useState<any[]>([]);
   const [agentMetadata, setAgentMetadata] = useState<Partial<AgentResponse>>({});
   const { platform, isElectron } = usePlatform();
-  const { aiConfig } = useApp();
+  const { aiConfig, personalityId } = useApp();
   const socket = useSocket();
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>();
   const [voices, setVoices] = useState<any[]>([]);
@@ -282,7 +282,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
           <VoiceCallButton 
             callState={callState}
             audioLevel={audioLevel}
-            onStart={() => startCall(selectedVoiceId, agentId)}
+            onStart={() => startCall(selectedVoiceId, personalityId)}
             onEnd={endCall}
             hasVoice={voices.length > 0}
           />

@@ -49,5 +49,6 @@ export function registerDataOpsTools(registry: ToolRegistry): void {
     },
     handler: databaseQueryHandler,
     permission: 'admin',
+    securityLevel: 'confirm',
   });
 }

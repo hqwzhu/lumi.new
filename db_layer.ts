@@ -39,6 +39,35 @@ function migrateSchema(): Promise<void> {
     db!.run("ALTER TABLE interactions ADD COLUMN role TEXT DEFAULT ''", () => {});
     // Add 'personality' column to interactions if it doesn't exist
     db!.run("ALTER TABLE interactions ADD COLUMN personality TEXT DEFAULT ''", () => {});
+    // Add 'mode' column to interactions if it doesn't exist
+    db!.run("ALTER TABLE interactions ADD COLUMN mode TEXT DEFAULT ''", () => {});
+    // Add 'toolCalls' column to interactions if it doesn't exist
+    db!.run("ALTER TABLE interactions ADD COLUMN toolCalls TEXT DEFAULT ''", () => {});
+    // Add memories table if it doesn't exist
+    db!.run(`CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      keywords TEXT NOT NULL DEFAULT '[]',
+      confidence REAL NOT NULL DEFAULT 0.5,
+      sourceInteractionId TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      lastRetrievedAt TEXT,
+      retrieveCount INTEGER NOT NULL DEFAULT 0
+    )`, () => {});
+    // Add reminders table if it doesn't exist
+    db!.run(`CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      content TEXT NOT NULL,
+      dueAt TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      sourceInteractionId TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL,
+      firedAt TEXT
+    )`, () => {});
     // Give SQLite time for ALTER TABLEs to complete
     setTimeout(resolve, 200);
   });
@@ -64,8 +93,7 @@ function createTables(): Promise<void> {
         config TEXT NOT NULL,
         createdAt TEXT NOT NULL,
         userId TEXT,
-        status TEXT DEFAULT 'active',
-        FOREIGN KEY (userId) REFERENCES users (uid)
+        status TEXT DEFAULT 'active'
       );
 
       CREATE TABLE IF NOT EXISTS interactions (
@@ -77,9 +105,9 @@ function createTables(): Promise<void> {
         response TEXT,
         role TEXT DEFAULT '',
         personality TEXT DEFAULT '',
-        timestamp TEXT NOT NULL,
-        FOREIGN KEY (userId) REFERENCES users (uid),
-        FOREIGN KEY (agentId) REFERENCES agents (id)
+        mode TEXT DEFAULT '',
+        toolCalls TEXT DEFAULT '',
+        timestamp TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS marketplace_skills (
@@ -174,6 +202,16 @@ async function loadMemoryDB(): Promise<void> {
   const founderVisionRow = await query<any>('SELECT content FROM founder_vision WHERE id = 1');
   const founderVision = founderVisionRow[0]?.content || '';
 
+  // Load memories
+  const memoriesRaw = await query<any>('SELECT * FROM memories');
+  const memories = memoriesRaw.map((m: any) => ({
+    ...m,
+    keywords: m.keywords ? JSON.parse(m.keywords) : [],
+  }));
+
+  // Load reminders
+  const remindersRaw = await query<any>('SELECT * FROM reminders');
+
   // Map old column names to the field names that server.ts expects
   const agents = agentsRaw.map((a: any) => ({
     ...a,
@@ -186,6 +224,8 @@ async function loadMemoryDB(): Promise<void> {
     content: i.message || i.content || '',
     role: i.role || '',
     personality: i.personality || i.module || '',
+    mode: i.mode || '',
+    toolCalls: i.toolCalls ? JSON.parse(i.toolCalls) : undefined,
   }));
 
   memoryDB = {
@@ -195,6 +235,8 @@ async function loadMemoryDB(): Promise<void> {
     marketplaceSkills,
     skills,
     founderVision,
+    memories: memories || [],
+    reminders: remindersRaw || [],
     chatHistories: {}
   };
 }
@@ -224,18 +266,28 @@ export function readDB(): any {
   return memoryDB;
 }
 
+// Write lock to prevent concurrent SQLite transactions
+let writeLock: Promise<void> = Promise.resolve();
+
 export function writeDB(data: any): void {
   if (!db) {
     throw new Error('Database not initialized.');
   }
   memoryDB = data;
-  persistMemoryDB().catch(err => {
-    console.error('Failed to persist database:', err);
+  // Chain writes so only one transaction runs at a time. Keep the chain alive,
+  // but never hide persistence failures.
+  const ready = writeLock.catch((err) => {
+    console.error('[DB] Previous write failed:', err);
   });
+  writeLock = ready
+    .then(() => persistMemoryDB())
+    .catch((err) => {
+      console.error('[DB] Failed to persist database:', err);
+    });
 }
 
 async function persistMemoryDB(): Promise<void> {
-  const tables = ['interactions', 'agents', 'users', 'marketplace_skills', 'skills', 'founder_vision'];
+  const tables = ['interactions', 'agents', 'users', 'marketplace_skills', 'skills', 'founder_vision', 'memories', 'reminders'];
 
   await run('BEGIN TRANSACTION');
   try {
@@ -265,7 +317,7 @@ async function persistMemoryDB(): Promise<void> {
 
     for (const interaction of memoryDB.interactions) {
       await run(
-        `INSERT INTO interactions (id, userId, agentId, module, message, response, role, personality, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO interactions (id, userId, agentId, module, message, response, role, personality, mode, toolCalls, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           interaction.id,
           interaction.userId || 'unknown',
@@ -275,7 +327,44 @@ async function persistMemoryDB(): Promise<void> {
           interaction.response || '',
           interaction.role || '',
           interaction.personality || '',
+          interaction.mode || '',
+          interaction.toolCalls ? JSON.stringify(interaction.toolCalls) : '',
           interaction.timestamp
+        ]
+      );
+    }
+
+    for (const memory of memoryDB.memories || []) {
+      await run(
+        `INSERT INTO memories (id, userId, type, content, keywords, confidence, sourceInteractionId, createdAt, updatedAt, lastRetrievedAt, retrieveCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          memory.id,
+          memory.userId,
+          memory.type,
+          memory.content,
+          JSON.stringify(memory.keywords || []),
+          memory.confidence || 0.5,
+          memory.sourceInteractionId || '',
+          memory.createdAt,
+          memory.updatedAt,
+          memory.lastRetrievedAt,
+          memory.retrieveCount || 0,
+        ]
+      );
+    }
+
+    for (const reminder of memoryDB.reminders || []) {
+      await run(
+        `INSERT INTO reminders (id, userId, content, dueAt, status, sourceInteractionId, createdAt, firedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          reminder.id,
+          reminder.userId,
+          reminder.content,
+          reminder.dueAt || null,
+          reminder.status || 'pending',
+          reminder.sourceInteractionId || '',
+          reminder.createdAt,
+          reminder.firedAt || null,
         ]
       );
     }

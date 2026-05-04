@@ -12,6 +12,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
   const [callState, setCallState] = useState<CallState>('idle');
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string>('');
 
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
@@ -101,10 +102,15 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     });
 
     socket.on('audio:transcript', (data: { text: string; isFinal: boolean }) => {
+      setTranscript(data.text);
       onTranscript?.(data.text, data.isFinal);
+      if (data.isFinal) {
+        setTimeout(() => setTranscript(''), 2000); // Clear after 2s if final
+      }
     });
 
     socket.on('agent:response', (data: { text: string }) => {
+      setTranscript(''); // Clear user transcript when AI starts responding
       onResponse?.(data.text);
     });
 
@@ -223,6 +229,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     callState,
     audioLevel,
     error,
+    transcript,
     startCall,
     endCall,
     interrupt,

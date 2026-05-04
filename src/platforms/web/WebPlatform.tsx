@@ -21,7 +21,7 @@ interface WebPlatformProps {
   onLogin: () => void;
   onLogout: () => void;
   renderTabContent: (tab: string) => React.ReactNode;
-  isElectron: boolean;
+  isDesktop: boolean;
   setUiMode: (mode: 'web' | 'desktop' | 'mobile') => void;
 }
 
@@ -35,7 +35,7 @@ export function WebPlatform({
   onLogin, 
   onLogout, 
   renderTabContent,
-  isElectron,
+  isDesktop,
   setUiMode
 }: WebPlatformProps) {
   const [introView, setIntroView] = useState<'none' | 'desktop' | 'mobile'>('none');
@@ -148,7 +148,7 @@ export function WebPlatform({
                      {t.heroSubtitle}
                    </p>
                     <div className="flex flex-col items-center gap-6">
-                       {isElectron ? (
+                       {isDesktop ? (
                          <div className="flex flex-col items-center gap-8">
                            <button
                              onClick={() => setIntroView('desktop')}
