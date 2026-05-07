@@ -92,6 +92,7 @@ interface WindowProps {
   isActive: boolean;
   onFocus: (id: string) => void;
   onMinimize: (id: string) => void;
+  onMinimizeComplete: (id: string) => void;
   isMinimized: boolean;
   t: any;
   colorClass?: string;
@@ -109,6 +110,7 @@ function OSWindow({
   isActive,
   onFocus,
   onMinimize,
+  onMinimizeComplete,
   isMinimized,
   t,
   colorClass = 'from-celestial-mars to-celestial-saturn',
@@ -118,9 +120,6 @@ function OSWindow({
 }: WindowProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const [snapZone, setSnapZone] = useState<'none' | 'left' | 'right'>('none');
-  const [exiting, setExiting] = useState(false);
-
-  if (exiting) return null;
 
   return (
     <motion.div
@@ -148,9 +147,9 @@ function OSWindow({
           }
       }
       onAnimationComplete={() => {
-        if (isMinimized) setExiting(true);
+        if (isMinimized) onMinimizeComplete(id);
       }}
-      exit={{ opacity: 0, scale: 0.9, y: 20 }}
+      exit={{ opacity: 0, scale: 0.3, y: window.innerHeight * 0.4, transition: { duration: 0.2 } }}
       style={{
         zIndex: isMinimized ? zIndex - 100 : zIndex,
         position: isMaximized || snapZone !== 'none' ? 'fixed' : 'absolute'
@@ -1724,6 +1723,10 @@ export function DesktopUI({
                   setWindowOrder(prev => [...prev.filter(w => w !== id), id]);
                 }}
                 onMinimize={(id) => setMinimizedWindows(prev => [...prev, id])}
+                onMinimizeComplete={(id) => {
+                  setMinimizedWindows(prev => prev.filter(w => w !== id));
+                  closeWindow(id);
+                }}
                 onClose={() => closeWindow(windowId)}
                 colorClass={appIcons.find(a => a.id === windowId)?.color}
                 width={size.w}
