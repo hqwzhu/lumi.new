@@ -22,6 +22,7 @@ import { LocalAgentSphere } from './components/LocalAgentSphere';
 import { FloatingAgent } from './components/FloatingAgent';
 import { ProactiveNotifications } from './components/ProactiveNotifications';
 import { ToolConfirmDialog } from './components/ToolConfirmDialog';
+import { Toaster } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Rocket, Sparkles, Layout } from 'lucide-react';
 import { translations } from './lib/translations';
@@ -173,6 +174,7 @@ export default function App() {
     }`}>
       <ProactiveNotifications />
       <ToolConfirmDialog />
+      <Toaster position="top-right" theme="dark" />
       <AnimatePresence mode="wait">
         {uiMode === 'mobile' ? (
           <MobilePlatform 

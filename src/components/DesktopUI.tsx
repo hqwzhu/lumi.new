@@ -3,18 +3,12 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/re
 import { HardcoreBootSequence } from './HardcoreBootSequence';
 import { GlobalNodeMap } from './GlobalNodeMap';
 import { sounds } from '../services/soundService';
-import { 
-  Rocket, 
-  MessageSquare, 
-  Cpu, 
-  Globe, 
-  Users, 
-  BookOpen, 
+import {
+  Rocket,
+  Cpu,
+  Globe,
   Settings as SettingsIcon,
   Shield,
-  Award,
-  Layout,
-  ShoppingBag,
   Zap,
   X,
   User as UserIcon,
@@ -31,13 +25,9 @@ import {
   Sun,
   Maximize2,
   ChevronRight,
-  ChevronDown,
   Clock,
-  Calendar as CalendarIcon,
   Bell,
   Music,
-  Plus,
-  MessagesSquare,
   Disc,
   Headphones,
   BrainCircuit,
@@ -107,66 +97,75 @@ interface WindowProps {
   colorClass?: string;
   width?: string | number;
   height?: string | number;
+  zIndex?: number;
 }
 
-function OSWindow({ 
-  id, 
-  title, 
-  icon, 
-  children, 
-  onClose, 
-  isActive, 
-  onFocus, 
-  onMinimize, 
-  isMinimized, 
+function OSWindow({
+  id,
+  title,
+  icon,
+  children,
+  onClose,
+  isActive,
+  onFocus,
+  onMinimize,
+  isMinimized,
   t,
   colorClass = 'from-celestial-mars to-celestial-saturn',
   width = 'auto',
-  height = 'auto'
+  height = 'auto',
+  zIndex = 10,
 }: WindowProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const [snapZone, setSnapZone] = useState<'none' | 'left' | 'right'>('none');
-  const constraintsRef = React.useRef(null);
+  const [exiting, setExiting] = useState(false);
 
-  if (isMinimized) return null;
+  if (exiting) return null;
 
   return (
     <motion.div
-      drag={!isMaximized}
+      drag={!isMaximized && !isMinimized}
       dragMomentum={false}
       dragConstraints={{ top: 40, left: 0, right: 0, bottom: 0 }}
-      onDragEnd={(e, info) => {
+      onDragEnd={(_e, info) => {
         if (info.point.x < 100) setSnapZone('left');
         else if (info.point.x > window.innerWidth - 100) setSnapZone('right');
         else setSnapZone('none');
       }}
       initial={{ opacity: 0, scale: 0.9, y: 20 }}
-      animate={{ 
-        opacity: 1, 
-        scale: 1, 
-        width: isMaximized ? '100vw' : snapZone !== 'none' ? '50vw' : width,
-        height: isMaximized ? 'calc(100vh - 40px)' : snapZone !== 'none' ? 'calc(100vh - 40px)' : height,
-        top: isMaximized || snapZone !== 'none' ? '40px' : '50%',
-        left: isMaximized ? '0' : snapZone === 'left' ? '0' : snapZone === 'right' ? '50%' : '50%',
-        x: isMaximized || snapZone !== 'none' ? 0 : '-50%',
-        y: isMaximized || snapZone !== 'none' ? 0 : '-50%',
+      animate={isMinimized
+        ? { opacity: 0, scale: 0.3, y: window.innerHeight * 0.4, transition: { duration: 0.3, ease: 'easeIn' } }
+        : {
+            opacity: 1,
+            scale: 1,
+            width: isMaximized ? '100vw' : snapZone !== 'none' ? '50vw' : width,
+            height: isMaximized ? 'calc(100vh - 40px)' : snapZone !== 'none' ? 'calc(100vh - 40px)' : height,
+            top: isMaximized || snapZone !== 'none' ? '40px' : '50%',
+            left: isMaximized ? '0' : snapZone === 'left' ? '0' : snapZone === 'right' ? '50%' : '50%',
+            x: isMaximized || snapZone !== 'none' ? 0 : '-50%',
+            y: isMaximized || snapZone !== 'none' ? 0 : '-50%',
+            transition: { duration: 0.35, ease: 'easeOut' },
+          }
+      }
+      onAnimationComplete={() => {
+        if (isMinimized) setExiting(true);
       }}
       exit={{ opacity: 0, scale: 0.9, y: 20 }}
-      style={{ 
-        zIndex: isActive ? 50 : 10,
-        position: isMaximized || snapZone !== 'none' ? 'fixed' : 'absolute' 
+      style={{
+        zIndex: isMinimized ? zIndex - 100 : zIndex,
+        position: isMaximized || snapZone !== 'none' ? 'fixed' : 'absolute'
       }}
-      onClick={() => onFocus(id)}
-      className={`os-window pointer-events-auto overflow-hidden ${isMaximized ? 'rounded-none' : 'rounded-[2.5rem]'}`}
+      onClick={() => !isMinimized && onFocus(id)}
+      className={`os-window pointer-events-auto overflow-hidden ${isMaximized ? 'rounded-none' : 'rounded-[2.5rem]'} ${isMinimized ? 'pointer-events-none' : ''}`}
     >
-      <div 
+      <div
         className="os-window-header cursor-default px-6"
-        onDoubleClick={() => setIsMaximized(!isMaximized)}
+        onDoubleClick={() => !isMinimized && setIsMaximized(!isMaximized)}
       >
         <div className="flex items-center gap-4 select-none">
           <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${colorClass} flex items-center justify-center p-1.5 shadow-lg border border-white/10 group-hover:rotate-6 transition-transform`}>
-            {React.isValidElement(icon) 
-              ? React.cloneElement(icon as React.ReactElement<any>, { size: 16, className: 'text-white' }) 
+            {React.isValidElement(icon)
+              ? React.cloneElement(icon as React.ReactElement<any>, { size: 16, className: 'text-white' })
               : icon}
           </div>
           <div className="flex flex-col">
@@ -176,16 +175,16 @@ function OSWindow({
         </div>
         <div className="flex gap-3">
           <div className="h-6 w-px bg-white/5 mr-2" />
-          <button 
+          <button
             onClick={() => onMinimize(id)}
-            className="w-3 h-3 rounded-full bg-blue-500/20 border border-blue-500/40 hover:bg-blue-500/60 transition-colors" 
+            className="w-3 h-3 rounded-full bg-blue-500/20 border border-blue-500/40 hover:bg-blue-500/60 transition-colors"
           />
-          <button 
+          <button
             onClick={() => setIsMaximized(!isMaximized)}
-            className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/40 hover:bg-yellow-500/60 transition-colors" 
+            className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/40 hover:bg-yellow-500/60 transition-colors"
           />
           <button className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/40 hover:bg-green-500/60 transition-colors" />
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onClose(id); }}
             className="w-3 h-3 rounded-full bg-red-500/40 border border-red-500/60 hover:bg-red-500/80 flex items-center justify-center transition-colors group/close"
           >
@@ -216,13 +215,7 @@ function ControlCenter({ isOpen, onClose, t, brightness, setBrightness, volume, 
 }) {
   const [nightShift, setNightShift] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const { personalityId, setPersonalityId, aiConfig, selectedVoiceId, setSelectedVoiceId, unreadCount } = useApp();
-  const [personalities, setPersonalities] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetch('/api/personalities')
-      .then(r => r.json()).then(d => setPersonalities(d || [])).catch(() => {});
-  }, []);
+  const { personalityId, aiConfig, selectedVoiceId, unreadCount } = useApp();
 
   if (!isOpen) return null;
 
@@ -700,11 +693,12 @@ export function DesktopUI({
   const worldOpacity = useTransform(cameraZ, [0, -1000], [0.1, 1]);
   const worldScale = useTransform(cameraZ, [0, -1000], [2, 1]);
   const { isTauri } = usePlatform();
-  const { personalityId, selectedVoiceId, setSelectedVoiceId, unreadCount, notifications, addNotification } = useApp();
+  const { personalityId, selectedVoiceId, unreadCount, notifications } = useApp();
 
   const [openWindows, setOpenWindows] = useState<string[]>(activeTab !== 'home' ? [activeTab] : []);
   const [minimizedWindows, setMinimizedWindows] = useState<string[]>([]);
   const [focusedWindow, setFocusedWindow] = useState<string | null>(activeTab !== 'home' ? activeTab : null);
+  const [windowOrder, setWindowOrder] = useState<string[]>(activeTab !== 'home' ? [activeTab] : []);
   const [theme, setTheme] = useState<string>('celestial');
   const [nativeFiles, setNativeFiles] = useState<NativeFile[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -731,7 +725,7 @@ export function DesktopUI({
   }, [personalityId]);
 
   const socket = useSocket();
-  const { callState, audioLevel, startCall, endCall, error: callError, transcript, isMuted, elapsedSeconds, connectionQuality, interrupt, toggleMute } = useVoiceCall({
+  const { callState, audioLevel, startCall, endCall, error: callError, transcript, interrupt, toggleMute } = useVoiceCall({
     socket,
     onTranscript: (text, isFinal) => {
       if (isFinal) {
@@ -785,7 +779,6 @@ export function DesktopUI({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isWallpaperMode, toggleWallpaperMode]);
 
-  const [showBootScreen, setShowBootScreen] = useState(true);
   const [bootVisible, setBootVisible] = useState(true);
 
   // Remove the old interval-based boot logic since HardcoreBootSequence handles it
@@ -866,9 +859,12 @@ export function DesktopUI({
         setMinimizedWindows(prev => prev.filter(w => w !== tab));
       }
       setFocusedWindow(tab);
+      // Move to front of z-order
+      setWindowOrder(prev => [...prev.filter(w => w !== tab), tab]);
     } else {
       setOpenWindows([...openWindows, tab]);
       setFocusedWindow(tab);
+      setWindowOrder(prev => [...prev, tab]);
     }
     setActiveTab(tab);
   };
@@ -877,6 +873,7 @@ export function DesktopUI({
     try { sounds.playClick(); } catch {}
     const nextWindows = openWindows.filter(w => w !== tab);
     setOpenWindows(nextWindows);
+    setWindowOrder(prev => prev.filter(w => w !== tab));
     if (focusedWindow === tab) {
       setFocusedWindow(nextWindows.length > 0 ? nextWindows[nextWindows.length - 1] : null);
       if (nextWindows.length === 0) setActiveTab('home');
@@ -1357,13 +1354,19 @@ export function DesktopUI({
                     className={`absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full ${minimizedWindows.includes(app.id) ? 'w-3 h-0.5 bg-white/40' : 'w-1 h-1 bg-white'}`} 
                   />
                 )}
-                {/* Taskbar Preview Tooltip Logic Mockup */}
+                {/* Taskbar Preview Tooltip */}
                 {openWindows.includes(app.id) && !minimizedWindows.includes(app.id) && (
-                   <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-32 h-20 bg-black/80 border border-white/10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-all pointer-events-none p-1 shadow-2xl">
-                      <div className="w-full h-full bg-white/5 rounded-lg flex items-center justify-center overflow-hidden">
-                         <div className="scale-[0.2] origin-center opacity-40">
-                           {app.icon}
-                         </div>
+                   <div className="absolute -top-28 left-1/2 -translate-x-1/2 w-36 bg-black/90 border border-white/10 rounded-xl overflow-hidden opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none shadow-2xl">
+                      <div className="p-3 flex items-center gap-2 border-b border-white/5">
+                        <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center">
+                          <span className="scale-75">{app.icon}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-white/80 truncate">{app.label}</span>
+                      </div>
+                      <div className="px-3 py-2">
+                        <p className="text-[9px] text-white/30 leading-tight">
+                          {focusedWindow === app.id ? 'Active — focused' : 'Open in background'}
+                        </p>
                       </div>
                    </div>
                 )}
@@ -1706,6 +1709,7 @@ export function DesktopUI({
         <AnimatePresence>
           {openWindows.map(windowId => {
             const size = getWindowSize(windowId);
+            const orderIdx = windowOrder.indexOf(windowId);
             return (
               <OSWindow
                 key={windowId}
@@ -1714,7 +1718,11 @@ export function DesktopUI({
                 icon={appIcons.find(a => a.id === windowId)?.icon}
                 isActive={focusedWindow === windowId}
                 isMinimized={minimizedWindows.includes(windowId)}
-                onFocus={(id) => setFocusedWindow(id)}
+                zIndex={10 + (orderIdx >= 0 ? orderIdx : 0)}
+                onFocus={(id) => {
+                  setFocusedWindow(id);
+                  setWindowOrder(prev => [...prev.filter(w => w !== id), id]);
+                }}
                 onMinimize={(id) => setMinimizedWindows(prev => [...prev, id])}
                 onClose={() => closeWindow(windowId)}
                 colorClass={appIcons.find(a => a.id === windowId)?.color}

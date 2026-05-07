@@ -1,6 +1,7 @@
 import { ToolRegistry } from '../tools/registry';
 import { ToolExecutionRecord, ToolContext } from '../tools/types';
 import { NormalizedMessage, makeLLMCall, makeLLMCallStreaming, StreamCallback } from './providers';
+import { recordWorkflow, WorkflowStep } from '../skills/worklog';
 
 export interface LLMConfig {
   provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen';
@@ -58,6 +59,7 @@ export async function runWithTools(
         );
 
     if (!response.toolCalls || response.toolCalls.length === 0) {
+      recordWorkflowIfToolsUsed(executionLog, messages, config.userId);
       return {
         text: response.text || 'No response.',
         toolCalls: executionLog,
@@ -75,6 +77,7 @@ export async function runWithTools(
         JSON.stringify(tc.arguments) === JSON.stringify(response.toolCalls![i].arguments)
       );
       if (sameTools && lastAssistantMsg.toolCalls.length === response.toolCalls.length) {
+        recordWorkflowIfToolsUsed(executionLog, messages, config.userId);
         return {
           text: response.text || 'The same tools were called repeatedly. Breaking the loop to prevent infinite execution.',
           toolCalls: executionLog,
@@ -117,8 +120,29 @@ export async function runWithTools(
     }
   }
 
+  recordWorkflowIfToolsUsed(executionLog, messages, config.userId);
   return {
     text: 'Maximum tool call iterations reached.',
     toolCalls: executionLog,
   };
+}
+
+/** Record workflow from tool execution trace, if any tools were actually called */
+function recordWorkflowIfToolsUsed(
+  executionLog: ToolExecutionRecord[],
+  messages: NormalizedMessage[],
+  userId?: string,
+): void {
+  if (executionLog.length === 0) return;
+  const userMsg = messages.find(m => m.role === 'user')?.content || '';
+  recordWorkflow({
+    userId: userId || 'anonymous',
+    userIntent: userMsg.slice(0, 200),
+    toolSequence: executionLog.map(e => ({
+      name: e.name,
+      args: e.arguments,
+      resultSummary: (e.result || e.error || '').slice(0, 200),
+    })),
+    conversationExcerpt: userMsg.slice(0, 500),
+  });
 }

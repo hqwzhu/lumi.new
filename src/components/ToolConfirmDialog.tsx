@@ -36,7 +36,7 @@ export function ToolConfirmDialog() {
   }, [socket]);
 
   const respond = useCallback((correlationId: string, allowed: boolean) => {
-    socket?.emit('tool:confirm_result', { correlationId, allowed });
+    socket?.emit(`tool:confirm_result:${correlationId}`, { correlationId, allowed });
     setPending(prev => prev.filter(p => p.correlationId !== correlationId));
   }, [socket]);
 

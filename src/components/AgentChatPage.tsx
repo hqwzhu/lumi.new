@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, MessageSquare, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown } from 'lucide-react';
+import { Send, MessageSquare, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown, History, Clock } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { socketService } from '@/services/socketService';
@@ -65,6 +65,8 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [optimizationProgress, setOptimizationProgress] = useState(0);
+  const [activeConversation, setActiveConversation] = useState<any>(null);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
   const { speak, stop, pause, resume, isSpeaking, isPaused } = useTTS();
   const recognition = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -104,6 +106,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
 
   useEffect(() => {
     if (agentId && !isFounder) {
+      // Load history for this agent's active conversation
       fetch(`/api/agents/${agentId}/history`)
         .then(res => res.json())
         .then(data => {
@@ -112,15 +115,49 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
               id: `history-${idx}`,
               text: m.content,
               userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || 'User'),
-              timestamp: new Date().toISOString(), // We don't store individual timestamps yet
+              timestamp: new Date().toISOString(),
               type: m.role === 'assistant' ? 'agent' : 'user'
             }));
             setMessages(historyMessages);
           }
         })
         .catch(err => console.error("Failed to load chat history", err));
+
+      // Check for active conversation
+      fetch('/api/conversations/active')
+        .then(res => res.json())
+        .then(data => {
+          if (data.activeConversation) {
+            setActiveConversation(data.activeConversation);
+            // If resume is for a different agent, show prompt
+            if (data.activeConversation.agentId !== agentId) {
+              setShowResumePrompt(true);
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, [agentId, agentName, user, isFounder]);
+
+  const handleResumeConversation = useCallback(async (conversationId: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/messages?limit=100`);
+      const data = await res.json();
+      if (data.messages && Array.isArray(data.messages)) {
+        const historyMessages = data.messages.map((m: any, idx: number) => ({
+          id: `resume-${idx}`,
+          text: m.content || m.message || '',
+          userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || 'User'),
+          timestamp: m.timestamp || new Date().toISOString(),
+          type: m.role === 'assistant' ? 'agent' : 'user'
+        }));
+        setMessages(historyMessages);
+      }
+      setShowResumePrompt(false);
+    } catch (err) {
+      console.error("Failed to resume conversation", err);
+    }
+  }, [agentName, user]);
 
   useEffect(() => {
     if (isFounder || !socket) return; 
@@ -172,10 +209,9 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
     setIsTyping(true);
 
     try {
-      // Use the new Agent Service
       const response = await runAgentLogic(newMessage, { platform, aiConfig });
       setAgentMetadata(response);
-      
+
       const agentMsg = {
         id: Date.now().toString(),
         text: response.text,
@@ -186,6 +222,18 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
 
       setMessages(prev => [...prev, agentMsg]);
       speak(response.text);
+
+      // Persist new message pair via conversation-managed endpoint
+      fetch(`/api/agents/${agentId}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: userMsg.text },
+            { role: 'assistant', content: response.text },
+          ],
+        }),
+      }).catch(() => {});
     } catch (err) {
       toast.error("Failed to route through Neural Mesh.");
     } finally {
@@ -337,10 +385,59 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             </div>
           </div>
 
-          <div 
+          <div
             ref={scrollRef}
             className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6 scrollbar-hide"
           >
+            {/* Resume conversation prompt */}
+            {showResumePrompt && activeConversation && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                    <History size={16} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-300 uppercase tracking-tight">Unfinished conversation</p>
+                    <p className="text-[10px] text-white/40 flex items-center gap-1">
+                      <Clock size={10} />
+                      {new Date(activeConversation.lastActiveAt).toLocaleString()}
+                      {activeConversation.messageCount > 0 && (
+                        <span> &middot; {activeConversation.messageCount} messages</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => handleResumeConversation(activeConversation.id)}
+                    className="bg-amber-500 text-black font-bold text-[10px] px-3 py-1.5 rounded-xl hover:scale-105 transition-transform"
+                  >
+                    Continue
+                  </Button>
+                  <Button
+                    onClick={() => setShowResumePrompt(false)}
+                    variant="ghost"
+                    className="text-white/20 hover:text-white/60 text-[10px] px-2"
+                  >
+                    New
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Active conversation indicator */}
+            {activeConversation && !showResumePrompt && activeConversation.agentId === agentId && activeConversation.messageCount > 0 && (
+              <div className="flex items-center gap-2 text-[9px] text-white/20 font-bold uppercase tracking-widest">
+                <History size={10} />
+                <span>{activeConversation.messageCount} messages</span>
+                <span>&middot;</span>
+                <span>Last active {new Date(activeConversation.lastActiveAt).toLocaleString()}</span>
+              </div>
+            )}
             {messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-20">
                 <Sparkles size={64} className="text-celestial-saturn" />

@@ -1,7 +1,7 @@
-export { queryMemories, addMemory, removeMemory, decayMemories, formatMemoriesForContext, addReminder, getDueReminders, fireReminder } from './store';
+export { queryMemories, addMemory, removeMemory, decayMemories, formatMemoriesForContext, addReminder, getDueReminders, fireReminder, getUnconsolidatedEpisodic, markConsolidated } from './store';
 export type { Reminder } from './store';
 export { extractMemories } from './extractor';
-export type { ExtractedMemory } from './types';
+export type { ExtractedMemory, MemoryTier, MemoryPerspective } from './types';
 export type { ExtractedReminder } from './extractor';
 export { analyzeBehavioralPatterns, runBehavioralAnalysis } from './behavioral';
 export type { BehavioralPattern } from './behavioral';

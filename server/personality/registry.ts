@@ -3,6 +3,7 @@ import path from 'path';
 import { PersonalityConfig, PersonalityContext } from './types';
 import { generateSystemPrompt } from './engine';
 import { Memory } from '../memory/types';
+import { EmotionalState } from './state';
 
 class PersonalityRegistry {
   private personalities: Map<string, PersonalityConfig> = new Map();
@@ -101,6 +102,7 @@ class PersonalityRegistry {
     options?: {
       skillOverride?: string;
       memories?: Memory[];
+      emotionalState?: EmotionalState;
     },
   ): { config: PersonalityConfig; systemPrompt: string } {
     const config = this.get(personalityId) || this.getDefault();

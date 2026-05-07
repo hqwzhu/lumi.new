@@ -1,5 +1,7 @@
 import { PersonalityConfig, PersonalityContext, ExpressionStyle } from './types';
 import { Memory } from '../memory/types';
+import { formatMemoriesForContext } from '../memory/store';
+import { EmotionalState, formatEmotionalStateForPrompt, resolveVerbosityFromState } from './state';
 
 const TONE_GUIDE: Record<ExpressionStyle['tone'], string> = {
   neutral: 'Communicate in a balanced, matter-of-fact manner.',
@@ -30,6 +32,8 @@ export function generateSystemPrompt(
     skillOverride?: string;
     /** Relevant memories to inject */
     memories?: Memory[];
+    /** Current emotional state of this personality */
+    emotionalState?: EmotionalState;
   },
 ): string {
   const effective = resolveEffectiveConfig(config, ctx);
@@ -49,41 +53,40 @@ export function generateSystemPrompt(
     }
   }
 
-  // 3. Expression style
+  // 3. Expression style (verbosity may be overridden by emotional state)
   const style = effective.expressionStyle;
+  const verbosity = options?.emotionalState
+    ? resolveVerbosityFromState(style.verbosity, options.emotionalState)
+    : style.verbosity;
+
   blocks.push('\n## Communication Style');
   blocks.push(TONE_GUIDE[style.tone]);
-  blocks.push(VERBOSITY_GUIDE[style.verbosity]);
+  blocks.push(VERBOSITY_GUIDE[verbosity]);
   if (style.vocabularyHints && style.vocabularyHints.length > 0) {
     blocks.push(`Favour these expression patterns: ${style.vocabularyHints.join(', ')}.`);
   }
   blocks.push(`Respond in: ${style.languages.join(', ')}.`);
 
-  // 4. Skill override (e.g. immortality skills)
+  // 4. Emotional state — dynamic self-awareness
+  if (options?.emotionalState) {
+    blocks.push(formatEmotionalStateForPrompt(options.emotionalState));
+  }
+
+  // 5. Skill override (e.g. immortality skills)
   if (options?.skillOverride) {
     blocks.push(`\n## Active Role Module\n${options.skillOverride}`);
   }
 
-  // 5. Memory context
+  // 6. Memory context — perspective-based, first-person for Lumi's own memories
   if (options?.memories && options.memories.length > 0) {
-    blocks.push('\n## What you know about this user');
-    const byType: Record<string, string[]> = {};
-    for (const m of options.memories) {
-      (byType[m.type] ||= []).push(`- ${m.content} (confidence: ${m.confidence.toFixed(1)})`);
-    }
-    const labels: Record<string, string> = {
-      preference: 'Preferences',
-      fact: 'Facts',
-      habit: 'Habits',
-      knowledge: 'Knowledge',
-    };
-    for (const [type, lines] of Object.entries(byType)) {
-      blocks.push(`### ${labels[type] || type}`);
-      blocks.push(lines.join('\n'));
+    const formatted = formatMemoriesForContext(options.memories);
+    if (formatted) {
+      blocks.push('\n## My memories');
+      blocks.push(formatted);
     }
   }
 
-  // 6. Multimodal sensory awareness
+  // 7. Multimodal sensory awareness
   if (ctx.sensory) {
     const s = ctx.sensory;
     const channels: string[] = [];
@@ -108,7 +111,7 @@ export function generateSystemPrompt(
     }
   }
 
-  // 7. Tool awareness (only for task mode)
+  // 8. Tool awareness (only for task mode)
   if (ctx.mode === 'task') {
     const toolPolicy = effective.toolPolicy;
     if (toolPolicy.allowedTools.length > 0 && toolPolicy.allowedTools[0] !== '*') {

@@ -1,5 +1,5 @@
 import { readDB, writeDB } from '../../db_layer';
-import { Memory, MemoryQuery, MemoryType } from './types';
+import { Memory, MemoryQuery, MemoryType, MemoryTier, MemoryPerspective } from './types';
 
 function getMemoryStore(): Memory[] {
   const db = readDB();
@@ -70,22 +70,57 @@ export function queryMemories(q: MemoryQuery): Memory[] {
   if (q.userId) {
     memories = memories.filter(m => m.userId === q.userId);
   }
+  if (q.agentId !== undefined) {
+    memories = memories.filter(m => (m.agentId || '') === q.agentId);
+  }
   if (q.type) {
     memories = memories.filter(m => m.type === q.type);
   }
   if (q.minConfidence !== undefined) {
     memories = memories.filter(m => m.confidence >= q.minConfidence);
   }
+  if (q.tier) {
+    memories = memories.filter(m => m.tier === q.tier);
+  }
+  if (q.perspective) {
+    memories = memories.filter(m => m.perspective === q.perspective);
+  }
+  if (q.minImportance !== undefined) {
+    memories = memories.filter(m => m.importance >= q.minImportance);
+  }
+  if (q.unconsolidatedOnly) {
+    memories = memories.filter(m => !m.parentId);
+  }
+
+  // Tier-based priority: core_identity always first, then growth, then internalized, then episodic
+  const tierPriority: Record<string, number> = {
+    core_identity: 0,
+    growth: 1,
+    internalized: 2,
+    episodic: 3,
+  };
 
   if (q.query) {
     const scored = memories
       .map(m => ({ m, score: relevanceScore(q.query!, m) }))
       .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => {
+        // Tier priority overrides score within same magnitude
+        const tierDiff = (tierPriority[a.m.tier] || 3) - (tierPriority[b.m.tier] || 3);
+        if (Math.abs(tierDiff) >= 2) return tierDiff;
+        return b.score - a.score;
+      });
     memories = scored.map(({ m }) => m);
   } else {
-    // Sort by confidence desc, then recency
+    // Sort by tier priority, then importance, then confidence, then recency
     memories.sort((a, b) => {
+      const tierDiff = (tierPriority[a.tier] || 3) - (tierPriority[b.tier] || 3);
+      if (tierDiff !== 0) return tierDiff;
+      if (b.importance !== a.importance) return b.importance - a.importance;
+      // self-perspective memories take priority over owner traits
+      const perspA = a.perspective === 'lumi_self' || a.perspective === 'lumi_growth' ? 0 : 1;
+      const perspB = b.perspective === 'lumi_self' || b.perspective === 'lumi_growth' ? 0 : 1;
+      if (perspA !== perspB) return perspA - perspB;
       if (b.confidence !== a.confidence) return b.confidence - a.confidence;
       return b.updatedAt.localeCompare(a.updatedAt);
     });
@@ -169,7 +204,10 @@ export function fireReminder(id: string): void {
 
 // ── Memories ──
 
-export function addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' | 'lastRetrievedAt' | 'retrieveCount'>): Memory {
+export function addMemory(
+  memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' | 'lastRetrievedAt' | 'retrieveCount' | 'tier' | 'perspective' | 'importance' | 'parentId' | 'agentId'>,
+  overrides?: { tier?: Memory['tier']; perspective?: Memory['perspective']; importance?: number; parentId?: string | null; agentId?: string },
+): Memory {
   const all = getMemoryStore();
 
   // Deduplicate: check if similar memory exists
@@ -186,6 +224,7 @@ export function addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' 
     existing.content = memory.confidence > existing.confidence ? memory.content : existing.content;
     existing.keywords = dedupeKeywords([...existing.keywords, ...memory.keywords]);
     existing.confidence = Math.min(1, existing.confidence + 0.1);
+    existing.importance = Math.max(existing.importance, overrides?.importance ?? 0.3);
     existing.updatedAt = now;
     saveMemoryStore(all);
     return existing;
@@ -198,6 +237,11 @@ export function addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' 
     updatedAt: now,
     lastRetrievedAt: null,
     retrieveCount: 0,
+    tier: overrides?.tier ?? 'episodic',
+    perspective: overrides?.perspective ?? 'owner_trait',
+    importance: overrides?.importance ?? 0.3,
+    parentId: overrides?.parentId ?? null,
+    agentId: overrides?.agentId ?? '',
   };
 
   all.push(newMemory);
@@ -214,38 +258,85 @@ export function removeMemory(id: string): boolean {
   return true;
 }
 
-export function decayMemories(userId: string, types: MemoryType[] = ['habit', 'knowledge']): void {
+/** Tier-based decay: core_identity never decays, episodic decays fast */
+export function decayMemories(userId: string): void {
   const all = getMemoryStore();
   let changed = false;
+
+  const decayRates: Record<MemoryTier, { amount: number; min: number }> = {
+    core_identity: { amount: 0, min: 0.9 },     // Never decays
+    growth: { amount: 0.02, min: 0.6 },          // Very slow
+    internalized: { amount: 0.03, min: 0.3 },    // Slow
+    episodic: { amount: 0.05, min: 0.1 },        // Fast
+  };
+
   for (const m of all) {
-    if (m.userId === userId && types.includes(m.type) && m.confidence > 0.2) {
-      m.confidence = Math.max(0.1, m.confidence - 0.05);
-      changed = true;
+    if (m.userId !== userId) continue;
+    const rate = decayRates[m.tier] || decayRates.episodic;
+    if (rate.amount === 0) continue;
+    if (m.confidence <= rate.min) continue;
+    m.confidence = Math.max(rate.min, +(m.confidence - rate.amount).toFixed(2));
+    changed = true;
+  }
+
+  if (changed) saveMemoryStore(all);
+}
+
+/** Get episodic memories that are ready for consolidation (unconsolidated, count >= threshold) */
+export function getUnconsolidatedEpisodic(userId: string): Memory[] {
+  return getMemoryStore().filter(m =>
+    m.userId === userId &&
+    m.tier === 'episodic' &&
+    !m.parentId &&
+    m.confidence >= 0.2,
+  );
+}
+
+/** Mark episodic memories as consolidated by setting parentId */
+export function markConsolidated(ids: string[], parentId: string): void {
+  const all = getMemoryStore();
+  for (const m of all) {
+    if (ids.includes(m.id)) {
+      m.parentId = parentId;
+      // Promote consolidated memories — they're now part of something bigger
+      m.importance = Math.min(1, m.importance + 0.2);
     }
   }
-  if (changed) saveMemoryStore(all);
+  saveMemoryStore(all);
 }
 
 export function formatMemoriesForContext(memories: Memory[]): string {
   if (memories.length === 0) return '';
 
   const lines: string[] = [];
-  const byType: Record<string, Memory[]> = {};
+  const byPerspective: Record<string, Memory[]> = {};
   for (const m of memories) {
-    (byType[m.type] ||= []).push(m);
+    (byPerspective[m.perspective] ||= []).push(m);
   }
 
-  const labels: Record<string, string> = {
-    preference: 'Preferences',
-    fact: 'Facts about the user',
-    habit: 'User habits',
-    knowledge: 'User knowledge',
+  const perspectiveLabels: Record<string, string> = {
+    shared_memory: '## Our shared experiences',
+    lumi_growth: '## My growth & evolution',
+    lumi_self: '## Who I am',
+    owner_trait: '## What I know',
   };
 
-  for (const [type, mems] of Object.entries(byType)) {
-    lines.push(`## ${labels[type] || type}`);
+  // Order: self-identity first (most important for Lumi), then growth, then shared, then owner traits
+  const order: MemoryPerspective[] = ['lumi_self', 'lumi_growth', 'shared_memory', 'owner_trait'];
+
+  for (const perspective of order) {
+    const mems = byPerspective[perspective];
+    if (!mems || mems.length === 0) continue;
+    lines.push(perspectiveLabels[perspective] || `## ${perspective}`);
+    // Sort by importance then confidence within each group
+    mems.sort((a, b) => b.importance - a.importance || b.confidence - a.confidence);
     for (const m of mems) {
-      lines.push(`- ${m.content} (confidence: ${m.confidence.toFixed(1)})`);
+      // Self/growth memories use first-person framing
+      if (perspective === 'lumi_self' || perspective === 'lumi_growth') {
+        lines.push(`- ${m.content}`);
+      } else {
+        lines.push(`- ${m.content}`);
+      }
     }
   }
 

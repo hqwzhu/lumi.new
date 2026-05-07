@@ -43,6 +43,16 @@ function migrateSchema(): Promise<void> {
     db!.run("ALTER TABLE interactions ADD COLUMN mode TEXT DEFAULT ''", () => {});
     // Add 'toolCalls' column to interactions if it doesn't exist
     db!.run("ALTER TABLE interactions ADD COLUMN toolCalls TEXT DEFAULT ''", () => {});
+    // Add 'conversationId' column to interactions if it doesn't exist
+    db!.run("ALTER TABLE interactions ADD COLUMN conversationId TEXT DEFAULT ''", () => {});
+    // Add agent framework columns
+    db!.run("ALTER TABLE agents ADD COLUMN personalityId TEXT DEFAULT 'lumi'", () => {});
+    db!.run("ALTER TABLE agents ADD COLUMN modelPreference TEXT DEFAULT ''", () => {});
+    db!.run("ALTER TABLE agents ADD COLUMN memoryScope TEXT DEFAULT 'shared'", () => {});
+    db!.run("ALTER TABLE agents ADD COLUMN autonomyLevel TEXT DEFAULT 'reactive'", () => {});
+    db!.run("ALTER TABLE agents ADD COLUMN runtimeConfig TEXT DEFAULT '{}'", () => {});
+    // Add agentId to memories for agent-private memory
+    db!.run("ALTER TABLE memories ADD COLUMN agentId TEXT DEFAULT ''", () => {});
     // Add memories table if it doesn't exist
     db!.run(`CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
@@ -55,8 +65,17 @@ function migrateSchema(): Promise<void> {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       lastRetrievedAt TEXT,
-      retrieveCount INTEGER NOT NULL DEFAULT 0
+      retrieveCount INTEGER NOT NULL DEFAULT 0,
+      tier TEXT NOT NULL DEFAULT 'episodic',
+      perspective TEXT NOT NULL DEFAULT 'owner_trait',
+      importance REAL NOT NULL DEFAULT 0.3,
+      parentId TEXT
     )`, () => {});
+    // Migrate: add new columns to existing memories table
+    db!.run("ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'episodic'", () => {});
+    db!.run("ALTER TABLE memories ADD COLUMN perspective TEXT NOT NULL DEFAULT 'owner_trait'", () => {});
+    db!.run("ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.3", () => {});
+    db!.run("ALTER TABLE memories ADD COLUMN parentId TEXT", () => {});
     // Add reminders table if it doesn't exist
     db!.run(`CREATE TABLE IF NOT EXISTS reminders (
       id TEXT PRIMARY KEY,
@@ -93,7 +112,12 @@ function createTables(): Promise<void> {
         config TEXT NOT NULL,
         createdAt TEXT NOT NULL,
         userId TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        personalityId TEXT DEFAULT 'lumi',
+        modelPreference TEXT DEFAULT '',
+        memoryScope TEXT DEFAULT 'shared',
+        autonomyLevel TEXT DEFAULT 'reactive',
+        runtimeConfig TEXT DEFAULT '{}'
       );
 
       CREATE TABLE IF NOT EXISTS interactions (
@@ -107,6 +131,7 @@ function createTables(): Promise<void> {
         personality TEXT DEFAULT '',
         mode TEXT DEFAULT '',
         toolCalls TEXT DEFAULT '',
+        conversationId TEXT DEFAULT '',
         timestamp TEXT NOT NULL
       );
 
@@ -134,6 +159,18 @@ function createTables(): Promise<void> {
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        agentId TEXT,
+        title TEXT DEFAULT '',
+        status TEXT DEFAULT 'active',
+        summary TEXT DEFAULT '',
+        messageCount INTEGER DEFAULT 0,
+        lastActiveAt TEXT NOT NULL,
+        createdAt TEXT NOT NULL
       );
     `;
 
@@ -212,11 +249,19 @@ async function loadMemoryDB(): Promise<void> {
   // Load reminders
   const remindersRaw = await query<any>('SELECT * FROM reminders');
 
+  // Load conversations
+  const conversationsRaw = await query<any>('SELECT * FROM conversations');
+
   // Map old column names to the field names that server.ts expects
   const agents = agentsRaw.map((a: any) => ({
     ...a,
     ownerUid: a.userId || a.ownerUid,
     data: a.config || a.data || '{}',
+    personalityId: a.personalityId || 'lumi',
+    modelPreference: a.modelPreference || '',
+    memoryScope: a.memoryScope || 'shared',
+    autonomyLevel: a.autonomyLevel || 'reactive',
+    runtimeConfig: a.runtimeConfig || '{}',
   }));
 
   const interactions = interactionsRaw.map((i: any) => ({
@@ -226,6 +271,7 @@ async function loadMemoryDB(): Promise<void> {
     personality: i.personality || i.module || '',
     mode: i.mode || '',
     toolCalls: i.toolCalls ? JSON.parse(i.toolCalls) : undefined,
+    conversationId: i.conversationId || '',
   }));
 
   memoryDB = {
@@ -237,7 +283,7 @@ async function loadMemoryDB(): Promise<void> {
     founderVision,
     memories: memories || [],
     reminders: remindersRaw || [],
-    chatHistories: {}
+    conversations: conversationsRaw || [],
   };
 }
 
@@ -287,7 +333,7 @@ export function writeDB(data: any): void {
 }
 
 async function persistMemoryDB(): Promise<void> {
-  const tables = ['interactions', 'agents', 'users', 'marketplace_skills', 'skills', 'founder_vision', 'memories', 'reminders'];
+  const tables = ['interactions', 'agents', 'users', 'marketplace_skills', 'skills', 'founder_vision', 'memories', 'reminders', 'conversations'];
 
   await run('BEGIN TRANSACTION');
   try {
@@ -304,20 +350,25 @@ async function persistMemoryDB(): Promise<void> {
 
     for (const agent of memoryDB.agents) {
       await run(
-        `INSERT INTO agents (id, name, category, config, createdAt, userId, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, name, category, config, createdAt, userId, status, personalityId, modelPreference, memoryScope, autonomyLevel, runtimeConfig) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           agent.id, agent.name, agent.category,
           agent.data || agent.config || '{}',
           agent.createdAt,
           agent.ownerUid || agent.userId || null,
-          agent.status || 'active'
+          agent.status || 'active',
+          agent.personalityId || 'lumi',
+          agent.modelPreference || '',
+          agent.memoryScope || 'shared',
+          agent.autonomyLevel || 'reactive',
+          agent.runtimeConfig || '{}',
         ]
       );
     }
 
     for (const interaction of memoryDB.interactions) {
       await run(
-        `INSERT INTO interactions (id, userId, agentId, module, message, response, role, personality, mode, toolCalls, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO interactions (id, userId, agentId, module, message, response, role, personality, mode, toolCalls, conversationId, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           interaction.id,
           interaction.userId || 'unknown',
@@ -329,6 +380,7 @@ async function persistMemoryDB(): Promise<void> {
           interaction.personality || '',
           interaction.mode || '',
           interaction.toolCalls ? JSON.stringify(interaction.toolCalls) : '',
+          interaction.conversationId || '',
           interaction.timestamp
         ]
       );
@@ -336,7 +388,7 @@ async function persistMemoryDB(): Promise<void> {
 
     for (const memory of memoryDB.memories || []) {
       await run(
-        `INSERT INTO memories (id, userId, type, content, keywords, confidence, sourceInteractionId, createdAt, updatedAt, lastRetrievedAt, retrieveCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memories (id, userId, type, content, keywords, confidence, sourceInteractionId, createdAt, updatedAt, lastRetrievedAt, retrieveCount, tier, perspective, importance, parentId, agentId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           memory.id,
           memory.userId,
@@ -349,6 +401,11 @@ async function persistMemoryDB(): Promise<void> {
           memory.updatedAt,
           memory.lastRetrievedAt,
           memory.retrieveCount || 0,
+          memory.tier || 'episodic',
+          memory.perspective || 'owner_trait',
+          memory.importance ?? 0.3,
+          memory.parentId || null,
+          memory.agentId || '',
         ]
       );
     }
@@ -365,6 +422,23 @@ async function persistMemoryDB(): Promise<void> {
           reminder.sourceInteractionId || '',
           reminder.createdAt,
           reminder.firedAt || null,
+        ]
+      );
+    }
+
+    for (const conv of memoryDB.conversations || []) {
+      await run(
+        `INSERT INTO conversations (id, userId, agentId, title, status, summary, messageCount, lastActiveAt, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          conv.id,
+          conv.userId,
+          conv.agentId || '',
+          conv.title || '',
+          conv.status || 'active',
+          conv.summary || '',
+          conv.messageCount || 0,
+          conv.lastActiveAt,
+          conv.createdAt,
         ]
       );
     }

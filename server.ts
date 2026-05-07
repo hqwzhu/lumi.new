@@ -10,10 +10,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import bcrypt from "bcryptjs";
 import fs from "fs";
+import os from "os";
 import { spawn, ChildProcess } from "child_process";
 import { Server } from "socket.io";
 import http from "http";
 import { readDB, writeDB, ensureDatabaseInitialized } from "./db_layer";
+import { getOrCreateActiveConversation, closeConversation, getActiveConversation, getUserConversations, addMessage, getMessages, getUnclosedConversation } from "./server/conversation/manager";
 import { logger } from "./logger";
 import { createStreamingSession, getActiveSTTProvider } from "./server/stt/adapter";
 
@@ -22,13 +24,17 @@ import { makeLLMCall, makeLLMCallStreaming, NormalizedMessage } from "./server/l
 import { runWithTools } from "./server/llm/adapter";
 import { toolRegistry } from "./server/tools/registry";
 import { registerAllTools } from "./server/tools/definitions/index";
-import { queryMemories, addMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange } from "./server/memory";
+import { queryMemories, addMemory, removeMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, getUnconsolidatedEpisodic, markConsolidated, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange } from "./server/memory";
+import { consolidateEpisodic, selfReflect, ConsolidationContext } from "./server/memory/consolidator";
 import { personalityRegistry } from "./server/personality";
+import { loadEmotionalState, saveEmotionalState, updateEmotionalState } from "./server/personality/state";
 import { mcpManager, registerMCPTools, getMCPConfig, updateMCPConfig } from "./server/mcp";
 import { createLumiMcpServer, handleMcpSSE, handleMcpMessage } from "./server/mcp/lumi_server";
+import { generateSkill, autoGenerateSkill } from "./server/skills/generator";
+import { getRecentWorkflows, clearWorkflows } from "./server/skills/worklog";
 import { scheduler, registerScheduledTasks } from "./server/scheduler";
 import { deviceRegistry } from "./server/devices";
-import { fuseContext, formatContextForPrompt } from "./server/context/fusion";
+import { fuseContext, formatContextForPrompt, type RawModalityInput } from "./server/context/fusion";
 import { canOutputHolographic, textToHolographicOutput } from "./server/output/holographic";
 import type { SensoryContext } from "./server/personality/types";
 import voiceRoutes from "./routes/voice";
@@ -109,9 +115,21 @@ function getQwen() {
   return qwen;
 }
 
-/** Build sensory context from connected devices for a given user */
+// Store recent perception events per user (for fusion layer)
+const perceptionEvents: Map<string, RawModalityInput[]> = new Map();
+const MAX_PERCEPTION_EVENTS = 20;
+
+/** Build sensory context from connected devices + fused perception events */
 function getSensory(userId: string, locationTag?: string): SensoryContext {
   const ds = deviceRegistry.getSensoryContext(userId);
+  const recentEvents = perceptionEvents.get(userId) || [];
+
+  if (recentEvents.length > 0) {
+    const fused = fuseContext(recentEvents, userId, locationTag);
+    return fused.sensory;
+  }
+
+  // Fallback to raw device capabilities
   return {
     audio: ds.hasAudio,
     visual: ds.hasVideo,
@@ -432,6 +450,58 @@ apiRouter.post("/llm/test", async (req, res) => {
   }
 });
 
+// 0.7 Conversation API
+apiRouter.get("/conversations", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const convs = getUserConversations(decoded.uid);
+    res.json({ conversations: convs });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+apiRouter.get("/conversations/active", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const conv = getUnclosedConversation(decoded.uid);
+    res.json({ activeConversation: conv });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+apiRouter.get("/conversations/:id/messages", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    jwt.verify(token, JWT_SECRET);
+    const limit = parseInt(req.query.limit as string) || 50;
+    const messages = getMessages(req.params.id, limit);
+    res.json({ messages });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+apiRouter.post("/conversations/:id/close", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    jwt.verify(token, JWT_SECRET);
+    const { summary } = req.body || {};
+    const conv = closeConversation(req.params.id, summary);
+    if (!conv) return res.status(404).json({ error: "Conversation not found" });
+    res.json({ success: true, conversation: conv });
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
 // 1. AI Proxy Route
 apiRouter.post("/ai/chat", async (req, res) => {
   const { provider = "gemini", model, messages, prompt } = req.body;
@@ -625,19 +695,24 @@ apiRouter.post("/auth/change-password", async (req, res) => {
 apiRouter.get("/agents/:id/history", (req, res) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
-  
+
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
     const db = readDB();
-    
+
     // Verify agent ownership or check if it's a default agent
     const isDefaultAgent = ['lumi_default', 'scholar_default', 'founder_default', 'incubated'].includes(id);
     const agent = isDefaultAgent ? true : db.agents.find((a: any) => a.id === id && a.ownerUid === decoded.uid);
     if (!agent) return res.status(404).json({ error: "Agent not found" });
 
-    if (!db.chatHistories) db.chatHistories = {};
-    const history = db.chatHistories[`${decoded.uid}_${id}`] || [];
+    // Load from persisted interactions via conversation manager
+    const conv = getActiveConversation(decoded.uid, id);
+    const messages = conv ? getMessages(conv.id, 100) : [];
+    const history = messages.map((m: any) => ({
+      role: m.role,
+      content: m.content || m.message || '',
+    }));
     res.json(history);
   } catch (e) {
     res.status(401).json({ error: "Invalid token" });
@@ -647,22 +722,32 @@ apiRouter.get("/agents/:id/history", (req, res) => {
 apiRouter.post("/agents/:id/history", (req, res) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: "Unauthorized" });
-  
+
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const { id } = req.params;
     const { messages } = req.body;
     const db = readDB();
-    
+
     // Verify agent ownership or check if it's a default agent
     const isDefaultAgent = ['lumi_default', 'scholar_default', 'founder_default', 'incubated'].includes(id);
     const agent = isDefaultAgent ? true : db.agents.find((a: any) => a.id === id && a.ownerUid === decoded.uid);
     if (!agent) return res.status(404).json({ error: "Agent not found" });
 
-    if (!db.chatHistories) db.chatHistories = {};
-    db.chatHistories[`${decoded.uid}_${id}`] = messages;
-    writeDB(db);
-    res.json({ success: true });
+    // Save via conversation manager (persisted to interactions)
+    const conv = getOrCreateActiveConversation(decoded.uid, id);
+    if (Array.isArray(messages)) {
+      for (const msg of messages) {
+        addMessage({
+          userId: decoded.uid,
+          agentId: id,
+          conversationId: conv.id,
+          role: msg.role || 'user',
+          content: msg.content || '',
+        });
+      }
+    }
+    res.json({ success: true, conversationId: conv.id });
   } catch (e) {
     res.status(401).json({ error: "Invalid token" });
   }
@@ -688,9 +773,9 @@ apiRouter.post("/agents", (req, res) => {
 
   try {
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    const { name, category, data } = req.body;
+    const { name, category, data, personalityId, modelPreference, memoryScope, autonomyLevel } = req.body;
     const db = readDB();
-    
+
     const newAgent = {
       id: Math.random().toString(36).substring(2, 15),
       ownerUid: decoded.uid,
@@ -698,6 +783,11 @@ apiRouter.post("/agents", (req, res) => {
       category,
       data,
       status: "active",
+      personalityId: personalityId || 'lumi',
+      modelPreference: modelPreference || '',
+      memoryScope: memoryScope || 'shared',
+      autonomyLevel: autonomyLevel || 'reactive',
+      runtimeConfig: '{}',
       createdAt: new Date().toISOString()
     };
 
@@ -1270,6 +1360,312 @@ apiRouter.get("/modules/agents", (req, res) => {
   ]);
 });
 
+// ── Memory API ──
+
+// Manual memory consolidation trigger
+apiRouter.post("/memory/consolidate", async (req, res) => {
+  try {
+    const userId = (req as any).user?.uid || 'anonymous';
+    const ctx: ConsolidationContext = {
+      userId,
+      provider: (req.body.provider as any) || 'deepseek',
+      model: (req.body.model as any) || 'deepseek-chat',
+    };
+    const minCount = Number(req.body.minCount) || 10;
+    const result = await consolidateEpisodic(
+      ctx, minCount,
+      getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+    );
+    if (result) {
+      broadcastMemoryChange(userId, 'updated', result.id);
+      res.json({ success: true, memory: result });
+    } else {
+      const unconsolidated = getUnconsolidatedEpisodic(userId);
+      res.json({ success: false, reason: 'Not enough unconsolidated episodic memories', unconsolidatedCount: unconsolidated.length, threshold: minCount });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual self-reflection trigger
+apiRouter.post("/memory/self-reflect", async (req, res) => {
+  try {
+    const userId = (req as any).user?.uid || 'anonymous';
+    const ctx: ConsolidationContext = {
+      userId,
+      provider: (req.body.provider as any) || 'deepseek',
+      model: (req.body.model as any) || 'deepseek-chat',
+    };
+    const result = await selfReflect(
+      ctx,
+      getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+    );
+    if (result) {
+      broadcastMemoryChange(userId, 'updated', result.id);
+      res.json({ success: true, memory: result });
+    } else {
+      res.json({ success: false, reason: 'No growth memories to reflect on' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get growth timeline
+apiRouter.get("/memory/growth", (req, res) => {
+  const userId = (req as any).user?.uid || 'anonymous';
+  const growth = queryMemories({
+    userId,
+    tier: 'growth',
+    limit: Number(req.query.limit) || 50,
+    minConfidence: 0.4,
+  });
+  const core = queryMemories({
+    userId,
+    tier: 'core_identity',
+    limit: 10,
+  });
+  res.json({ growth, coreIdentity: core });
+});
+
+// Get all memories by tier (for MemoryExplorer)
+apiRouter.get("/memory/tiers", (req, res) => {
+  const userId = (req as any).user?.uid || 'anonymous';
+  const tiers: Record<string, any[]> = {};
+  for (const tier of ['core_identity', 'growth', 'internalized', 'episodic']) {
+    tiers[tier] = queryMemories({
+      userId,
+      tier: tier as any,
+      limit: Number(req.query.limit) || 100,
+    });
+  }
+  res.json({ tiers });
+});
+
+// Change memory tier (high-threshold operation)
+apiRouter.put("/memory/:id/tier", (req, res) => {
+  const { tier } = req.body;
+  const validTiers = ['episodic', 'internalized', 'growth', 'core_identity'];
+  if (!tier || !validTiers.includes(tier)) {
+    return res.status(400).json({ error: `Invalid tier. Must be one of: ${validTiers.join(', ')}` });
+  }
+  const all = queryMemories({ limit: 9999 });
+  const mem = all.find(m => m.id === req.params.id);
+  if (!mem) return res.status(404).json({ error: 'Memory not found' });
+
+  // Promote to core_identity requires confirmation
+  if (tier === 'core_identity' && !req.body.confirmed) {
+    return res.status(400).json({ error: 'Promoting to core_identity requires confirmed:true', currentTier: mem.tier, currentImportance: mem.importance });
+  }
+
+  // Remove the old entry and re-add with new tier
+  removeMemory(mem.id);
+  const updated = addMemory(
+    {
+      userId: mem.userId,
+      type: mem.type,
+      content: mem.content,
+      keywords: mem.keywords,
+      confidence: tier === 'core_identity' ? 1.0 : mem.confidence,
+      sourceInteractionId: mem.sourceInteractionId,
+    },
+    {
+      tier,
+      perspective: mem.perspective,
+      importance: tier === 'core_identity' ? Math.max(0.9, mem.importance) : mem.importance,
+      parentId: mem.parentId,
+    },
+  );
+  broadcastMemoryChange(mem.userId, 'updated', updated.id);
+  res.json({ success: true, memory: updated });
+});
+
+// Toggle core identity protection
+apiRouter.put("/memory/:id/protect", (req, res) => {
+  const all = queryMemories({ limit: 9999 });
+  const mem = all.find(m => m.id === req.params.id);
+  if (!mem) return res.status(404).json({ error: 'Memory not found' });
+
+  if (mem.tier === 'core_identity') {
+    // Downgrade to growth
+    removeMemory(mem.id);
+    const updated = addMemory(
+      {
+        userId: mem.userId,
+        type: mem.type,
+        content: mem.content,
+        keywords: mem.keywords,
+        confidence: mem.confidence,
+        sourceInteractionId: mem.sourceInteractionId,
+      },
+      {
+        tier: 'growth',
+        perspective: mem.perspective,
+        importance: Math.min(0.8, mem.importance),
+        parentId: mem.parentId,
+      },
+    );
+    broadcastMemoryChange(mem.userId, 'updated', updated.id);
+    res.json({ success: true, protected: false, memory: updated });
+  } else {
+    // Upgrade to core_identity
+    removeMemory(mem.id);
+    const updated = addMemory(
+      {
+        userId: mem.userId,
+        type: mem.type,
+        content: mem.content,
+        keywords: mem.keywords,
+        confidence: 1.0,
+        sourceInteractionId: mem.sourceInteractionId,
+      },
+      {
+        tier: 'core_identity',
+        perspective: mem.perspective,
+        importance: Math.max(0.9, mem.importance),
+        parentId: mem.parentId,
+      },
+    );
+    broadcastMemoryChange(mem.userId, 'updated', updated.id);
+    res.json({ success: true, protected: true, memory: updated });
+  }
+});
+
+// ── Skill SDK API ──
+
+// List all installed skills (local + external MCP servers)
+apiRouter.get("/skills", (req, res) => {
+  try {
+    const localSkills = mcpManager.listLocalSkills();
+    const mcpConfig = getMCPConfig();
+    const allSkills = Object.entries(mcpConfig).map(([name, config]) => {
+      const local = localSkills.find(s => s.name === name);
+      return {
+        name,
+        description: config.description || name,
+        enabled: config.enabled,
+        source: config.source || 'external',
+        autoGenerated: config.autoGenerated || false,
+        generatedFrom: config.generatedFrom,
+        toolCount: config.toolCount || (local?.toolCount || 0),
+        installedAt: local?.installedAt || '',
+        connected: mcpManager.getConnectedServers().includes(name),
+      };
+    });
+    res.json({ skills: allSkills });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate a skill from description or workflows
+apiRouter.post("/skills/generate", async (req, res) => {
+  try {
+    const { description, provider, model } = req.body;
+
+    let workflows;
+    if (req.body.workflowIds) {
+      const allWorkflows = getRecentWorkflows();
+      workflows = allWorkflows.filter(w => (req.body.workflowIds as string[]).includes(w.id));
+    } else if (req.body.useRecent) {
+      workflows = getRecentWorkflows().slice(-5);
+    }
+
+    const result = await generateSkill(
+      {
+        description,
+        workflows,
+        provider: provider || 'deepseek',
+        model: model || 'deepseek-chat',
+        userId: (req as any).user?.uid || 'anonymous',
+      },
+      getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+    );
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Install a skill from git/npm/local
+apiRouter.post("/skills/install", async (req, res) => {
+  try {
+    const { source, url, package: pkgName, path: localPath, name } = req.body;
+
+    if (source === 'git' && url) {
+      const skillName = name || url.split('/').pop()?.replace('.git', '') || 'unnamed';
+      const tmpDir = path.join(os.tmpdir(), `lumi_skill_${Date.now()}`);
+      const { execSync } = await import('child_process');
+      execSync(`git clone "${url}" "${tmpDir}"`, { stdio: 'pipe', timeout: 30000 });
+      const destDir = mcpManager.installSkill(skillName, tmpDir);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+
+      // Restart to pick up new skill
+      await mcpManager.restartServer(skillName);
+      res.json({ success: true, name: skillName, directory: destDir });
+    } else if (source === 'local' && localPath) {
+      const skillName = name || path.basename(localPath);
+      const destDir = mcpManager.installSkill(skillName, localPath);
+      await mcpManager.restartServer(skillName);
+      res.json({ success: true, name: skillName, directory: destDir });
+    } else if (source === 'npm' && pkgName) {
+      res.status(400).json({ error: 'npm install not yet implemented — use git URL instead' });
+    } else {
+      res.status(400).json({ error: 'Invalid source. Use: git (with url), local (with path), or npm (with package)' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Uninstall a skill
+apiRouter.delete("/skills/:name", async (req, res) => {
+  try {
+    mcpManager.uninstallSkill(req.params.name);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Enable a skill
+apiRouter.post("/skills/:name/enable", async (req, res) => {
+  try {
+    const config = getMCPConfig();
+    if (!config[req.params.name]) return res.status(404).json({ error: 'Skill not found' });
+    config[req.params.name].enabled = true;
+    updateMCPConfig(config);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Disable a skill
+apiRouter.post("/skills/:name/disable", async (req, res) => {
+  try {
+    const config = getMCPConfig();
+    if (!config[req.params.name]) return res.status(404).json({ error: 'Skill not found' });
+    config[req.params.name].enabled = false;
+    updateMCPConfig(config);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Workflow inspection (for debugging / manual generation)
+apiRouter.get("/skills/workflows", (req, res) => {
+  const workflows = getRecentWorkflows((req as any).user?.uid);
+  res.json({ workflows: workflows.slice(-20), total: workflows.length });
+});
+
 // Voice routes
 apiRouter.use("/", voiceRoutes);
 
@@ -1370,6 +1766,88 @@ io.on("connection", (socket) => {
     unregisterUserSocket(socket.id);
   });
 
+  // Multimodal perception events — fed into the fusion layer
+  socket.on("perception:visual_scene", (data: { description: string; objects?: string[]; faces?: number }) => {
+    let uid = 'anonymous';
+    try {
+      const cookies = socket.handshake.headers.cookie;
+      if (cookies) {
+        const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+        if (token) { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; }
+      }
+    } catch {}
+    const events = perceptionEvents.get(uid) || [];
+    events.push({
+      modality: 'visual',
+      deviceId: socket.id,
+      timestamp: new Date().toISOString(),
+      data,
+    });
+    if (events.length > MAX_PERCEPTION_EVENTS) events.shift();
+    perceptionEvents.set(uid, events);
+  });
+
+  socket.on("perception:audio_emotion", (data: { emotion: string; intensity?: number }) => {
+    let uid = 'anonymous';
+    try {
+      const cookies = socket.handshake.headers.cookie;
+      if (cookies) {
+        const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+        if (token) { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; }
+      }
+    } catch {}
+    const events = perceptionEvents.get(uid) || [];
+    events.push({
+      modality: 'audio',
+      deviceId: socket.id,
+      timestamp: new Date().toISOString(),
+      data,
+    });
+    if (events.length > MAX_PERCEPTION_EVENTS) events.shift();
+    perceptionEvents.set(uid, events);
+
+    // Forward to emotional state (user emotion influences Lumi's valence)
+    if (uid !== 'anonymous') {
+      const emotionImpact: Record<string, number> = {
+        happy: 0.5, excited: 0.4, calm: 0.1,
+        sad: -0.3, angry: -0.5, frustrated: -0.4,
+        neutral: 0,
+      };
+      const intensity = (emotionImpact[data.emotion] || 0) * (data.intensity || 0.5);
+      if (Math.abs(intensity) > 0.05) {
+        const state = loadEmotionalState(uid);
+        const eventType = intensity > 0 ? 'positive_feedback' : 'negative_feedback';
+        const updated = updateEmotionalState(state, {
+          type: eventType,
+          intensity: Math.abs(intensity),
+          userId: uid,
+          timestamp: new Date().toISOString(),
+        });
+        saveEmotionalState(uid, updated);
+      }
+    }
+  });
+
+  socket.on("perception:spatial_update", (data: { roomType?: string; dimensions?: { x: number; y: number; z: number } }) => {
+    let uid = 'anonymous';
+    try {
+      const cookies = socket.handshake.headers.cookie;
+      if (cookies) {
+        const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
+        if (token) { const decoded: any = jwt.verify(token, JWT_SECRET); uid = decoded.uid; }
+      }
+    } catch {}
+    const events = perceptionEvents.get(uid) || [];
+    events.push({
+      modality: 'spatial',
+      deviceId: socket.id,
+      timestamp: new Date().toISOString(),
+      data,
+    });
+    if (events.length > MAX_PERCEPTION_EVENTS) events.shift();
+    perceptionEvents.set(uid, events);
+  });
+
   socket.on("agent:chat", async (data: { text: string; history: any[]; personalityId?: string; category?: string; agentId?: string }) => {
     const { text, history, personalityId = "lumi", category, agentId } = data;
 
@@ -1386,7 +1864,11 @@ io.on("connection", (socket) => {
     // Retrieve memories
     const relevantMemories = queryMemories({ userId: uid, query: text, limit: 5, minConfidence: 0.4 });
 
-    // Build system prompt from structured personality config (with sensory context)
+    // Load emotional state for this user
+    const emotionalState = loadEmotionalState(uid);
+    const isNovel = relevantMemories.length < 2;
+
+    // Build system prompt from structured personality config (with sensory context + emotion)
     const sensory = getSensory(uid);
     const { config: personality, systemPrompt: systemInstruction } = personalityRegistry.buildSystemPrompt(
       personalityId,
@@ -1394,6 +1876,7 @@ io.on("connection", (socket) => {
       {
         skillOverride: category ? immortalitySkills[category] : undefined,
         memories: relevantMemories.length > 0 ? relevantMemories : undefined,
+        emotionalState,
       },
     );
 
@@ -1429,39 +1912,46 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Save to history if agentId is provided
-      if (agentId) {
-        const cookies = socket.handshake.headers.cookie;
-        if (cookies) {
-          const token = cookies.split(';').find(c => c.trim().startsWith('token='))?.split('=')[1];
-          if (token) {
-            try {
-              const decoded: any = jwt.verify(token, JWT_SECRET);
-              const db = readDB();
-              if (!db.chatHistories) db.chatHistories = {};
-              const historyKey = `${decoded.uid}_${agentId}`;
-              const currentHistory = db.chatHistories[historyKey] || [];
-              currentHistory.push({ role: 'user', content: text });
-              currentHistory.push({ role: 'assistant', content: responseText });
-              db.chatHistories[historyKey] = currentHistory.slice(-50); // Keep last 50 messages
-              writeDB(db);
-            } catch(e) {}
-          }
-        }
+      // Save to conversation via conversation manager (persisted)
+      const conversationId = agentId
+        ? getOrCreateActiveConversation(uid, agentId).id
+        : undefined;
+
+      if (conversationId) {
+        addMessage({
+          userId: uid,
+          agentId: agentId || '',
+          conversationId,
+          role: 'user',
+          content: text,
+          personality: personality.id,
+        });
+        addMessage({
+          userId: uid,
+          agentId: agentId || '',
+          conversationId,
+          role: 'assistant',
+          content: responseText,
+          personality: personality.id,
+        });
       }
 
-      // Log interaction
-      const interaction = {
-        id: Math.random().toString(36).substr(2, 9),
+      // Log interaction (linked to conversation)
+      const interactionId = Math.random().toString(36).substr(2, 9);
+      const dbInteraction = {
+        id: interactionId,
+        userId: uid,
+        agentId: agentId || '',
+        conversationId: conversationId || '',
         content: text,
         response: responseText,
         role: "user",
         personality: personality.id,
         timestamp: new Date().toISOString()
       };
-      
+
       const db = readDB();
-      db.interactions.push(interaction);
+      db.interactions.push(dbInteraction);
       writeDB(db);
 
       // Emit response (with holographic output if available)
@@ -1489,7 +1979,7 @@ io.on("connection", (socket) => {
             content: mem.content,
             keywords: mem.keywords,
             confidence: mem.confidence,
-            sourceInteractionId: interaction.id,
+            sourceInteractionId: interactionId,
           });
         }
         for (const rem of extracted.reminders) {
@@ -1497,7 +1987,7 @@ io.on("connection", (socket) => {
             userId: uid,
             content: rem.content,
             dueAt: rem.dueAt,
-            sourceInteractionId: interaction.id,
+            sourceInteractionId: interactionId,
           });
         }
         const totalExtracted = extracted.memories.length + extracted.reminders.length;
@@ -1505,6 +1995,21 @@ io.on("connection", (socket) => {
           console.log(`[Memory] Extracted ${extracted.memories.length} memories + ${extracted.reminders.length} reminders for user ${uid}`);
         }
       }).catch(err => console.error('[Memory] Extraction failed:', err));
+
+      // Update emotional state after this interaction
+      let updatedState = updateEmotionalState(emotionalState, {
+        type: 'interaction',
+        userId: uid,
+        timestamp: new Date().toISOString(),
+      });
+      if (isNovel) {
+        updatedState = updateEmotionalState(updatedState, {
+          type: 'novel_topic',
+          userId: uid,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      saveEmotionalState(uid, updatedState);
 
     } catch (error: any) {
       console.error("[Socket Agent Error]:", error);
@@ -1527,11 +2032,17 @@ io.on("connection", (socket) => {
 
     const relevantMemories = queryMemories({ userId: uid, query: data.text, limit: 5, minConfidence: 0.4 });
 
+    const emotionalState = loadEmotionalState(uid);
+    const isNovelTask = relevantMemories.length < 2;
+
     const sensory = getSensory(uid);
     const { config: personality, systemPrompt: systemInstruction } = personalityRegistry.buildSystemPrompt(
       data.personalityId || 'lumi',
       { mode: 'task', sensory },
-      { memories: relevantMemories.length > 0 ? relevantMemories : undefined },
+      {
+        memories: relevantMemories.length > 0 ? relevantMemories : undefined,
+        emotionalState,
+      },
     );
 
     const provider = personality.defaultModel.startsWith('deepseek') ? 'deepseek' as const
@@ -1656,6 +2167,22 @@ io.on("connection", (socket) => {
           console.log(`[Memory] Extracted ${extracted.memories.length} memories + ${extracted.reminders.length} reminders for user ${uid}`);
         }
       }).catch(err => console.error('[Memory] Extraction failed:', err));
+
+      // Update emotional state after this task interaction
+      let updatedState = updateEmotionalState(emotionalState, {
+        type: 'interaction',
+        userId: uid,
+        timestamp: new Date().toISOString(),
+      });
+      if (isNovelTask) {
+        updatedState = updateEmotionalState(updatedState, {
+          type: 'novel_topic',
+          userId: uid,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      saveEmotionalState(uid, updatedState);
+
     } catch (err: any) {
       console.error("[Agent Task Error]:", err);
       socket.emit("agent:error", { message: err.message });
@@ -1971,7 +2498,7 @@ async function startServer() {
 
     // Set up proactive agent scheduler
     scheduler.setIO(io);
-    registerScheduledTasks();
+    registerScheduledTasks(getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen);
   });
 
   // Cleanup on exit

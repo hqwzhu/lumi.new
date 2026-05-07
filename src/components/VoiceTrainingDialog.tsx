@@ -132,8 +132,18 @@ export function VoiceTrainingDialog({ isOpen, onClose, onSuccess }: VoiceTrainin
             <div className="p-8">
               {step === 'upload' && (
                 <div className="space-y-6">
-                  <div 
+                  <div
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      if (e.dataTransfer.files) {
+                        const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
+                        if (dropped.length === 0) toast.error('Only audio files are accepted');
+                        else setFiles(prev => [...prev, ...dropped]);
+                      }
+                    }}
                     className="group relative h-48 rounded-[2rem] border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-celestial-saturn/50 hover:bg-celestial-saturn/5 transition-all overflow-hidden"
                   >
                     <input 
@@ -148,8 +158,8 @@ export function VoiceTrainingDialog({ isOpen, onClose, onSuccess }: VoiceTrainin
                       <Upload size={32} />
                     </div>
                     <div className="text-center">
-                      <p className="text-white font-bold">Drop Audio Samples</p>
-                      <p className="text-xs font-medium text-white/40 uppercase tracking-widest mt-1">WAV, MP3, OGG supported</p>
+                      <p className="text-white font-bold">Drop Audio Samples Here</p>
+                      <p className="text-xs font-medium text-white/40 uppercase tracking-widest mt-1">Click or drag — WAV, MP3, OGG</p>
                     </div>
                   </div>
 
@@ -212,7 +222,8 @@ export function VoiceTrainingDialog({ isOpen, onClose, onSuccess }: VoiceTrainin
 
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Engine Architecture</label>
-                    <div className="grid grid-cols-3 gap-4">
+                    <p className="text-[9px] text-white/20 leading-relaxed">CosyVoice and GPT-SoVITS provide premade voices but don't support custom cloning. Use ElevenLabs or FishAudio to create a custom voice from your samples.</p>
+                    <div className="grid grid-cols-2 gap-4">
                       {(['elevenlabs', 'fishaudio'] as const).map((p) => (
                         <button
                           key={p}
