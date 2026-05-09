@@ -75,7 +75,7 @@ function buildSidebarGroups(t: any) {
         { id: 'security', label: t.settings || 'Security', icon: <Shield size={16} /> },
         { id: 'hardware', label: t.settingsHardware || 'Hardware', icon: <Camera size={16} /> },
         { id: 'mcp', label: t.settingsMCP || 'MCP', icon: <Cpu size={16} /> },
-        { id: 'remote-mcp', label: 'Remote MCP', icon: <Globe size={16} /> },
+        { id: 'remote-mcp', label: t.remoteMCPSidebar || 'Remote MCP', icon: <Globe size={16} /> },
       ],
     },
   ];
@@ -155,7 +155,7 @@ export function Settings({
                   <div className="grid grid-cols-2 gap-4">
                     <button onClick={() => setLang('en')}
                       className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'en' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}>
-                      English (US)
+                      {t.englishUS || 'English (US)'}
                     </button>
                     <button onClick={() => setLang('zh')}
                       className={`p-6 rounded-2xl border text-sm font-bold transition-all flex items-center justify-center gap-3 ${lang === 'zh' ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10'}`}>
@@ -176,9 +176,9 @@ export function Settings({
                   <label className="text-[10px] font-black uppercase tracking-widest text-white/50 block mb-4">{t.selectMatrixVariant || "Select Global Matrix Variant"}</label>
                   <div className="grid grid-cols-3 gap-4">
                     {[
-                      { id: 'celestial', label: 'Celestial', color: 'from-orange-400 to-red-500' },
-                      { id: 'nebula', label: 'Nebula', color: 'from-indigo-500 to-purple-600' },
-                      { id: 'cyber', label: 'Cyber', color: 'from-emerald-400 to-teal-600' }
+                      { id: 'celestial', label: t.celestial || 'Celestial', color: 'from-orange-400 to-red-500' },
+                      { id: 'nebula', label: t.nebula || 'Nebula', color: 'from-indigo-500 to-purple-600' },
+                      { id: 'cyber', label: t.cyber || 'Cyber', color: 'from-emerald-400 to-teal-600' }
                     ].map(themeItem => (
                       <button key={themeItem.id} onClick={() => setTheme && setTheme(themeItem.id)}
                         className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all text-center ${theme === themeItem.id ? 'bg-white/10 border-white/20 shadow-lg' : 'border-white/5 hover:bg-white/5'}`}>

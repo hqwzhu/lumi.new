@@ -44,9 +44,9 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
       });
       setDevices(list.filter(d => d.name.trim() && d.url.trim()));
       setEditing(false);
-      toast.success('Remote device endpoints saved');
+      toast.success(t.remoteDeviceEndpointsSaved || 'Remote device endpoints saved');
     } catch (err: any) {
-      toast.error(`Failed to save: ${err.message}`);
+      toast.error(`${t.failedToSaveEndpoints || 'Failed to save'}: ${err.message}`);
     }
   };
 
@@ -69,9 +69,9 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
       <div className="space-y-8 animate-in fade-in duration-500">
         <div className="flex items-center gap-3">
           <Satellite className="text-celestial-saturn" />
-          <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">Remote MCP Devices</h3>
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">{t.remoteMCPDevices || 'Remote MCP Devices'}</h3>
         </div>
-        <p className="text-white/40 text-sm">Loading remote device configuration...</p>
+        <p className="text-white/40 text-sm">{t.loadingRemoteConfig || 'Loading remote device configuration...'}</p>
       </div>
     );
   }
@@ -80,21 +80,20 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-3">
         <Satellite className="text-celestial-saturn" />
-        <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">Remote MCP Devices</h3>
+        <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">{t.remoteMCPDevices || 'Remote MCP Devices'}</h3>
       </div>
 
       <p className="text-sm text-white/40 max-w-xl">
-        Configure remote devices (e.g. XiaoZhi, smart speakers) that connect to Lumi via MCP over WebSocket.
-        Changes take effect on server restart.
+        {t.remoteMCPDesc || 'Configure remote devices (e.g. XiaoZhi, smart speakers) that connect to Lumi via MCP over WebSocket. Changes take effect on server restart.'}
       </p>
 
       {devices.length === 0 || (!editing && devices.length === 0) ? (
         <div className="p-10 bg-white/5 rounded-[2rem] border border-white/5 text-center">
           <Satellite size={32} className="text-white/20 mx-auto mb-4" />
-          <p className="text-white/40 font-bold uppercase tracking-widest text-sm">No remote devices configured</p>
-          <p className="text-white/20 text-xs mt-2">Add a device to let it call Lumi tools via MCP</p>
+          <p className="text-white/40 font-bold uppercase tracking-widest text-sm">{t.noRemoteDevices || 'No remote devices configured'}</p>
+          <p className="text-white/20 text-xs mt-2">{t.addRemoteDeviceHint || 'Add a device to let it call Lumi tools via MCP'}</p>
           <Button onClick={addRow} className="mt-6 bg-celestial-saturn text-black rounded-full px-6 py-3 font-bold text-sm hover:scale-105 transition-transform">
-            <Plus size={16} className="mr-1" /> Add Device
+            <Plus size={16} className="mr-1" /> {t.addDevice || 'Add Device'}
           </Button>
         </div>
       ) : (
@@ -114,7 +113,7 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
                       <Input
                         value={device.name}
                         onChange={e => updateRow(i, 'name', e.target.value)}
-                        placeholder="Device name (e.g. xiaozhi)"
+                        placeholder={t.deviceNamePlaceholder || 'Device name (e.g. xiaozhi)'}
                         className="bg-white/5 border-white/10 rounded-xl py-2 text-sm font-bold"
                       />
                     ) : (
@@ -125,7 +124,7 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
                     <Input
                       value={device.url}
                       onChange={e => updateRow(i, 'url', e.target.value)}
-                      placeholder="wss://device-url/mcp/?token=..."
+                      placeholder={t.deviceURLPlaceholder || 'wss://device-url/mcp/?token=...'}
                       className="bg-white/5 border-white/10 rounded-xl py-2 text-xs font-mono"
                     />
                   ) : (
@@ -158,14 +157,14 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
               onClick={addRow}
               className="bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-black uppercase tracking-widest px-4 h-9 rounded-xl"
             >
-              <Plus size={14} className="mr-1" /> Add Device
+              <Plus size={14} className="mr-1" /> {t.addDevice || 'Add Device'}
             </Button>
             {editing && (
               <Button
                 onClick={() => saveDevices(devices)}
                 className="bg-celestial-saturn text-black font-bold text-xs px-6 h-9 rounded-xl hover:scale-105 transition-transform"
               >
-                <Save size={14} className="mr-1" /> Save Changes
+                <Save size={14} className="mr-1" /> {t.saveChanges || 'Save Changes'}
               </Button>
             )}
           </div>
@@ -175,13 +174,10 @@ export function RemoteMCPSettings({ t }: { t?: any }) {
       <div className="p-6 glass-dark rounded-[2rem] border border-white/5 space-y-4">
         <div className="flex items-center gap-3">
           <Satellite className="text-celestial-saturn" size={18} />
-          <h4 className="text-sm font-bold uppercase tracking-tight text-white">How It Works</h4>
+          <h4 className="text-sm font-bold uppercase tracking-tight text-white">{t.howItWorks || 'How It Works'}</h4>
         </div>
         <p className="text-[11px] text-white/30 leading-relaxed">
-          Remote devices connect as MCP clients to Lumi's MCP server via WebSocket.
-          Lumi initiates the WebSocket connection, the device sends an MCP initialize request,
-          and Lumi responds as the server — exposing tools like lumi_chat, lumi_memory_search,
-          and lumi_tool_execute that the device can invoke via voice or other input.
+          {t.remoteMCPHowItWorks || 'Remote devices connect as MCP clients to Lumi\'s MCP server via WebSocket. Lumi initiates the WebSocket connection, the device sends an MCP initialize request, and Lumi responds as the server — exposing tools like lumi_chat, lumi_memory_search, and lumi_tool_execute that the device can invoke via voice or other input.'}
         </p>
       </div>
     </div>

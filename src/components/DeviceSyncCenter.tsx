@@ -36,6 +36,17 @@ const DEVICE_LABELS: Record<string, string> = {
   web: 'Browser',
 };
 
+function getDeviceLabel(type: string, t: any): string {
+  const labels: Record<string, string> = {
+    desktop: t.desktopLabel || 'Desktop',
+    mobile: t.mobileLabel || 'Mobile',
+    ar_glasses: t.arGlassesLabel || 'AR Glasses',
+    holographic_prototype: t.holographicLabel || 'Holographic',
+    web: t.browserLabel || 'Browser',
+  };
+  return labels[type] || type;
+}
+
 export function DeviceSyncCenter({ t }: { t: any }) {
   const { platform, isDesktop, sensors, startSensorSync, isSyncing } = usePlatform();
   const socket = useSocket();
@@ -153,15 +164,15 @@ export function DeviceSyncCenter({ t }: { t: any }) {
           <div className="space-y-1">
             <h3 className="text-xl font-bold flex items-center gap-2">
               <Wifi size={20} className="text-celestial-saturn" />
-              Device Mesh Network
+              {t.deviceMeshNetwork || 'Device Mesh Network'}
             </h3>
             <p className="text-xs text-white/40">
               {sensoryCtx
-                ? `${sensoryCtx.deviceCount} device${sensoryCtx.deviceCount !== 1 ? 's' : ''} online · Audio: ${sensoryCtx.hasAudio ? 'yes' : 'no'} · Video: ${sensoryCtx.hasVideo ? 'yes' : 'no'}`
-                : 'Real-time device discovery and synchronization.'}
+                ? `${sensoryCtx.deviceCount} ${t.sensorCtxOnline || 'online'} · ${t.sensorCtxAudio || 'Audio'}: ${sensoryCtx.hasAudio ? (t.sensorCtxYes || 'yes') : (t.sensorCtxNo || 'no')} · ${t.sensorCtxVideo || 'Video'}: ${sensoryCtx.hasVideo ? (t.sensorCtxYes || 'yes') : (t.sensorCtxNo || 'no')}`
+                : t.sensorPerceptionDesc || 'Real-time device discovery and synchronization.'}
               {lastSync && (
                 <span className="text-celestial-saturn text-[10px] font-mono ml-2">
-                  Synced {new Date(lastSync).toLocaleTimeString()}
+                  {t.syncedAt || 'Synced'} {new Date(lastSync).toLocaleTimeString()}
                 </span>
               )}
             </p>
@@ -172,7 +183,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
             className="px-4 py-2 bg-celestial-saturn/10 border border-celestial-saturn/30 text-celestial-saturn rounded-xl text-xs font-bold hover:bg-celestial-saturn/20 transition-all flex items-center gap-2 disabled:opacity-50"
           >
             {isSearching ? <RefreshCcw size={14} className="animate-spin" /> : <Search size={14} />}
-            {isSearching ? 'Scanning...' : 'Refresh'}
+            {isSearching ? (t.scanningBtn || 'Scanning...') : (t.refreshBtn || 'Refresh')}
           </button>
         </div>
 
@@ -197,20 +208,20 @@ export function DeviceSyncCenter({ t }: { t: any }) {
                   <div className="flex items-center gap-1.5">
                     <div className={`w-2 h-2 rounded-full ${device.status === 'online' ? 'bg-green-500' : 'bg-white/20'}`} />
                     <span className="text-[10px] font-mono text-white/40">
-                      {device.status === 'online' ? 'ONLINE' : 'OFFLINE'}
+                      {device.status === 'online' ? (t.syncOnline || 'ONLINE') : (t.syncOffline || 'OFFLINE')}
                     </span>
                   </div>
                 </div>
                 <h4 className="text-sm font-bold truncate">{device.name}</h4>
                 <div className="text-[10px] text-white/30 mt-0.5">
-                  {DEVICE_LABELS[device.type] || device.type}
+                  {getDeviceLabel(device.type, t)}
                   {device.osInfo ? ` · ${device.osInfo}` : ''}
                 </div>
                 <div className="mt-4">
                   {pairedDevices.includes(device.id) ? (
                     <div className="flex items-center gap-2 text-green-500 text-[10px] font-bold">
                       <CheckCircle2 size={12} />
-                      PAIRED
+                      {t.pairedDevice || 'PAIRED'}
                     </div>
                   ) : (
                     <button
@@ -218,7 +229,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
                       disabled={device.status !== 'online'}
                       className="w-full py-2 bg-white/10 rounded-lg text-[10px] font-bold hover:bg-celestial-saturn hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                      PAIR
+                      {t.pairDevice || 'PAIR'}
                     </button>
                   )}
                 </div>
@@ -228,7 +239,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
           {!isSearching && discoveredDevices.length === 0 && (
             <div className="col-span-3 py-12 text-center space-y-2 border-2 border-dashed border-white/5 rounded-3xl">
               <Zap size={32} className="mx-auto text-white/10" />
-              <p className="text-sm text-white/20">No devices connected. Open the app on another device to see it here.</p>
+              <p className="text-sm text-white/20">{t.noDevicesConnected || 'No devices connected. Open the app on another device to see it here.'}</p>
             </div>
           )}
         </div>
@@ -240,8 +251,8 @@ export function DeviceSyncCenter({ t }: { t: any }) {
           <div className="flex items-center gap-3">
             <Smartphone className="text-celestial-nebula" />
             <div>
-              <h3 className="text-lg font-bold">Mobile Sensors</h3>
-              <p className="text-xs text-white/40">Real-time perception data from device sensors.</p>
+              <h3 className="text-lg font-bold">{t.mobileSensors || 'Mobile Sensors'}</h3>
+              <p className="text-xs text-white/40">{t.sensorPerceptionDesc || 'Real-time perception data from device sensors.'}</p>
             </div>
           </div>
 
@@ -249,7 +260,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
             <div className={`p-4 rounded-2xl border transition-all ${isSyncing ? 'bg-celestial-nebula/10 border-celestial-nebula/30' : 'bg-white/5 border-white/10'}`}>
               <div className="flex items-center gap-2 text-xs text-white/40 mb-2">
                 <MapPin size={12} />
-                <span>Location</span>
+                <span>{t.location || 'Location'}</span>
               </div>
               <div className="space-y-1">
                 <div className="text-xs font-mono">{sensors.latitude?.toFixed(4) || '--'}° N</div>
@@ -260,7 +271,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
             <div className={`p-4 rounded-2xl border transition-all ${isSyncing ? 'bg-celestial-nebula/10 border-celestial-nebula/30' : 'bg-white/5 border-white/10'}`}>
               <div className="flex items-center gap-2 text-xs text-white/40 mb-2">
                 <Move3d size={12} />
-                <span>Motion</span>
+                <span>{t.motion || 'Motion'}</span>
               </div>
               <div className="space-y-1">
                 <div className="text-xs font-mono">X: {sensors.acceleration?.x.toFixed(2) || '0.00'}</div>
@@ -273,7 +284,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
             <div className="flex items-center gap-3">
               <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-celestial-nebula animate-pulse' : 'bg-white/20'}`} />
               <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">
-                {isSyncing ? 'Live Stream Active' : 'Sensors Standby'}
+                {isSyncing ? (t.liveStreamActive || 'Live Stream Active') : (t.sensorsStandby || 'Sensors Standby')}
               </span>
             </div>
             <button
@@ -287,7 +298,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
               }}
               className={`text-[10px] font-bold hover:underline ${isSyncing ? 'text-red-400' : 'text-celestial-nebula'}`}
             >
-              {isSyncing ? 'STOP' : 'ENABLE'}
+              {isSyncing ? (t.stopBtn || 'STOP') : (t.enableBtn || 'ENABLE')}
             </button>
           </div>
         </GlassCard>
@@ -297,9 +308,9 @@ export function DeviceSyncCenter({ t }: { t: any }) {
           <div className="flex items-center gap-3">
             <Monitor className="text-celestial-jupiter" />
             <div>
-              <h3 className="text-lg font-bold">System Access</h3>
+              <h3 className="text-lg font-bold">{t.systemAccess || 'System Access'}</h3>
               <p className="text-xs text-white/40">
-                {isDesktop ? 'Local system information via Tauri IPC.' : 'System access requires the desktop app.'}
+                {isDesktop ? (t.systemAccessLocal || 'Local system information via Tauri IPC.') : (t.systemAccessWeb || 'System access requires the desktop app.')}
               </p>
             </div>
           </div>
@@ -308,19 +319,19 @@ export function DeviceSyncCenter({ t }: { t: any }) {
             <div className="p-6 bg-black/40 rounded-2xl border border-white/10 font-mono text-xs space-y-3">
               <div className="flex items-center gap-2 text-celestial-jupiter">
                 <Lock size={12} />
-                <span>VAULT: {isDesktop ? 'UNLOCKED' : 'WEB_MODE'}</span>
+                <span>{t.vaultLabel || 'VAULT'}: {isDesktop ? (t.vaultUnlocked || 'UNLOCKED') : (t.vaultWebMode || 'WEB_MODE')}</span>
               </div>
               {fileAccessError ? (
                 <div className="text-red-400">{'>'} ERROR: {fileAccessError}</div>
               ) : fileAccessInfo ? (
                 <div className="space-y-1 text-white/60">
-                  <div className="text-green-500">{'>'} CONNECTED</div>
-                  <div>{'>'} PATH: {fileAccessInfo.path}</div>
-                  <div>{'>'} MEM: {fileAccessInfo.size}</div>
-                  <div>{'>'} OS: {fileAccessInfo.os}</div>
+                  <div className="text-green-500">{'>'} {t.connectedLabel || 'CONNECTED'}</div>
+                  <div>{'>'} {t.pathLabel || 'PATH'}: {fileAccessInfo.path}</div>
+                  <div>{'>'} {t.memLabel || 'MEM'}: {fileAccessInfo.size}</div>
+                  <div>{'>'} {t.osLabel || 'OS'}: {fileAccessInfo.os}</div>
                 </div>
               ) : (
-                <div className="text-white/20 italic">{'>'} Ready — click below to query system info.</div>
+                <div className="text-white/20 italic">{'>'} {t.readyClickQuery || 'Ready — click below to query system info.'}</div>
               )}
             </div>
 
@@ -329,7 +340,7 @@ export function DeviceSyncCenter({ t }: { t: any }) {
               className="w-full py-4 rounded-2xl bg-celestial-jupiter text-black font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Zap size={16} />
-              {isDesktop ? 'Query System Info' : 'Open Web Vault'}
+              {isDesktop ? (t.querySystemInfo || 'Query System Info') : (t.openWebVault || 'Open Web Vault')}
             </button>
           </div>
         </GlassCard>

@@ -314,7 +314,7 @@ export function LocalAgentSphere({
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
                 isMuted ? 'bg-amber-500 text-black' : 'bg-white/10 text-white/60 hover:bg-white/20'
               }`}
-              title={isMuted ? 'Unmute' : 'Mute'}
+              title={isMuted ? (t.voiceUnmuted || 'Unmute') : (t.voiceMuted || 'Mute')}
             >
               {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
             </Button>
@@ -337,7 +337,7 @@ export function LocalAgentSphere({
             <Button
               onClick={onInterrupt}
               className="w-10 h-10 rounded-full bg-white/10 text-white/60 hover:bg-white/20 flex items-center justify-center transition-all duration-300"
-              title="Interrupt"
+              title={t.voiceInterrupt || "Interrupt"}
             >
               <Pause size={18} />
             </Button>
@@ -348,7 +348,7 @@ export function LocalAgentSphere({
               {callState === 'listening' ? t.listening : callState === 'thinking' ? t.processing : callState === 'speaking' ? t.speaking : callState === 'idle' ? t.voiceInteract : callState.toUpperCase()}
             </span>
             <span className="text-sm font-medium text-white/80">
-              {callState === 'idle' ? "Click to start voice session" : "Session active - Click to end"}
+              {callState === 'idle' ? (t.clickToStartSession || "Click to start voice session") : (t.sessionActiveClickToEnd || "Session active - Click to end")}
             </span>
             {/* Call timer & connection quality */}
             {callState !== 'idle' && (

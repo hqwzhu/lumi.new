@@ -50,10 +50,10 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
   ];
 
   const categorySkills: Record<string, { name: string; desc: string }> = {
-    colleague: { name: 'Colleague Skill (同事技能包)', desc: 'Professional knowledge, work habits, and collaborative logic.' },
-    family: { name: 'Ancestor Skill (祖先技能包)', desc: 'Family history, wisdom, and ancestral voice synthesis.' },
-    friend: { name: 'Kindred Mind Skill (知己技能包)', desc: 'Emotional resonance, shared memories, and deep empathy.' },
-    lover: { name: 'Ex-Partner Skill (前任技能包)', desc: 'Relationship dynamics, intimate communication, and closure logic.' }
+    colleague: { name: t.colleagueSkill || 'Colleague Skill (同事技能包)', desc: t.colleagueSkillDesc || 'Professional knowledge, work habits, and collaborative logic.' },
+    family: { name: t.ancestorSkill || 'Ancestor Skill (祖先技能包)', desc: t.ancestorSkillDesc || 'Family history, wisdom, and ancestral voice synthesis.' },
+    friend: { name: t.kindredMindSkill || 'Kindred Mind Skill (知己技能包)', desc: t.kindredMindSkillDesc || 'Emotional resonance, shared memories, and deep empathy.' },
+    lover: { name: t.exPartnerSkill || 'Ex-Partner Skill (前任技能包)', desc: t.exPartnerSkillDesc || 'Relationship dynamics, intimate communication, and closure logic.' }
   };
 
   const handleUpload = () => {
@@ -87,7 +87,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
       const formData = new FormData();
       files.forEach(f => formData.append('files', f));
       const uploadRes = await fetch('/api/files/upload', { method: 'POST', body: formData });
-      if (!uploadRes.ok) throw new Error('Upload failed');
+      if (!uploadRes.ok) throw new Error(t.uploadFailed || 'Upload failed');
       const uploaded = await uploadRes.json();
 
       await createAgent(agentName, selectedCategory, { files: uploaded.uploaded, voiceCloned: isCloning });
@@ -123,20 +123,20 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
         try {
           const res = await fetch('/api/voice/samples', { method: 'POST', body: formData });
           if (res.ok) {
-            toast.success('Voice sample captured. Go to Voice Forge to clone.');
+            toast.success(t.voiceSampleCaptured || 'Voice sample captured. Go to Voice Forge to clone.');
           } else {
-            toast.error('Failed to upload voice sample');
+            toast.error(t.failedToUploadVoice || 'Failed to upload voice sample');
           }
         } catch {
-          toast.error('Upload failed');
+          toast.error(t.uploadFailed || 'Upload failed');
         }
         setIsCloning(false);
       };
       mediaRecorder.start();
       setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 5000);
-      toast.info('Recording 5-second sample...');
+      toast.info(t.recordingSample || 'Recording 5-second sample...');
     } catch {
-      toast.error('Microphone access denied');
+      toast.error(t.micAccessDenied || 'Microphone access denied');
     }
   };
 
@@ -296,17 +296,17 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
             >
               <GlassCard className="p-10 rounded-[3rem] space-y-10" hoverEffect={false}>
                 <div className="space-y-4">
-                  <label className="text-sm font-bold uppercase tracking-widest text-white/40">1. Define Identity</label>
-                  <Input 
+                  <label className="text-sm font-bold uppercase tracking-widest text-white/40">{t.defineIdentity || '1. Define Identity'}</label>
+                  <Input
                     value={agentName}
                     onChange={(e) => setAgentName(e.target.value)}
-                    placeholder="Enter Agent Name (e.g., Research Assistant)"
+                    placeholder={t.enterAgentName || 'Enter Agent Name (e.g., Research Assistant)'}
                     className="bg-white/5 border-white/10 rounded-2xl p-8 h-auto text-2xl font-bold tracking-tight focus-visible:ring-celestial-saturn/50"
                   />
                 </div>
 
                 <div className="space-y-6" ref={el => { sectionRefs.current[t.neuralTemplates] = el; }}>
-                  <label className="text-sm font-bold uppercase tracking-widest text-white/40">2. Select Neural Template</label>
+                  <label className="text-sm font-bold uppercase tracking-widest text-white/40">{t.selectNeuralTemplate || '2. Select Neural Template'}</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <CategoryButton 
                       active={selectedCategory === 'colleague'} 
@@ -351,7 +351,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     disabled={!agentName}
                     className="px-12 py-8 rounded-2xl bg-celestial-saturn text-black font-black text-lg hover:scale-105 transition-transform"
                   >
-                    Next: Data Infusion
+                    {t.nextDataInfusion || 'Next: Data Infusion'}
                   </Button>
                 </div>
               </GlassCard>
@@ -369,7 +369,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
               <GlassCard className="p-10 rounded-[3rem] space-y-10" hoverEffect={false}>
                 <div className="grid md:grid-cols-2 gap-10">
                   <div className="space-y-6">
-                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">Knowledge Base</label>
+                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">{t.knowledgeBase || 'Knowledge Base'}</label>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -387,13 +387,13 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                       </div>
                       <div className="text-center space-y-2">
                         <p className="font-bold text-lg">{t.dropFiles}</p>
-                        <p className="text-xs text-white/40">PDF, JSON, TXT (Max 50MB)</p>
+                        <p className="text-xs text-white/40">{t.pdfJsonTxtMax || 'PDF, JSON, TXT (Max 50MB)'}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-6">
-                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">Vocal Essence</label>
+                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">{t.vocalEssence || 'Vocal Essence'}</label>
                     <div className="border border-white/10 rounded-[3rem] p-10 space-y-8 bg-white/5 aspect-square flex flex-col justify-center items-center text-center">
                       <div className={`w-20 h-20 rounded-full flex items-center justify-center ${isCloning ? 'bg-celestial-nebula/20 text-celestial-nebula animate-pulse' : 'bg-white/10 text-white/40'}`}>
                         <Mic size={40} />
@@ -407,7 +407,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                         disabled={isCloning}
                         className="w-full py-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 font-bold"
                       >
-                        {isCloning ? 'Cloning Essence...' : 'Start Voice Sample'}
+                        {isCloning ? (t.cloningEssence || 'Cloning Essence...') : (t.startVoiceSample || 'Start Voice Sample')}
                       </Button>
                     </div>
                   </div>
@@ -415,7 +415,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
 
                 {files.length > 0 && (
                   <div className="space-y-4">
-                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">Neural Fragments</label>
+                    <label className="text-sm font-bold uppercase tracking-widest text-white/40">{t.neuralFragments || 'Neural Fragments'}</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {files.map((file, i) => (
                         <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group/file">
@@ -444,14 +444,14 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     onClick={() => setCurrentStep(1)}
                     className="px-10 py-8 rounded-2xl text-white/40 hover:text-white font-bold"
                   >
-                    Back
+                    {t.back || 'Back'}
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => setCurrentStep(3)}
                     disabled={files.length === 0}
                     className="px-12 py-8 rounded-2xl bg-celestial-saturn text-black font-black text-lg hover:scale-105 transition-transform"
                   >
-                    Next: Final Synthesis
+                    {t.nextFinalSynthesis || 'Next: Final Synthesis'}
                   </Button>
                 </div>
               </GlassCard>
@@ -472,23 +472,23 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     <Sparkles size={48} />
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-4xl font-black tracking-tighter">Ready for Awakening</h2>
-                    <p className="text-white/40 max-w-md mx-auto">All neural fragments are prepared. The synthesis ritual will anchor this essence to your local node.</p>
+                    <h2 className="text-4xl font-black tracking-tighter">{t.readyForAwakening || 'Ready for Awakening'}</h2>
+                    <p className="text-white/40 max-w-md mx-auto">{t.awakeningDesc || 'All neural fragments are prepared. The synthesis ritual will anchor this essence to your local node.'}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-6 max-w-2xl mx-auto">
                   <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-2">
-                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">Name</div>
+                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">{t.nameSummary || 'Name'}</div>
                     <div className="text-lg font-bold text-celestial-saturn">{agentName}</div>
                   </div>
                   <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-2">
-                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">Template</div>
+                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">{t.templateSummary || 'Template'}</div>
                     <div className="text-lg font-bold text-celestial-saturn capitalize">{selectedCategory}</div>
                   </div>
                   <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-2">
-                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">Data</div>
-                    <div className="text-lg font-bold text-celestial-saturn">{files.length} Fragments</div>
+                    <div className="text-[10px] uppercase tracking-widest text-white/20 font-bold">{t.dataSummary || 'Data'}</div>
+                    <div className="text-lg font-bold text-celestial-saturn">{files.length} {t.fragmentsSuffix || 'Fragments'}</div>
                   </div>
                 </div>
 
@@ -498,9 +498,9 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     onClick={() => setCurrentStep(2)}
                     className="px-10 py-8 rounded-2xl text-white/40 hover:text-white font-bold"
                   >
-                    Back
+                    {t.back || 'Back'}
                   </Button>
-                  <Button 
+                  <Button
                     onClick={handleGenerate}
                     className="px-16 py-8 rounded-2xl bg-celestial-saturn text-black font-black text-xl hover:scale-105 transition-transform shadow-[0_0_30px_rgba(255,204,0,0.3)]"
                   >
@@ -519,9 +519,9 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
         <div className="flex justify-between items-end">
           <div className="space-y-2">
             <h2 className="text-4xl font-bold tracking-tighter glow-text">{t.generatedAgents || 'Generated Agents'}</h2>
-            <p className="text-white/40">Select an agent to activate or modify its core.</p>
+            <p className="text-white/40">{t.selectAgentPrompt || 'Select an agent to activate or modify its core.'}</p>
           </div>
-          <div className="text-sm font-bold uppercase tracking-widest text-white/20">Total: {agents.length}</div>
+          <div className="text-sm font-bold uppercase tracking-widest text-white/20">{t.totalPrefix || 'Total:'} {agents.length}</div>
         </div>
 
         {agents.length > 0 ? (
@@ -539,7 +539,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-white/20">
-                      {agent.createdAt ? new Date(agent.createdAt).toLocaleDateString() : 'Unknown'}
+                      {agent.createdAt ? new Date(agent.createdAt).toLocaleDateString() : (t.unknown || 'Unknown')}
                     </div>
                   </div>
                 </div>
@@ -557,14 +557,14 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
                     className="flex-1 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[10px] font-bold uppercase tracking-widest text-red-500"
                   >
                     <Trash2 size={14} className="mr-1" />
-                    Delete
+                    {t.delete || 'Delete'}
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => onChatAgent?.(agent)}
-                    size="sm" 
+                    size="sm"
                     className="flex-1 rounded-xl bg-celestial-saturn text-black text-[10px] font-bold uppercase tracking-widest"
                   >
-                    Chat
+                    {t.chatBtn || 'Chat'}
                   </Button>
                 </div>
               </motion.div>
@@ -575,7 +575,7 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
             <div className="w-16 h-16 rounded-full bg-white/5 mx-auto flex items-center justify-center text-white/20">
               <Database size={32} />
             </div>
-            <p className="text-white/40 font-bold uppercase tracking-widest">No Agents Generated Yet</p>
+            <p className="text-white/40 font-bold uppercase tracking-widest">{t.noAgentsGeneratedYet || 'No Agents Generated Yet'}</p>
           </div>
         )}
       </section>

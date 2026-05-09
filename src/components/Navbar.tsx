@@ -78,8 +78,8 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
           <Rocket className="text-white" size={16} />
         </div>
         <div className="flex flex-col -space-y-1">
-          <span className="text-sm font-black tracking-tight glow-text uppercase">Lumi Kernel</span>
-          <span className="text-[8px] font-bold text-white/40 tracking-widest">STABLE v2.0.4</span>
+          <span className="text-sm font-black tracking-tight glow-text uppercase">{t.lumiKernel || 'Lumi Kernel'}</span>
+          <span className="text-[8px] font-bold text-white/40 tracking-widest">{t.stableVersion || 'STABLE v2.0.4'}</span>
         </div>
       </div>
 
@@ -210,7 +210,7 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
               className={`w-10 h-10 rounded-full overflow-hidden border-2 transition-all ${activeTab === 'profile' ? 'border-celestial-saturn scale-110' : 'border-white/10 hover:border-white/30'}`}
             >
               {user.photoURL ? (
-                <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={user.photoURL} alt={t.profile || "Profile"} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <div className="w-full h-full bg-white/5 flex items-center justify-center text-white/40">
                   <UserIcon size={20} />

@@ -33,7 +33,8 @@ import {
   BrainCircuit,
   Sparkles,
   Box,
-  Wrench
+  Wrench,
+  MessageSquare
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -48,6 +49,7 @@ import { PersonalityDashboard } from './PersonalityDashboard';
 import { NotificationCenter } from './NotificationCenter';
 import { DesktopOnboarding } from './DesktopOnboarding';
 import { DeviceSyncCenter } from './DeviceSyncCenter';
+import { AgentChatPage } from './AgentChatPage';
 import { useSocket } from '@/hooks/useSocket';
 import { useVoiceCall } from '@/hooks/useVoiceCall';
 import { useApp } from '@/contexts/AppContext';
@@ -516,7 +518,7 @@ function KernelMonitorApp({ t }: { t: any }) {
         </div>
         <div className="text-right">
           <div className="text-[10px] font-black text-celestial-saturn uppercase tracking-widest leading-none mb-1">{t.status || 'Status'}: {t.optimal || 'Optimal'}</div>
-          <div className="text-xs font-mono text-white/40">NODE_READY / {stats.cpu.toFixed(1)}% LOAD</div>
+          <div className="text-xs font-mono text-white/40">{t.nodeReady || 'NODE_READY'} / {stats.cpu.toFixed(1)}% LOAD</div>
         </div>
       </div>
 
@@ -559,8 +561,8 @@ function KernelMonitorApp({ t }: { t: any }) {
 
       <div className="bg-black/40 rounded-[2rem] border border-white/5 p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Autonomy Runtime</div>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-celestial-saturn">{tasks.filter(t => t.active).length} active</div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-white/40">{t.autonomyRuntime || 'Autonomy Runtime'}</div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-celestial-saturn">{tasks.filter(t => t.active).length} {t.activeLabel || 'active'}</div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {tasks.map(task => (
@@ -573,7 +575,7 @@ function KernelMonitorApp({ t }: { t: any }) {
             </div>
           ))}
           {tasks.length === 0 && (
-            <div className="col-span-2 text-[10px] text-white/25 font-bold uppercase tracking-widest">Scheduler not reporting yet</div>
+            <div className="col-span-2 text-[10px] text-white/25 font-bold uppercase tracking-widest">{t.schedulerNotReporting || 'Scheduler not reporting yet'}</div>
           )}
         </div>
       </div>
@@ -886,7 +888,8 @@ export function DesktopUI({
     { id: 'personality', label: t.personality || 'Personality Lab', icon: <UserIcon size={24} />, color: 'from-violet-500 to-fuchsia-600' },
     { id: 'kernel', label: t.kernelMonitor || 'Kernel Monitor', icon: <Activity size={24} />, color: 'from-orange-500 to-red-600' },
     { id: 'protocols', label: t.lostProtocols || 'Lost Protocols', icon: <Disc size={24} />, color: 'from-purple-500 to-indigo-600' },
-    { id: 'terminal', label: t.terminal || 'Neural Terminal', icon: <Rocket size={24} />, color: 'from-blue-600 to-cyan-400' },
+    { id: 'chat', label: t.chat || 'Chat', icon: <MessageSquare size={24} />, color: 'from-green-500 to-emerald-600' },
+    { id: 'devices', label: t.devices || 'Devices', icon: <Cpu size={24} />, color: 'from-blue-600 to-cyan-400' },
     { id: 'music', label: t.mediaCenter || 'Cosmic Drift', icon: <Music size={24} />, color: 'from-pink-500 to-rose-500' },
     { id: 'settings', label: t.settings || 'OS Integrity', icon: <SettingsIcon size={24} />, color: 'from-gray-400 to-slate-600' },
   ];
@@ -919,7 +922,7 @@ export function DesktopUI({
 
   const sphereSentiment = 
     openWindows.includes('kernel') ? 'excited' : 
-    openWindows.includes('terminal') ? 'focused' :
+    openWindows.includes('chat') ? 'focused' :
     openWindows.includes('music') ? 'zen' : 'default';
 
   const getWindowSize = (windowId: string) => {
@@ -1197,10 +1200,10 @@ export function DesktopUI({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <h2 className="text-6xl font-black text-white/90 tracking-[1.2rem] uppercase drop-shadow-[0_0_30px_rgba(255,255,255,0.1)]">Nexus</h2>
+                <h2 className="text-6xl font-black text-white/90 tracking-[1.2rem] uppercase drop-shadow-[0_0_30px_rgba(255,255,255,0.1)]">{t.nexusTitle || 'Nexus'}</h2>
                 <div className="mt-4 flex items-center justify-center gap-4">
                   <div className="h-px w-12 bg-gradient-to-r from-transparent to-celestial-saturn/50" />
-                  <p className="text-[10px] text-celestial-saturn font-black tracking-[0.8em] uppercase">Distributed OS Core</p>
+                  <p className="text-[10px] text-celestial-saturn font-black tracking-[0.8em] uppercase">{t.distributedOSCore || 'Distributed OS Core'}</p>
                   <div className="h-px w-12 bg-gradient-to-l from-transparent to-celestial-saturn/50" />
                 </div>
               </motion.div>
@@ -1353,7 +1356,7 @@ export function DesktopUI({
                       </div>
                       <div className="px-3 py-2">
                         <p className="text-[9px] text-white/30 leading-tight">
-                          {focusedWindow === app.id ? 'Active — focused' : 'Open in background'}
+                          {focusedWindow === app.id ? (t.activeFocused || 'Active — focused') : (t.openInBackground || 'Open in background')}
                         </p>
                       </div>
                    </div>
@@ -1657,7 +1660,7 @@ export function DesktopUI({
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-white/30 flex items-center gap-2">
                     <Cpu size={12} /> {t.rootTerminal || 'Root Terminal'}
                   </h4>
-                  <button className="text-[10px] text-celestial-saturn hover:underline" onClick={() => setTerminalOutput(['Session Reset...'])}>{t.clear || 'Clear'}</button>
+                  <button className="text-[10px] text-celestial-saturn hover:underline" onClick={() => setTerminalOutput([t.sessionReset || 'Session Reset...'])}>{t.clear || 'Clear'}</button>
                 </div>
                 <div className="bg-black/60 rounded-2xl p-4 font-mono text-[10px] h-48 overflow-y-auto custom-scrollbar space-y-1.5 border border-white/5 shadow-inner">
                   {terminalOutput.map((line, i) => (
@@ -1764,33 +1767,8 @@ export function DesktopUI({
                     <NotificationCenter />
                   ) : windowId === 'devices' ? (
                     <DeviceSyncCenter t={t} />
-                  ) : windowId === 'terminal' ? (
-                    <div className="p-8 h-full">
-                      <GlassCard className="p-6 rounded-[2.5rem] space-y-4 border-white/5 bg-black/40">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-[10px] font-black uppercase tracking-widest text-white/30 flex items-center gap-2">
-                            <Cpu size={12} /> {t.rootTerminal || 'Root Terminal'}
-                          </h4>
-                          <button className="text-[10px] text-celestial-saturn hover:underline" onClick={() => setTerminalOutput(['Session Reset...'])}>{t.clear || 'Clear'}</button>
-                        </div>
-                        <div className="bg-black/60 rounded-2xl p-4 font-mono text-[10px] h-64 overflow-y-auto custom-scrollbar space-y-1.5 border border-white/5 shadow-inner">
-                          {terminalOutput.map((line, i) => (
-                            <div key={i} className="text-white/60 leading-relaxed">
-                              {line.startsWith('>') ? <span className="text-celestial-saturn font-bold mr-2">{line}</span> : line}
-                            </div>
-                          ))}
-                        </div>
-                        <form onSubmit={handleTerminalSubmit} className="relative mt-2">
-                          <input
-                            type="text"
-                            value={terminalInput}
-                            onChange={(e) => setTerminalInput(e.target.value)}
-                            placeholder={t.typeCommand || "Type a command..."}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-celestial-saturn/50 font-mono"
-                          />
-                        </form>
-                      </GlassCard>
-                    </div>
+                  ) : windowId === 'chat' ? (
+                    <AgentChatPage t={t} user={user} onBack={() => closeWindow('chat')} />
                   ) : renderTabContent(windowId)}
                 </div>
               </OSWindow>

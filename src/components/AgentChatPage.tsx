@@ -53,7 +53,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
       if (all.length > 0 && !selectedVoiceId) {
         setSelectedVoiceId(all[0].voiceId);
       }
-    }).catch(err => toast.error('Failed to load voices'));
+    }).catch(err => toast.error(t.failedToLoadVoices || 'Failed to load voices'));
   }, [selectedVoiceId]);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
       recognition.current.onerror = (event: any) => {
         console.error('Speech recognition error', event.error);
         setIsListening(false);
-        toast.error(`Speech recognition error: ${event.error}`);
+        toast.error(`${t.speechNotSupported || 'Speech recognition error'}: ${event.error}`);
       };
 
       recognition.current.onend = () => {
@@ -121,7 +121,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             setMessages(historyMessages);
           }
         })
-        .catch(err => console.error("Failed to load chat history", err));
+        .catch(err => console.error(t.failedToLoadChatHistory || "Failed to load chat history", err));
 
       // Check for active conversation
       fetch('/api/conversations/active')
@@ -135,7 +135,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             }
           }
         })
-        .catch(err => toast.error('Failed to load conversation'));
+        .catch(err => toast.error(t.failedToLoadConversation || 'Failed to load conversation'));
     }
   }, [agentId, agentName, user, isFounder]);
 
@@ -235,7 +235,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
         }),
       }).catch(err => toast.error('Failed to save message'));
     } catch (err) {
-      toast.error("Failed to route through Neural Mesh.");
+      toast.error(t.failedToRouteNeuralMesh || "Failed to route through Neural Mesh.");
     } finally {
       setIsTyping(false);
     }
@@ -243,7 +243,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
 
   const toggleListening = () => {
     if (!recognition.current) {
-      toast.error("Speech recognition is not supported in this browser.");
+      toast.error(t.speechNotSupported || "Speech recognition is not supported in this browser.");
       return;
     }
 
@@ -296,7 +296,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
               onClick={() => setShowVoicePicker(!showVoicePicker)}
               className="text-[10px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2 hover:text-celestial-saturn transition-colors"
             >
-              {voices.find(v => v.voiceId === selectedVoiceId)?.name || 'Select Voice'}
+              {voices.find(v => v.voiceId === selectedVoiceId)?.name || (t.selectVoice || 'Select Voice')}
               <ChevronDown size={12} />
             </Button>
             
@@ -349,7 +349,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
           <div className="p-4 md:p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-3">
               <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-celestial-nebula animate-ping' : 'bg-celestial-saturn animate-pulse'}`} />
-              <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-white/60">Neural Link</span>
+              <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-white/60">{t.neuralLink || 'Neural Link'}</span>
               {isSpeaking && (
                 <div className="flex items-center gap-3 ml-2 md:ml-4 scale-75 md:scale-100 origin-left">
                   <div className="flex items-end gap-1 h-4">
@@ -401,12 +401,12 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                     <History size={16} className="text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-amber-300 uppercase tracking-tight">Unfinished conversation</p>
+                    <p className="text-xs font-bold text-amber-300 uppercase tracking-tight">{t.unfinishedConversation || 'Unfinished conversation'}</p>
                     <p className="text-[10px] text-white/40 flex items-center gap-1">
                       <Clock size={10} />
                       {new Date(activeConversation.lastActiveAt).toLocaleString()}
                       {activeConversation.messageCount > 0 && (
-                        <span> &middot; {activeConversation.messageCount} messages</span>
+                        <span> &middot; {activeConversation.messageCount} {t.messagesCount || 'messages'}</span>
                       )}
                     </p>
                   </div>
@@ -416,14 +416,14 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                     onClick={() => handleResumeConversation(activeConversation.id)}
                     className="bg-amber-500 text-black font-bold text-[10px] px-3 py-1.5 rounded-xl hover:scale-105 transition-transform"
                   >
-                    Continue
+                    {t.continueBtn || 'Continue'}
                   </Button>
                   <Button
                     onClick={() => setShowResumePrompt(false)}
                     variant="ghost"
                     className="text-white/20 hover:text-white/60 text-[10px] px-2"
                   >
-                    New
+                    {t.newBtn || 'New'}
                   </Button>
                 </div>
               </motion.div>
@@ -433,15 +433,15 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             {activeConversation && !showResumePrompt && activeConversation.agentId === agentId && activeConversation.messageCount > 0 && (
               <div className="flex items-center gap-2 text-[9px] text-white/20 font-bold uppercase tracking-widest">
                 <History size={10} />
-                <span>{activeConversation.messageCount} messages</span>
+                <span>{activeConversation.messageCount} {t.messagesCount || 'messages'}</span>
                 <span>&middot;</span>
-                <span>Last active {new Date(activeConversation.lastActiveAt).toLocaleString()}</span>
+                <span>{t.lastActive || 'Last active'} {new Date(activeConversation.lastActiveAt).toLocaleString()}</span>
               </div>
             )}
             {messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-20">
                 <Sparkles size={64} className="text-celestial-saturn" />
-                <p className="text-lg font-medium">Your agent has awakened.<br/>Begin the first conversation.</p>
+                <p className="text-lg font-medium">{t.awakePrompt || 'Your agent has awakened.'}<br/>{t.awakePromptSub || 'Begin the first conversation.'}</p>
               </div>
             )}
             <AnimatePresence initial={false}>
@@ -474,7 +474,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                   >
                     <Loader2 size={14} />
                   </motion.div>
-                  Neural Processing...
+                  {t.neuralProcessing || 'Neural Processing...'}
                 </div>
                 <div className="flex gap-1">
                   {[...Array(3)].map((_, i) => (
@@ -503,7 +503,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                 <Input
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Communicate with your essence..."
+                  placeholder={t.communicatePlaceholder || "Communicate with your essence..."}
                   className="bg-black/40 border-white/10 rounded-2xl py-6 pr-12 focus-visible:ring-celestial-saturn/50"
                 />
                 <Button
@@ -531,13 +531,13 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
         <div className="space-y-6">
           <GlassCard className="p-6 rounded-[2.5rem] space-y-4 border-celestial-saturn/20" hoverEffect={false}>
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">Active Capabilities</h4>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">{t.activeCapabilities || 'Active Capabilities'}</h4>
               {isElectron && (
                 <div className="px-2 py-0.5 rounded-full bg-celestial-saturn/20 text-[8px] text-celestial-saturn font-black">NODE_NATIVE</div>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {(agentMetadata.capabilities || ['Neural Core', 'Web Mesh']).map((cap, i) => (
+              {(agentMetadata.capabilities || [t.neuralCore || 'Neural Core', t.webMesh || 'Web Mesh']).map((cap, i) => (
                 <div key={i} className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/5 text-[10px] text-white/60 font-bold flex items-center gap-2">
                   <div className="w-1 h-1 rounded-full bg-celestial-saturn" />
                   {cap}
@@ -598,7 +598,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             {isOptimizing && (
               <div className="space-y-2 pt-2">
                 <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                  <span className="text-celestial-saturn animate-pulse">Optimizing...</span>
+                  <span className="text-celestial-saturn animate-pulse">{t.optimizing || 'Optimizing...'}</span>
                   <span>{optimizationProgress}%</span>
                 </div>
                 <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
@@ -613,27 +613,27 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
           </GlassCard>
 
           <GlassCard className="p-6 rounded-[2.5rem] space-y-4" hoverEffect={false}>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">Agent Stats</h4>
+            <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">{t.agentStats || 'Agent Stats'}</h4>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-white/60 flex items-center gap-2"><Cpu size={14}/> Logic Engine</span>
+                <span className="text-sm text-white/60 flex items-center gap-2"><Cpu size={14}/> {t.logicEngine || 'Logic Engine'}</span>
                 <span className="text-sm font-bold text-celestial-saturn">v1.0.2</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-white/60 flex items-center gap-2"><Zap size={14}/> Sync Speed</span>
+                <span className="text-sm text-white/60 flex items-center gap-2"><Zap size={14}/> {t.syncSpeed || 'Sync Speed'}</span>
                 <span className="text-sm font-bold text-celestial-mars">8.4ms</span>
               </div>
             </div>
           </GlassCard>
 
           <GlassCard className="p-6 rounded-[2.5rem] space-y-4" hoverEffect={false}>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">Neural Mesh Status</h4>
+            <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">{t.neuralMeshStatus || 'Neural Mesh Status'}</h4>
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-sm font-bold">Encrypted Link Active</span>
+              <span className="text-sm font-bold">{t.encryptedLinkActive || 'Encrypted Link Active'}</span>
             </div>
             <p className="text-xs text-white/40 leading-relaxed">
-              Your agent is currently synchronized with the local node. All interactions are stored in your private neural cloud.
+              {t.agentSyncDesc || 'Your agent is currently synchronized with the local node. All interactions are stored in your private neural cloud.'}
             </p>
           </GlassCard>
         </div>
