@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, MessageSquare, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown, History, Clock } from 'lucide-react';
+import { Send, MessageSquare, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown, History, Clock, Plus, Info } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { socketService } from '@/services/socketService';
@@ -67,6 +67,11 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
   const [optimizationProgress, setOptimizationProgress] = useState(0);
   const [activeConversation, setActiveConversation] = useState<any>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
   const { speak, stop, pause, resume, isSpeaking, isPaused } = useTTS();
   const recognition = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -104,41 +109,6 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
     }
   }, []);
 
-  useEffect(() => {
-    if (agentId && !isFounder) {
-      // Load history for this agent's active conversation
-      fetch(`/api/agents/${agentId}/history`)
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            const historyMessages = data.map((m: any, idx: number) => ({
-              id: `history-${idx}`,
-              text: m.content,
-              userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || 'User'),
-              timestamp: new Date().toISOString(),
-              type: m.role === 'assistant' ? 'agent' : 'user'
-            }));
-            setMessages(historyMessages);
-          }
-        })
-        .catch(err => console.error(t.failedToLoadChatHistory || "Failed to load chat history", err));
-
-      // Check for active conversation
-      fetch('/api/conversations/active')
-        .then(res => res.json())
-        .then(data => {
-          if (data.activeConversation) {
-            setActiveConversation(data.activeConversation);
-            // If resume is for a different agent, show prompt
-            if (data.activeConversation.agentId !== agentId) {
-              setShowResumePrompt(true);
-            }
-          }
-        })
-        .catch(err => toast.error(t.failedToLoadConversation || 'Failed to load conversation'));
-    }
-  }, [agentId, agentName, user, isFounder]);
-
   const handleResumeConversation = useCallback(async (conversationId: string) => {
     try {
       const res = await fetch(`/api/conversations/${conversationId}/messages?limit=100`);
@@ -159,8 +129,98 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
     }
   }, [agentName, user]);
 
+  const fetchConversations = useCallback(async () => {
+    setIsLoadingConversations(true);
+    try {
+      const res = await fetch('/api/conversations');
+      const data = await res.json();
+      if (data.conversations) setConversations(data.conversations);
+    } catch (err) {
+      console.error('Failed to fetch conversations', err);
+    } finally {
+      setIsLoadingConversations(false);
+    }
+  }, []);
+
+  const handleSelectConversation = useCallback(async (convId: string) => {
+    if (convId === activeConversationId) return;
+    setIsLoadingMessages(true);
+    try {
+      const res = await fetch(`/api/conversations/${convId}/messages?limit=100`);
+      const data = await res.json();
+      if (data.messages && Array.isArray(data.messages)) {
+        const historyMessages = data.messages.map((m: any, idx: number) => ({
+          id: `conv-${idx}`,
+          text: m.content || m.message || '',
+          userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || 'User'),
+          timestamp: m.timestamp || new Date().toISOString(),
+          type: m.role === 'assistant' ? 'agent' : 'user'
+        }));
+        setMessages(historyMessages);
+        setActiveConversationId(convId);
+        setShowResumePrompt(false);
+        const conv = conversations.find(c => c.id === convId);
+        if (conv) setActiveConversation(conv);
+      }
+    } catch (err) {
+      toast.error(t.failedToLoadConversation || 'Failed to load conversation');
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [activeConversationId, agentName, user, conversations, t.failedToLoadConversation]);
+
+  const handleNewConversation = useCallback(async () => {
+    if (activeConversationId) {
+      try {
+        await fetch(`/api/conversations/${activeConversationId}/close`, { method: 'POST' });
+      } catch (err) {
+        console.error('Failed to close conversation', err);
+      }
+    }
+    setMessages([]);
+    setActiveConversationId(null);
+    setActiveConversation(null);
+    setShowResumePrompt(false);
+    fetchConversations();
+  }, [activeConversationId, fetchConversations]);
+
   useEffect(() => {
-    if (isFounder || !socket) return; 
+    if (agentId && !isFounder) {
+      fetchConversations();
+
+      fetch(`/api/agents/${agentId}/history`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            const historyMessages = data.map((m: any, idx: number) => ({
+              id: `history-${idx}`,
+              text: m.content,
+              userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || 'User'),
+              timestamp: new Date().toISOString(),
+              type: m.role === 'assistant' ? 'agent' : 'user'
+            }));
+            setMessages(historyMessages);
+          }
+        })
+        .catch(err => console.error(t.failedToLoadChatHistory || "Failed to load chat history", err));
+
+      fetch('/api/conversations/active')
+        .then(res => res.json())
+        .then(data => {
+          if (data.activeConversation) {
+            setActiveConversation(data.activeConversation);
+            setActiveConversationId(data.activeConversation.id);
+            if (data.activeConversation.agentId !== agentId) {
+              setShowResumePrompt(true);
+            }
+          }
+        })
+        .catch(err => toast.error(t.failedToLoadConversation || 'Failed to load conversation'));
+    }
+  }, [agentId, agentName, user, isFounder, fetchConversations, t.failedToLoadChatHistory, t.failedToLoadConversation]);
+
+  useEffect(() => {
+    if (isFounder || !socket) return;
 
     socket.on("agent:response", (data: { text: string; agentName: string }) => {
       const agentMsg = {
@@ -223,7 +283,6 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
       setMessages(prev => [...prev, agentMsg]);
       speak(response.text);
 
-      // Persist new message pair via conversation-managed endpoint
       fetch(`/api/agents/${agentId}/history`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,7 +292,15 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
             { role: 'assistant', content: response.text },
           ],
         }),
-      }).catch(err => toast.error('Failed to save message'));
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.conversationId && !activeConversationId) {
+            setActiveConversationId(data.conversationId);
+          }
+          fetchConversations();
+        })
+        .catch(err => toast.error('Failed to save message'));
     } catch (err) {
       toast.error(t.failedToRouteNeuralMesh || "Failed to route through Neural Mesh.");
     } finally {
@@ -278,7 +345,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 md:space-y-8 pb-32 md:pb-0">
+    <div className="max-w-[90rem] mx-auto space-y-4 md:space-y-8 pb-32 md:pb-0">
       <div className="flex items-center justify-between px-4 md:px-0">
         <Button 
           onClick={onBack}
@@ -344,8 +411,71 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6 md:gap-8 lg:h-[700px]">
-        <div className="lg:col-span-2 flex flex-col h-[500px] md:h-full glass rounded-[2.5rem] md:rounded-[3rem] border-white/10 overflow-hidden shadow-2xl">
+      <div className="flex gap-3 lg:h-[700px]">
+        {/* ── Conversation Sidebar ── */}
+        <div className="w-56 flex-shrink-0 flex flex-col glass rounded-[2.5rem] border-white/10 overflow-hidden">
+          <div className="p-4 border-b border-white/5">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
+              {t.conversations || 'Conversations'}
+            </h3>
+            <Button
+              onClick={handleNewConversation}
+              className="w-full justify-start gap-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl py-2 text-xs font-bold text-white/70"
+            >
+              <Plus size={14} />
+              {t.newConversation || 'New Conversation'}
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            {isLoadingConversations ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-white/20" />
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="text-center py-8 text-[10px] text-white/20 font-bold uppercase tracking-widest">
+                {t.noConversations || 'No conversations yet'}
+              </div>
+            ) : (
+              conversations.map(conv => (
+                <button
+                  key={conv.id}
+                  onClick={() => handleSelectConversation(conv.id)}
+                  className={`w-full text-left p-3 rounded-xl transition-all ${
+                    activeConversationId === conv.id
+                      ? 'bg-white/10'
+                      : 'hover:bg-white/5'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-white/70 truncate">
+                    {conv.title || t.untitled || 'Untitled'}
+                  </div>
+                  <div className="text-[10px] text-white/30 mt-0.5 truncate">
+                    {conv.summary || ''}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[9px] text-white/20">
+                      {(() => {
+                        if (!conv.lastActiveAt) return '';
+                        const d = new Date(conv.lastActiveAt);
+                        const now = new Date();
+                        const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+                        if (diffDays === 0) return t.today || 'Today';
+                        if (diffDays === 1) return t.yesterday || 'Yesterday';
+                        return d.toLocaleDateString();
+                      })()}
+                    </span>
+                    {conv.messageCount > 0 && (
+                      <span className="text-[9px] text-white/20">{conv.messageCount} msgs</span>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* ── Chat Panel ── */}
+        <div className="flex-1 flex flex-col glass rounded-[2.5rem] md:rounded-[3rem] border-white/10 overflow-hidden shadow-2xl min-w-0">
           <div className="p-4 md:p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-3">
               <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-celestial-nebula animate-ping' : 'bg-celestial-saturn animate-pulse'}`} />
@@ -383,11 +513,23 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                 </div>
               )}
             </div>
+            <Button
+              onClick={() => setShowInfoPanel(!showInfoPanel)}
+              variant="ghost"
+              className={`h-7 px-2 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 rounded-full border transition-colors ${
+                showInfoPanel
+                  ? 'bg-white/10 text-white border-white/20'
+                  : 'text-white/20 hover:text-white/60 border-transparent hover:bg-white/5'
+              }`}
+            >
+              <Info size={12} />
+              {showInfoPanel ? 'Hide' : 'Info'}
+            </Button>
           </div>
 
           <div
             ref={scrollRef}
-            className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6 scrollbar-hide"
+            className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6 custom-scrollbar"
           >
             {/* Resume conversation prompt */}
             {showResumePrompt && activeConversation && (
@@ -419,7 +561,7 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                     {t.continueBtn || 'Continue'}
                   </Button>
                   <Button
-                    onClick={() => setShowResumePrompt(false)}
+                    onClick={handleNewConversation}
                     variant="ghost"
                     className="text-white/20 hover:text-white/60 text-[10px] px-2"
                   >
@@ -438,7 +580,12 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
                 <span>{t.lastActive || 'Last active'} {new Date(activeConversation.lastActiveAt).toLocaleString()}</span>
               </div>
             )}
-            {messages.length === 0 && (
+            {isLoadingMessages ? (
+              <div className="h-full flex flex-col items-center justify-center gap-3">
+                <Loader2 size={28} className="animate-spin text-white/20" />
+                <span className="text-[10px] text-white/20 font-bold uppercase tracking-widest">{t.loading || 'Loading...'}</span>
+              </div>
+            ) : messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-20">
                 <Sparkles size={64} className="text-celestial-saturn" />
                 <p className="text-lg font-medium">{t.awakePrompt || 'Your agent has awakened.'}<br/>{t.awakePromptSub || 'Begin the first conversation.'}</p>
@@ -528,7 +675,16 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* ── Info Sidebar ── */}
+        <AnimatePresence>
+          {showInfoPanel && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 'auto', opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="w-72 flex-shrink-0 space-y-4 overflow-y-auto custom-scrollbar"
+            >
           <GlassCard className="p-6 rounded-[2.5rem] space-y-4 border-celestial-saturn/20" hoverEffect={false}>
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-widest text-white/40">{t.activeCapabilities || 'Active Capabilities'}</h4>
@@ -636,7 +792,9 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
               {t.agentSyncDesc || 'Your agent is currently synchronized with the local node. All interactions are stored in your private neural cloud.'}
             </p>
           </GlassCard>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
