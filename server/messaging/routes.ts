@@ -13,12 +13,25 @@ import type { FeishuConfig } from './feishu';
 import type { IncomingMessage, MessageHandler } from './types';
 import { getMessagingConfig, updateMessagingConfig } from './config';
 
+// Dedup cache: prevent duplicate processing when Feishu retries events
+// Feishu retries if no 200 within 1s, but AI reply may take 5-30s
+const recentMessages = new Map<string, number>();
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 min
+function isDuplicate(messageId: string): boolean {
+  const now = Date.now();
+  // Cleanup stale entries
+  for (const [id, ts] of recentMessages) {
+    if (now - ts > DEDUP_TTL_MS) recentMessages.delete(id);
+  }
+  if (recentMessages.has(messageId)) return true;
+  recentMessages.set(messageId, now);
+  return false;
+}
+
 export function createMessagingRoutes(
   feishuConfig: FeishuConfig,
   options?: {
-    /** Custom message handler. If omitted, uses built-in AI with personality. */
     onMessage?: MessageHandler;
-    /** LLM getters for AI reply pipeline */
     llmGetters?: {
       getDeepSeek?: () => any;
       getGemini?: () => any;
@@ -26,23 +39,19 @@ export function createMessagingRoutes(
       getAnthropic?: () => any;
       getQwen?: () => any;
     };
-    /** Personality registry — builds Lumi's persona into the system prompt */
     personalityRegistry?: any;
-    /** Query user memories for context-aware replies */
     queryMemories?: (opts: { userId: string; query: string; limit: number; minConfidence: number }) => any[];
-    /** Load emotional state for a user */
     loadEmotionalState?: (userId: string) => any;
   },
 ): Router {
   const router = Router();
   const adapter = new FeishuAdapter(feishuConfig);
 
-  // ── POST /feishu/events — main webhook endpoint ──
   router.post('/feishu/events', async (req, res) => {
     try {
       const body = req.body;
 
-      // URL verification challenge (first-time setup)
+      // URL verification challenge
       if (body.type === 'url_verification' || body.event?.type === 'url_verification') {
         const challenge = body.challenge || body.event?.challenge;
         if (challenge) {
@@ -52,30 +61,39 @@ export function createMessagingRoutes(
         return res.status(400).json({ error: 'Missing challenge token' });
       }
 
-      // Parse the event into a unified IncomingMessage
       const msg = adapter.parseEvent(body);
       if (!msg) {
         return res.json({ code: 0 });
       }
 
+      // Dedup: Feishu retries events if no ack, but we process async below
+      if (isDuplicate(msg.messageId)) {
+        console.log(`[Feishu] Ignoring duplicate: ${msg.messageId}`);
+        return res.json({ code: 0 });
+      }
+
       console.log(`[Feishu] ${msg.userName} (${msg.chatType}): ${msg.text.slice(0, 80)}`);
 
-      // Process via custom handler or built-in AI with personality
+      // Respond to Feishu IMMEDIATELY (must be < 1s), process AI reply async
+      res.json({ code: 0 });
+
       if (options?.onMessage) {
         const reply = await options.onMessage(msg);
         if (reply) {
-          await adapter.sendMessage(msg.chatId, { text: reply.text, platform: 'feishu' });
+          await adapter.replyMessage(msg.messageId, reply.text).catch(() =>
+            adapter.sendMessage(msg.chatId, { text: reply.text, platform: 'feishu' }));
         }
       } else {
         const replyText = await processWithPersonality(msg, options);
-        await adapter.sendMessage(msg.chatId, { text: replyText, platform: 'feishu' });
+        // Prefer replying to the specific message, fallback to sending to chat
+        await adapter.replyMessage(msg.messageId, replyText).catch(() =>
+          adapter.sendMessage(msg.chatId, { text: replyText, platform: 'feishu' }));
       }
-
-      res.json({ code: 0 });
     } catch (err: any) {
       console.error('[Feishu] Event error:', err.message);
-      // Always return 200 to Feishu to avoid retries
-      res.json({ code: -1, msg: err.message });
+      if (!res.headersSent) {
+        res.json({ code: -1, msg: err.message });
+      }
     }
   });
 
