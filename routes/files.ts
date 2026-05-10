@@ -1,7 +1,10 @@
 /**
- * Real filesystem API — browses the user's actual home directory.
+ * AI Knowledge Base API — manages files in Lumi's knowledge vault.
  *
- * File IDs are relative paths from HOME. All operations are sandboxed within HOME.
+ * Files stored in data/knowledge/. Each file tracked with metadata:
+ *   - source: 'upload' | 'generated' | 'ingested'
+ *   - agentIds: which agents have ingested this file
+ *   - status: 'ready' | 'indexing' | 'indexed'
  */
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
@@ -12,51 +15,38 @@ import os from 'os';
 import { readDB, writeDB } from '../db_layer';
 import { ingestDocument } from '../server/agents/rag';
 
-const HOME = os.homedir();
+const KNOWLEDGE_DIR = path.join(process.cwd(), 'data', 'knowledge');
+fs.mkdirSync(KNOWLEDGE_DIR, { recursive: true });
+
 const router = Router();
 
-// ── Auth middleware ──
 const JWT_SECRET = process.env.JWT_SECRET || 'lumi_secret_key_2026';
 
 function requireAuth(req: Request, res: Response, next: () => void): void {
   let token = req.cookies.token;
-  // Fallback to Authorization header (for Tauri WebView2)
   if (!token && req.headers.authorization?.startsWith('Bearer ')) {
     token = req.headers.authorization.slice(7);
   }
-  if (!token) {
-    res.status(401).json({ error: 'Login required' });
-    return;
-  }
-  try {
-    jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: 'Invalid token' });
-  }
+  if (!token) { res.status(401).json({ error: 'Login required' }); return; }
+  try { jwt.verify(token, JWT_SECRET); next(); }
+  catch { res.status(401).json({ error: 'Invalid token' }); }
 }
 
-// Temp upload staging
-const uploadDir = path.join(os.tmpdir(), 'lumi-uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+function getUserId(req: Request): string {
+  try {
+    let token = req.cookies.token;
+    if (!token && req.headers.authorization?.startsWith('Bearer ')) token = req.headers.authorization.slice(7);
+    if (token) return (jwt.verify(token, JWT_SECRET) as any).uid;
+  } catch {}
+  return 'anonymous';
+}
 
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
-});
+// ── Multer: files staged in OS temp, then moved to knowledge dir ──
+const tmpDir = path.join(os.tmpdir(), 'lumi-uploads');
+fs.mkdirSync(tmpDir, { recursive: true });
+const upload = multer({ dest: tmpDir, limits: { fileSize: 500 * 1024 * 1024 } });
 
 // ── Helpers ──
-
-/** Resolve a relative path (file ID) to an absolute path within HOME. */
-function resolvePath(relativePath: string): string {
-  // Normalize: strip leading slashes, resolve ..
-  const clean = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
-  const resolved = path.resolve(HOME, clean);
-  if (!resolved.startsWith(HOME + path.sep) && resolved !== HOME) {
-    throw new Error('Path escapes home directory');
-  }
-  return resolved;
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -65,82 +55,140 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-// ── GET /files/list — list directory contents ──
-router.get('/files/list', (req: Request, res: Response) => {
+interface KnowledgeEntry {
+  id: string;
+  name: string;
+  size: string;
+  rawSize: number;
+  type: 'file';
+  source: 'upload' | 'generated' | 'ingested';
+  agentIds: string[];
+  status: 'ready' | 'indexing' | 'indexed';
+  updatedAt: string;
+  createdAt: string;
+}
+
+function buildEntry(filename: string, source: 'upload' | 'generated' | 'ingested', agentIds: string[] = []): KnowledgeEntry {
+  const filePath = path.join(KNOWLEDGE_DIR, filename);
+  let st: fs.Stats;
+  try { st = fs.statSync(filePath); }
+  catch { st = { size: 0, mtime: new Date(), birthtime: new Date() } as fs.Stats; }
+  return {
+    id: filename,
+    name: filename,
+    size: formatSize(st.size),
+    rawSize: st.size,
+    type: 'file',
+    source,
+    agentIds,
+    status: agentIds.length > 0 ? 'indexed' : 'ready',
+    updatedAt: st.mtime.toISOString(),
+    createdAt: st.birthtime.toISOString(),
+  };
+}
+
+// ── GET /files/list — list knowledge base files ──
+router.get('/files/list', (_req: Request, res: Response) => {
   try {
-    const subPath = (req.query.path as string) || '';
-    const targetDir = resolvePath(subPath);
-
-    if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-      return res.json({ files: [], path: subPath, home: HOME });
-    }
-
-    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
-    const files = [];
-
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue; // skip hidden
-      try {
-        const fullPath = path.join(targetDir, entry.name);
-        const st = fs.statSync(fullPath);
-        const relativePath = path.relative(HOME, fullPath).replace(/\\/g, '/');
-        files.push({
-          id: relativePath,
-          name: entry.name,
-          type: entry.isDirectory() ? 'folder' as const : 'file' as const,
-          size: entry.isDirectory() ? '--' : formatSize(st.size),
-          rawSize: st.size,
-          status: 'local' as const,
-          updatedAt: st.mtime.toISOString(),
-        });
-      } catch {
-        // skip inaccessible entries
+    const db = readDB();
+    const fileMeta: Record<string, { source: string; agentIds: string[] }> = {};
+    if (db.knowledgeFiles) {
+      for (const m of db.knowledgeFiles) {
+        fileMeta[m.filename] = { source: m.source || 'upload', agentIds: m.agentIds || [] };
       }
     }
 
-    files.sort((a: any, b: any) => {
-      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+    const entries = fs.readdirSync(KNOWLEDGE_DIR);
+    const files: KnowledgeEntry[] = [];
+    for (const name of entries) {
+      if (name.startsWith('.') || name.startsWith('_')) continue;
+      const meta = fileMeta[name] || { source: 'upload' as const, agentIds: [] as string[] };
+      const source = (meta.source as 'upload' | 'generated' | 'ingested') || 'upload';
+      files.push(buildEntry(name, source, meta.agentIds));
+    }
 
-    // Limit to 500 entries for performance
-    res.json({ files: files.slice(0, 500), path: subPath, home: HOME });
+    files.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    res.json({ files });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── POST /files/upload — upload files into a directory ──
+// ── POST /files/upload — upload files ──
 router.post('/files/upload', requireAuth, upload.array('files', 20), (req: Request, res: Response) => {
   try {
-    const subPath = (req.query.path as string) || '';
-    const destDir = resolvePath(subPath);
-
-    if (!fs.existsSync(destDir)) {
-      fs.mkdirSync(destDir, { recursive: true });
-    }
-
     const uploadedFiles = req.files as Express.Multer.File[];
     if (!uploadedFiles || uploadedFiles.length === 0) {
       return res.status(400).json({ error: 'No files provided' });
     }
 
+    const db = readDB();
+    if (!db.knowledgeFiles) db.knowledgeFiles = [];
+
     const saved: string[] = [];
     for (const file of uploadedFiles) {
-      let dest = path.join(destDir, file.originalname);
-      // Avoid overwriting
+      let dest = path.join(KNOWLEDGE_DIR, file.originalname);
       let counter = 1;
       const ext = path.extname(file.originalname);
       const base = path.basename(file.originalname, ext);
       while (fs.existsSync(dest)) {
-        dest = path.join(destDir, `${base} (${counter})${ext}`);
+        dest = path.join(KNOWLEDGE_DIR, `${base} (${counter})${ext}`);
         counter++;
       }
       fs.renameSync(file.path, dest);
-      saved.push(path.relative(HOME, dest).replace(/\\/g, '/'));
-    }
+      const finalName = path.basename(dest);
 
-    res.json({ uploaded: saved.map(id => ({ id, name: path.basename(id) })), count: saved.length });
+      // Track in DB
+      const existing = db.knowledgeFiles.find((m: any) => m.filename === finalName);
+      if (existing) {
+        existing.source = 'upload';
+        existing.updatedAt = new Date().toISOString();
+      } else {
+        db.knowledgeFiles.push({
+          filename: finalName,
+          source: 'upload',
+          agentIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      saved.push(finalName);
+    }
+    writeDB(db);
+    res.json({ success: true, files: saved });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /files/save — save generated content as a file ──
+router.post('/files/save', requireAuth, (req: Request, res: Response) => {
+  try {
+    const { name, content } = req.body;
+    if (!name || content === undefined) return res.status(400).json({ error: 'name and content required' });
+
+    const safeName = name.replace(/[<>:"/\\|?*]/g, '_');
+    const filePath = path.join(KNOWLEDGE_DIR, safeName);
+    fs.writeFileSync(filePath, typeof content === 'string' ? content : JSON.stringify(content, null, 2), 'utf-8');
+
+    const db = readDB();
+    if (!db.knowledgeFiles) db.knowledgeFiles = [];
+    const existing = db.knowledgeFiles.find((m: any) => m.filename === safeName);
+    if (existing) {
+      existing.source = 'generated';
+      existing.updatedAt = new Date().toISOString();
+    } else {
+      db.knowledgeFiles.push({
+        filename: safeName,
+        source: 'generated',
+        agentIds: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    writeDB(db);
+
+    res.json({ success: true, filename: safeName, entry: buildEntry(safeName, 'generated', []) });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -149,29 +197,30 @@ router.post('/files/upload', requireAuth, upload.array('files', 20), (req: Reque
 // ── GET /files/download/:id — download a file ──
 router.get('/files/download/:id', (req: Request, res: Response) => {
   try {
-    const absPath = resolvePath(req.params.id);
-    if (!fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) {
+    const safeName = path.basename(req.params.id);
+    const filePath = path.join(KNOWLEDGE_DIR, safeName);
+    if (!safeName || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
       return res.status(404).json({ error: 'File not found' });
     }
-    const name = path.basename(absPath);
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-    fs.createReadStream(absPath).pipe(res);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+    fs.createReadStream(filePath).pipe(res);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// ── DELETE /files/delete/:id — delete a file or folder ──
+// ── DELETE /files/delete/:id ──
 router.delete('/files/delete/:id', requireAuth, (req: Request, res: Response) => {
   try {
-    const absPath = resolvePath(req.params.id);
-    if (!fs.existsSync(absPath)) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    if (fs.statSync(absPath).isDirectory()) {
-      fs.rmSync(absPath, { recursive: true });
-    } else {
-      fs.unlinkSync(absPath);
+    const safeName = path.basename(req.params.id);
+    const filePath = path.join(KNOWLEDGE_DIR, safeName);
+    if (!safeName || !fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+    fs.unlinkSync(filePath);
+
+    const db = readDB();
+    if (db.knowledgeFiles) {
+      db.knowledgeFiles = db.knowledgeFiles.filter((m: any) => m.filename !== safeName);
+      writeDB(db);
     }
     res.json({ success: true });
   } catch (err: any) {
@@ -179,103 +228,92 @@ router.delete('/files/delete/:id', requireAuth, (req: Request, res: Response) =>
   }
 });
 
-// ── POST /files/rename — rename a file or folder ──
+// ── POST /files/rename ──
 router.post('/files/rename', requireAuth, (req: Request, res: Response) => {
   try {
     const { id, newName } = req.body;
-    if (!id || !newName) return res.status(400).json({ error: 'id and newName are required' });
+    if (!id || !newName) return res.status(400).json({ error: 'id and newName required' });
 
-    const absPath = resolvePath(id);
-    if (!fs.existsSync(absPath)) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const dir = path.dirname(absPath);
-    const dest = path.join(dir, newName);
-    if (fs.existsSync(dest)) {
-      return res.status(409).json({ error: 'A file with that name already exists' });
-    }
+    const oldPath = path.join(KNOWLEDGE_DIR, path.basename(id));
+    const safeNewName = newName.replace(/[<>:"/\\|?*]/g, '_');
+    const newPath = path.join(KNOWLEDGE_DIR, safeNewName);
 
-    fs.renameSync(absPath, dest);
-    const newId = path.relative(HOME, dest).replace(/\\/g, '/');
-    res.json({ success: true, id: newId, name: newName });
+    if (!fs.existsSync(oldPath)) return res.status(404).json({ error: 'Not found' });
+    if (fs.existsSync(newPath)) return res.status(409).json({ error: 'Name already taken' });
+
+    fs.renameSync(oldPath, newPath);
+
+    const db = readDB();
+    if (db.knowledgeFiles) {
+      const meta = db.knowledgeFiles.find((m: any) => m.filename === path.basename(id));
+      if (meta) meta.filename = safeNewName;
+      writeDB(db);
+    }
+    res.json({ success: true, id: safeNewName, name: safeNewName });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// ── GET /files/info/:id — file metadata ──
+// ── GET /files/info/:id ──
 router.get('/files/info/:id', (req: Request, res: Response) => {
   try {
-    const absPath = resolvePath(req.params.id);
-    if (!fs.existsSync(absPath)) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const st = fs.statSync(absPath);
+    const safeName = path.basename(req.params.id);
+    const filePath = path.join(KNOWLEDGE_DIR, safeName);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+    const st = fs.statSync(filePath);
+    const db = readDB();
+    const meta = db.knowledgeFiles?.find((m: any) => m.filename === safeName);
     res.json({
-      id: req.params.id,
-      name: path.basename(absPath),
+      id: safeName,
+      name: safeName,
       size: st.size,
       formattedSize: formatSize(st.size),
-      type: st.isDirectory() ? 'folder' : 'file',
+      type: 'file',
+      source: meta?.source || 'upload',
+      agentIds: meta?.agentIds || [],
       updatedAt: st.mtime.toISOString(),
+      createdAt: meta?.createdAt || st.birthtime.toISOString(),
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// ── POST /files/ingest — chunk a file into agent memory (RAG) ──
-router.post('/files/ingest', async (req: Request, res: Response) => {
+// ── POST /files/ingest — chunk into agent memory (RAG) ──
+router.post('/files/ingest', requireAuth, async (req: Request, res: Response) => {
   try {
-    const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
-    const JWT_SECRET = process.env.JWT_SECRET || 'lumi_secret_key_2026';
-    let userId: string;
-    try {
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      userId = decoded.uid;
-    } catch {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
+    const userId = getUserId(req);
     const { fileId, agentId } = req.body;
-    if (!fileId || !agentId) {
-      return res.status(400).json({ error: 'fileId and agentId are required' });
-    }
+    if (!fileId || !agentId) return res.status(400).json({ error: 'fileId and agentId required' });
 
-    const absPath = resolvePath(fileId);
-    if (!fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) {
+    const safeName = path.basename(fileId);
+    const filePath = path.join(KNOWLEDGE_DIR, safeName);
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    const content = fs.readFileSync(absPath, 'utf-8');
-    const result = await ingestDocument(userId, agentId, fileId, content);
-    res.json({ success: true, chunkCount: result.chunkCount, memoryIds: result.memoryIds });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const content = fs.readFileSync(filePath, 'utf-8');
 
-// ── GET /files/disk — disk usage info ──
-router.get('/files/disk', (_req: Request, res: Response) => {
-  try {
-    let total = 0, free = 0;
-    try {
-      const st = fs.statfsSync(HOME);
-      total = (st as any).bsize * (st as any).blocks || 0;
-      free = (st as any).bsize * (st as any).bfree || 0;
-    } catch {
-      // statfs not available on all platforms
+    // Mark as indexing
+    const db = readDB();
+    if (!db.knowledgeFiles) db.knowledgeFiles = [];
+    let meta = db.knowledgeFiles.find((m: any) => m.filename === safeName);
+    if (!meta) {
+      meta = { filename: safeName, source: 'upload', agentIds: [], createdAt: new Date().toISOString() };
+      db.knowledgeFiles.push(meta);
     }
-    res.json({
-      home: HOME,
-      totalBytes: total,
-      freeBytes: free,
-      totalFormatted: formatSize(total),
-      freeFormatted: formatSize(free),
-      usedPercent: total > 0 ? Math.round(((total - free) / total) * 100) : 0,
-    });
+    meta.indexingAt = new Date().toISOString();
+    writeDB(db);
+
+    const result = await ingestDocument(userId, agentId, safeName, content);
+
+    // Mark as indexed
+    if (!meta.agentIds.includes(agentId)) meta.agentIds.push(agentId);
+    delete meta.indexingAt;
+    writeDB(db);
+
+    res.json({ success: true, chunkCount: result.chunkCount, memoryIds: result.memoryIds });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

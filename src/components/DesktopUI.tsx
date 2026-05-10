@@ -26,7 +26,6 @@ import {
   ChevronRight,
   Clock,
   Bell,
-  Music,
   Disc,
   Headphones,
   BrainCircuit,
@@ -849,22 +848,18 @@ export function DesktopUI({
 
   const appIcons = [
     { id: 'home', label: t.neuralCore || 'Neural Core', icon: <Sparkles size={24} />, color: 'from-celestial-saturn to-yellow-600' },
-    { id: 'fs', label: t.fileExplorer || 'Neural FS', icon: <Folder size={24} />, color: 'from-blue-400 to-indigo-500' },
+    { id: 'fs', label: t.fileExplorer || 'Knowledge Base', icon: <Folder size={24} />, color: 'from-blue-400 to-indigo-500' },
     { id: 'memory', label: t.memory || 'Memory Core', icon: <FileText size={24} />, color: 'from-emerald-400 to-teal-600' },
+    { id: 'chat', label: t.chat || 'Chat', icon: <MessageSquare size={24} />, color: 'from-green-500 to-emerald-600' },
     { id: 'personality', label: t.personality || 'Personality Lab', icon: <UserIcon size={24} />, color: 'from-violet-500 to-fuchsia-600' },
     { id: 'kernel', label: t.kernelMonitor || 'Kernel Monitor', icon: <Activity size={24} />, color: 'from-orange-500 to-red-600' },
-    { id: 'protocols', label: t.lostProtocols || 'Lost Protocols', icon: <Disc size={24} />, color: 'from-purple-500 to-indigo-600' },
-    { id: 'chat', label: t.chat || 'Chat', icon: <MessageSquare size={24} />, color: 'from-green-500 to-emerald-600' },
     { id: 'devices', label: t.devices || 'Devices', icon: <Cpu size={24} />, color: 'from-blue-600 to-cyan-400' },
-    { id: 'music', label: t.mediaCenter || 'Cosmic Drift', icon: <Music size={24} />, color: 'from-pink-500 to-rose-500' },
     { id: 'settings', label: t.settings || 'OS Integrity', icon: <SettingsIcon size={24} />, color: 'from-gray-400 to-slate-600' },
-    { id: 'skills', label: t.skills || 'Skill Center', icon: <Sparkles size={24} />, color: 'from-emerald-500 to-teal-600' },
   ];
 
-  const sphereSentiment = 
-    openWindows.includes('kernel') ? 'excited' : 
-    openWindows.includes('chat') ? 'focused' :
-    openWindows.includes('music') ? 'zen' : 'default';
+  const sphereSentiment =
+    openWindows.includes('kernel') ? 'excited' :
+    openWindows.includes('chat') ? 'focused' : 'default';
 
   const getWindowSize = (windowId: string) => {
     if (windowId === 'settings') return { w: '1050px', h: '720px' };
@@ -1372,6 +1367,12 @@ export function DesktopUI({
                 icon={<Wifi size={24} />}
                 colorClass="from-cyan-500 to-blue-600"
                 onClick={() => toggleWindow('devices')}
+              />
+              <DesktopIcon
+                label={t.skills || "Skill Center"}
+                icon={<Sparkles size={24} />}
+                colorClass="from-emerald-500 to-teal-600"
+                onClick={() => toggleWindow('skills')}
               />
             </div>
 

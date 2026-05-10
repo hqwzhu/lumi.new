@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Folder,
   File,
-  Share2,
-  Shield,
-  Lock,
   HardDrive,
   Search,
-  ArrowLeft,
   Upload,
   Trash2,
   Edit3,
@@ -18,36 +13,40 @@ import {
   Loader2,
   Plus,
   Brain,
+  Database,
+  Sparkles,
+  CheckCircle2,
+  Clock,
+  FileCode,
+  Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface FSItem {
+interface KnowledgeEntry {
   id: string;
   name: string;
-  type: 'folder' | 'file';
   size: string;
-  status: 'encrypted' | 'sharded' | 'local';
-  updatedAt?: string;
-  children?: FSItem[];
+  rawSize: number;
+  type: 'file';
+  source: 'upload' | 'generated' | 'ingested';
+  agentIds: string[];
+  status: 'ready' | 'indexing' | 'indexed';
+  updatedAt: string;
+  createdAt: string;
 }
 
 export function NeuralFileManager({ t }: { t: any }) {
-  const [items, setItems] = useState<FSItem[]>([]);
-  const [currentPath, setCurrentPath] = useState<FSItem[]>([]);
-  const [homePath, setHomePath] = useState<string>('');
+  const [items, setItems] = useState<KnowledgeEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [ingestingFile, setIngestingFile] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchFiles();
-  }, [currentPath]);
-
+  useEffect(() => { fetchFiles(); }, []);
   useEffect(() => {
     fetch('/api/agents')
       .then(r => r.json())
@@ -61,12 +60,10 @@ export function NeuralFileManager({ t }: { t: any }) {
   const fetchFiles = async () => {
     setIsLoading(true);
     try {
-      const relPath = currentPath.map(p => p.name).join('/');
-      const res = await fetch(`/api/files/list?path=${encodeURIComponent(relPath)}`);
+      const res = await fetch('/api/files/list');
       if (res.ok) {
         const data = await res.json();
         setItems(data.files || []);
-        if (data.home) setHomePath(data.home);
       } else {
         setItems([]);
       }
@@ -77,16 +74,13 @@ export function NeuralFileManager({ t }: { t: any }) {
     }
   };
 
-  const handeUpload = async (files: FileList | null) => {
+  const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-
     setIsLoading(true);
     const formData = new FormData();
     Array.from(files).forEach(file => formData.append('files', file));
-
     try {
-      const relPath = currentPath.map(p => p.name).join('/');
-      const res = await fetch(`/api/files/upload?path=${encodeURIComponent(relPath)}`, {
+      const res = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
         credentials: 'include',
@@ -98,24 +92,10 @@ export function NeuralFileManager({ t }: { t: any }) {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Upload failed');
       }
-    } catch (err) {
+    } catch {
       toast.error('Connection error during upload');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const navigateTo = (item: FSItem) => {
-    if (item.type === 'folder') {
-      setCurrentPath([...currentPath, item]);
-    } else {
-      previewItem(item);
-    }
-  };
-
-  const goBack = () => {
-    if (currentPath.length > 0) {
-      setCurrentPath(currentPath.slice(0, -1));
     }
   };
 
@@ -125,19 +105,20 @@ export function NeuralFileManager({ t }: { t: any }) {
   };
 
   const deleteItem = async (id: string) => {
-    const name = id.split(/[\\/]/).pop() || id;
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
-
+    if (!confirm(`Delete "${id}"? This cannot be undone.`)) return;
     try {
-      const res = await fetch(`/api/files/delete/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/files/delete/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
       if (res.ok) {
-        toast.success(`Deleted: ${name}`);
+        toast.success(`Deleted: ${id}`);
         fetchFiles();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Deletion failed');
       }
-    } catch (err) {
+    } catch {
       toast.error('Deletion failed');
     }
     setContextMenu(null);
@@ -151,27 +132,27 @@ export function NeuralFileManager({ t }: { t: any }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = id.split(/[\\/]/).pop() || id;
+      a.download = id;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success('Download started');
-    } catch (err) {
+    } catch {
       toast.error('Download failed');
     }
     setContextMenu(null);
   };
 
   const renameItem = async (id: string) => {
-    const currentName = id.split(/[\\/]/).pop() || id;
-    const newName = prompt('Enter new name:', currentName);
-    if (!newName || newName === currentName) return;
+    const newName = prompt('Enter new name:', id);
+    if (!newName || newName === id) return;
     try {
       const res = await fetch('/api/files/rename', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, newName }),
+        credentials: 'include',
       });
       if (res.ok) {
         toast.success('Renamed');
@@ -180,7 +161,7 @@ export function NeuralFileManager({ t }: { t: any }) {
         const data = await res.json();
         toast.error(data.error || 'Rename failed');
       }
-    } catch (err) {
+    } catch {
       toast.error('Rename failed');
     }
     setContextMenu(null);
@@ -191,9 +172,12 @@ export function NeuralFileManager({ t }: { t: any }) {
       const res = await fetch(`/api/files/info/${encodeURIComponent(id)}`);
       if (res.ok) {
         const info = await res.json();
-        toast.info(`${info.name}\n${info.formattedSize} · ${info.type}\nModified: ${new Date(info.updatedAt).toLocaleString()}`);
+        const agentLabel = info.agentIds?.length > 0
+          ? `\nAgents: ${info.agentIds.join(', ')}`
+          : '';
+        toast.info(`${info.name}\n${info.formattedSize} · ${info.source} · ${info.status}${agentLabel}\nModified: ${new Date(info.updatedAt).toLocaleString()}`);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to get file info');
     }
     setContextMenu(null);
@@ -211,10 +195,12 @@ export function NeuralFileManager({ t }: { t: any }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileId, agentId: selectedAgentId }),
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
         toast.success(`Ingested into agent memory (${data.chunkCount} chunks)`);
+        fetchFiles();
       } else {
         const err = await res.json();
         toast.error(err.error || 'Ingest failed');
@@ -226,11 +212,10 @@ export function NeuralFileManager({ t }: { t: any }) {
     }
   };
 
-  const previewItem = async (item: FSItem) => {
-    if (item.type === 'folder') return;
+  const previewFile = async (item: KnowledgeEntry) => {
     const textExts = ['.txt', '.md', '.json', '.csv', '.ts', '.tsx', '.js', '.jsx', '.py', '.html', '.css', '.yaml', '.yml', '.toml', '.xml', '.log', '.env', '.sh', '.bat'];
     const ext = '.' + item.name.split('.').pop()?.toLowerCase();
-    if (textExts.includes(ext) && item.size !== '--') {
+    if (textExts.includes(ext) && item.rawSize > 0) {
       try {
         const res = await fetch(`/api/files/download/${encodeURIComponent(item.id)}`);
         if (res.ok) {
@@ -238,67 +223,70 @@ export function NeuralFileManager({ t }: { t: any }) {
           const w = window.open('', '_blank', 'width=800,height=600');
           if (w) {
             w.document.title = item.name;
-            w.document.body.innerHTML = `<pre style="font-family:monospace;font-size:13px;padding:16px;white-space:pre-wrap;word-break:break-all">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+            w.document.body.innerHTML = `<pre style="font-family:monospace;font-size:13px;padding:16px;white-space:pre-wrap;word-break:break-all;background:#0a0a0a;color:#e0e0e0">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
           }
         }
-      } catch { toast.info(`Cannot preview ${item.name}`); }
+      } catch {
+        toast.info(`Cannot preview ${item.name}`);
+      }
     } else {
       toast.info(`Preview not available for this file type. Use Download instead.`);
     }
   };
 
-  const filteredItems = items.filter(item => 
+  const filteredItems = items.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const sourceBadge = (source: string) => {
+    switch (source) {
+      case 'upload':
+        return { label: 'Upload', icon: <Upload size={10} />, cls: 'bg-blue-500/10 border-blue-500/30 text-blue-400' };
+      case 'generated':
+        return { label: 'Generated', icon: <Sparkles size={10} />, cls: 'bg-purple-500/10 border-purple-500/30 text-purple-400' };
+      case 'ingested':
+        return { label: 'Ingested', icon: <Download size={10} />, cls: 'bg-amber-500/10 border-amber-500/30 text-amber-400' };
+      default:
+        return { label: source, icon: <File size={10} />, cls: 'bg-white/5 border-white/10 text-white/40' };
+    }
+  };
+
+  const statusBadge = (status: string, isIngesting: boolean) => {
+    if (isIngesting) {
+      return { label: 'Indexing...', icon: <Loader2 size={10} className="animate-spin" />, cls: 'bg-amber-500/10 border-amber-500/30 text-amber-400' };
+    }
+    switch (status) {
+      case 'indexed':
+        return { label: 'Indexed', icon: <CheckCircle2 size={10} />, cls: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' };
+      case 'indexing':
+        return { label: 'Indexing', icon: <Loader2 size={10} className="animate-spin" />, cls: 'bg-amber-500/10 border-amber-500/30 text-amber-400' };
+      default:
+        return { label: 'Ready', icon: <Clock size={10} />, cls: 'bg-white/5 border-white/10 text-white/40' };
+    }
+  };
+
   return (
-    <div 
-      className="flex flex-col h-full bg-black/40 text-white font-sans relative"
+    <div
+      className="flex flex-col h-full bg-black/30 text-white font-sans relative"
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={(e) => { 
-        e.preventDefault(); 
-        setIsDragging(false); 
-        handeUpload(e.dataTransfer.files); 
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        handleUpload(e.dataTransfer.files);
       }}
       onClick={() => setContextMenu(null)}
     >
-      {/* Search & Breadcrumbs */}
-      <div className="p-4 border-b border-white/5 flex items-center gap-4 bg-white/5">
-        <div className="flex gap-2">
-          <button 
-            onClick={goBack}
-            disabled={currentPath.length === 0}
-            className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-xl disabled:opacity-20 transition-all border border-transparent hover:border-white/10 shadow-lg"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="w-10 h-10 flex items-center justify-center bg-celestial-saturn/10 text-celestial-saturn hover:bg-celestial-saturn/20 rounded-xl transition-all border border-celestial-saturn/20 shadow-lg"
-          >
-            <Plus size={18} />
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              multiple 
-              onChange={(e) => handeUpload(e.target.files)} 
-            />
-          </button>
+      {/* Header Toolbar */}
+      <div className="p-4 border-b border-white/5 flex items-center gap-3 bg-white/[0.02]">
+        <div className="flex items-center gap-2 mr-2">
+          <Database size={16} className="text-celestial-saturn" />
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">
+            {t.neuralVault || 'AI Knowledge Base'}
+          </span>
         </div>
 
-        <div className="flex-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.3em] text-white/40">
-          <span className="hover:text-white cursor-pointer transition-colors" onClick={() => setCurrentPath([])}>
-            {homePath ? homePath.split(/[\\/]/).pop() || 'HOME' : 'HOME'}
-          </span>
-          {currentPath.map((p, i) => (
-            <React.Fragment key={p.id}>
-              <span className="opacity-20">/</span>
-              <span className="text-white/80 hover:text-white cursor-pointer transition-colors" onClick={() => setCurrentPath(currentPath.slice(0, i + 1))}>{p.name}</span>
-            </React.Fragment>
-          ))}
-        </div>
+        <div className="flex-1" />
 
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
@@ -306,8 +294,8 @@ export function NeuralFileManager({ t }: { t: any }) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t.searchShards || "Search Matrix Shards..."}
-            className="bg-black/40 border border-white/10 rounded-full py-2 pl-10 pr-4 text-[10px] font-bold w-64 focus:border-celestial-saturn/50 outline-none transition-all shadow-inner"
+            placeholder={t.searchShards || "Search knowledge files..."}
+            className="bg-black/40 border border-white/10 rounded-full py-2 pl-10 pr-4 text-[10px] font-bold w-56 focus:border-celestial-saturn/50 outline-none transition-all"
           />
         </div>
 
@@ -330,64 +318,109 @@ export function NeuralFileManager({ t }: { t: any }) {
             Ingesting...
           </span>
         )}
+
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-10 h-10 flex items-center justify-center bg-celestial-saturn/10 text-celestial-saturn hover:bg-celestial-saturn/20 rounded-xl transition-all border border-celestial-saturn/20"
+        >
+          <Plus size={18} />
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            multiple
+            onChange={(e) => handleUpload(e.target.files)}
+          />
+        </button>
       </div>
 
-      {/* Grid Layout */}
-      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+      {/* File Grid */}
+      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         {isLoading ? (
           <div className="h-full flex flex-col items-center justify-center text-white/40 gap-4">
             <Loader2 size={32} className="animate-spin text-celestial-saturn" />
-            <span className="text-[10px] font-black uppercase tracking-[0.4em]">Synchronizing Shards...</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.4em]">Loading Knowledge Base...</span>
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-white/20 gap-4 opacity-50">
-            <HardDrive size={48} strokeWidth={1} />
-            <span className="text-xs font-black uppercase tracking-widest">{t.noDataShards || 'No Data Shards Found'}</span>
+          <div
+            className="h-full flex flex-col items-center justify-center text-white/20 gap-4 opacity-50"
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          >
+            <Database size={48} strokeWidth={1} />
+            <span className="text-xs font-black uppercase tracking-widest">
+              {searchQuery ? 'No matching files' : (t.noDataShards || 'Drop files or generate content to begin')}
+            </span>
+            {!searchQuery && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-2 px-4 py-2 rounded-xl bg-celestial-saturn/10 border border-celestial-saturn/20 text-celestial-saturn text-[10px] font-bold uppercase tracking-widest hover:bg-celestial-saturn/20 transition-all"
+              >
+                Upload First File
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8">
-            {filteredItems.map((item) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onDoubleClick={() => navigateTo(item)}
-                onContextMenu={(e) => handleContextMenu(e, item.id)}
-                className="flex flex-col items-center gap-4 p-6 rounded-[2.5rem] bg-white/0 hover:bg-white/[0.03] transition-all group cursor-pointer border border-transparent hover:border-white/5 relative shadow-lg"
-              >
-                <div className={`w-20 h-20 rounded-3xl flex items-center justify-center relative transition-transform duration-500 group-hover:scale-110 ${
-                  item.type === 'folder' ? 'text-celestial-saturn' : 'text-white/60'
-                }`}>
-                  <div className="absolute inset-0 bg-white/5 rotate-3 rounded-3xl group-hover:rotate-6 transition-transform shadow-xl" />
-                  <div className="relative z-10 filter drop-shadow-lg">
-                    {item.type === 'folder' ? <Folder size={40} /> : <File size={40} />}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {filteredItems.map((item) => {
+              const src = sourceBadge(item.source);
+              const st = statusBadge(item.status, ingestingFile === item.id);
+              const isIndexed = item.agentIds.length > 0;
+              return (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  onDoubleClick={() => previewFile(item)}
+                  onContextMenu={(e) => handleContextMenu(e, item.id)}
+                  className="flex flex-col gap-3 p-4 rounded-2xl bg-white/[0.02] hover:bg-white/[0.05] transition-all group cursor-pointer border border-white/5 hover:border-white/10 relative"
+                >
+                  {/* File icon */}
+                  <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-all">
+                    <File size={24} className="text-white/40 group-hover:text-white/60 transition-colors" />
                   </div>
-                  
-                  {/* Status Indicator */}
-                  <div className="absolute -bottom-2 -right-2">
-                    {item.status === 'sharded' && (
-                      <div className="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center backdrop-blur-md shadow-lg">
-                        <Share2 size={12} className="text-blue-400" />
-                      </div>
-                    )}
-                    {item.status === 'encrypted' && (
-                      <div className="w-7 h-7 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center backdrop-blur-md shadow-lg">
-                        <Lock size={12} className="text-red-400" />
-                      </div>
-                    )}
+
+                  {/* Name */}
+                  <div className="text-[10px] font-bold text-white/70 truncate leading-tight group-hover:text-white transition-colors">
+                    {item.name}
                   </div>
-                </div>
-                
-                <div className="text-center space-y-1 w-full overflow-hidden">
-                   <div className="text-[10px] font-black uppercase tracking-widest truncate group-hover:text-celestial-saturn transition-colors">
-                     {item.name}
-                   </div>
-                   <div className="text-[8px] font-bold text-white/20 uppercase tracking-widest leading-none">
-                     {item.type === 'folder' ? (t.folder || 'Folder') : item.size}
-                   </div>
-                </div>
-              </motion.div>
-            ))}
+
+                  {/* Meta row */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-bold uppercase ${src.cls}`}>
+                      {src.icon}
+                      {src.label}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-bold uppercase ${st.cls}`}>
+                      {st.icon}
+                      {st.label}
+                    </span>
+                  </div>
+
+                  {/* Agent tags */}
+                  {isIndexed && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Brain size={10} className="text-emerald-400/60" />
+                      {item.agentIds.slice(0, 2).map(aid => (
+                        <span key={aid} className="text-[7px] font-bold text-emerald-400/50 uppercase bg-emerald-500/5 px-1.5 py-0.5 rounded">
+                          {agents.find(a => a.id === aid)?.name || aid.slice(0, 6)}
+                        </span>
+                      ))}
+                      {item.agentIds.length > 2 && (
+                        <span className="text-[7px] font-bold text-white/20">+{item.agentIds.length - 2}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Size & date */}
+                  <div className="flex items-center justify-between mt-auto">
+                    <span className="text-[8px] font-bold text-white/20 uppercase">{item.size}</span>
+                    <span className="text-[8px] font-bold text-white/10">
+                      {new Date(item.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -409,7 +442,7 @@ export function NeuralFileManager({ t }: { t: any }) {
               { label: 'File Info', icon: <Info size={14} />, action: () => showFileInfo(contextMenu.itemId) },
               { label: 'Delete', icon: <Trash2 size={14} />, color: 'text-red-400 hover:bg-red-500/20', action: () => deleteItem(contextMenu.itemId) },
             ].map((action, i) => (
-              <button 
+              <button
                 key={i}
                 onClick={(e) => { e.stopPropagation(); action.action(); }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
@@ -427,7 +460,7 @@ export function NeuralFileManager({ t }: { t: any }) {
       {/* Drag Overlay */}
       <AnimatePresence>
         {isDragging && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -437,25 +470,29 @@ export function NeuralFileManager({ t }: { t: any }) {
               <Upload size={48} />
             </div>
             <div className="text-center space-y-2">
-              <h3 className="text-2xl font-black text-white italic uppercase tracking-[0.2em]">{t.dropToSync || 'Drop to Synchronize'}</h3>
-              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Inject fragments into the neural repository</p>
+              <h3 className="text-2xl font-black text-white italic uppercase tracking-[0.2em]">{t.dropToSync || 'Drop to Knowledge Base'}</h3>
+              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Files will be available for AI agents</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Footer */}
-      <div className="p-4 border-t border-white/5 bg-white/[0.02] flex justify-between items-center px-8">
-        <div className="flex items-center gap-3">
-          <HardDrive size={16} className="text-white/20" />
-          <span className="text-[9px] font-bold text-white/30">
-            {homePath ? homePath : 'HOME'}{currentPath.length > 0 ? '/' + currentPath.map(p => p.name).join('/') : ''}
-          </span>
+      <div className="p-3 border-t border-white/5 bg-white/[0.02] flex justify-between items-center px-6">
+        <div className="flex items-center gap-2">
+          <Database size={14} className="text-white/20" />
+          <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">AI Knowledge Base</span>
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-4">
           <span className="text-[9px] font-bold text-white/20">
-            {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+            {filteredItems.length} file{filteredItems.length !== 1 ? 's' : ''}
           </span>
+          {items.some(i => i.status === 'indexed') && (
+            <span className="text-[9px] font-bold text-emerald-400/40 flex items-center gap-1">
+              <CheckCircle2 size={10} />
+              {items.filter(i => i.status === 'indexed').length} indexed
+            </span>
+          )}
         </div>
       </div>
     </div>
