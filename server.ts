@@ -29,9 +29,12 @@ import { consolidateEpisodic, selfReflect, ConsolidationContext } from "./server
 import { personalityRegistry } from "./server/personality";
 import { evolvePersonality } from "./server/personality/evolution";
 import { loadEmotionalState, saveEmotionalState, updateEmotionalState } from "./server/personality/state";
-import { mcpManager, registerMCPTools, getMCPConfig, updateMCPConfig } from "./server/mcp";
+import { mcpManager, registerMCPTools, getMCPConfig, updateMCPConfig, SKILLS_DIR } from "./server/mcp";
 import { createLumiMcpServer, handleMcpSSE, handleMcpMessage } from "./server/mcp/lumi_server";
 import { attachMcpWebSocket, connectMcpServerToRemote } from "./server/mcp/ws_transport";
+import { attachLAPWebSocket } from "./server/lap/transport";
+import { lapRoutes } from "./server/lap/routes";
+import { createMessagingRoutes } from "./server/messaging";
 import { generateSkill, autoGenerateSkill } from "./server/skills/generator";
 import { getRecentWorkflows, clearWorkflows } from "./server/skills/worklog";
 import { scheduler, registerScheduledTasks } from "./server/scheduler";
@@ -1068,6 +1071,71 @@ apiRouter.get("/skills/workflows", (req, res) => {
 apiRouter.get("/marketplace/skills", (_req, res) => {
   const communitySkills = [
     {
+      id: "skill-weather",
+      name: "Weather",
+      description: "Real-time weather lookup for any city worldwide. Temperature, humidity, wind, and forecast.",
+      author: "Lumi Official",
+      downloads: 4231,
+      rating: 4.8,
+      category: "Productivity",
+      icon: "CloudSun",
+      installSource: "bundled" as const,
+      installPath: path.join(__dirname, 'server', 'skills', 'bundled', 'weather'),
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'weather')),
+    },
+    {
+      id: "skill-translator",
+      name: "Multi-Lang Translator",
+      description: "Real-time translation across 50+ languages via Google Translate. Auto-detects source language.",
+      author: "Lumi Official",
+      downloads: 6673,
+      rating: 4.6,
+      category: "Language",
+      icon: "Languages",
+      installSource: "bundled" as const,
+      installPath: path.join(__dirname, 'server', 'skills', 'bundled', 'translator'),
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'translator')),
+    },
+    {
+      id: "skill-calculator",
+      name: "Smart Calculator",
+      description: "Advanced math: evaluate expressions and convert between units (length, weight, temperature).",
+      author: "Lumi Official",
+      downloads: 3810,
+      rating: 4.9,
+      category: "Productivity",
+      icon: "Calculator",
+      installSource: "bundled" as const,
+      installPath: path.join(__dirname, 'server', 'skills', 'bundled', 'calculator'),
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'calculator')),
+    },
+    {
+      id: "skill-notes",
+      name: "Quick Notes",
+      description: "Create, read, list, and delete markdown notes stored locally. Never lose a thought.",
+      author: "Lumi Official",
+      downloads: 2156,
+      rating: 4.5,
+      category: "Productivity",
+      icon: "StickyNote",
+      installSource: "bundled" as const,
+      installPath: path.join(__dirname, 'server', 'skills', 'bundled', 'notes'),
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'notes')),
+    },
+    {
+      id: "skill-timer",
+      name: "Timer & Alarm",
+      description: "Set countdown timers, list active timers, and cancel them. In-memory with second precision.",
+      author: "Lumi Official",
+      downloads: 1892,
+      rating: 4.4,
+      category: "Productivity",
+      icon: "Timer",
+      installSource: "bundled" as const,
+      installPath: path.join(__dirname, 'server', 'skills', 'bundled', 'timer'),
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'timer')),
+    },
+    {
       id: "skill-web-scraper",
       name: "Web Scraper",
       description: "Smart web scraping with CSS selector support. Extract structured data from any website.",
@@ -1076,26 +1144,8 @@ apiRouter.get("/marketplace/skills", (_req, res) => {
       rating: 4.7,
       category: "Web",
       icon: "Globe",
-    },
-    {
-      id: "skill-pdf-analyzer",
-      name: "PDF Analyzer",
-      description: "Extract text, tables, and metadata from PDF files. Supports searchable and scanned PDFs.",
-      author: "Lumi Labs",
-      downloads: 3921,
-      rating: 4.9,
-      category: "Documents",
-      icon: "FileText",
-    },
-    {
-      id: "skill-image-generator",
-      name: "Image Generator",
-      description: "Generate images from text descriptions using Stable Diffusion. Local or cloud-backed.",
-      author: "Lumi Community",
-      downloads: 5102,
-      rating: 4.5,
-      category: "Media",
-      icon: "Image",
+      installSource: "community" as const,
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'web-scraper')),
     },
     {
       id: "skill-email-assistant",
@@ -1106,26 +1156,8 @@ apiRouter.get("/marketplace/skills", (_req, res) => {
       rating: 4.3,
       category: "Productivity",
       icon: "Mail",
-    },
-    {
-      id: "skill-code-reviewer",
-      name: "Code Reviewer",
-      description: "Automated code review with best-practice suggestions, security scanning, and style checks.",
-      author: "Lumi Community",
-      downloads: 4210,
-      rating: 4.8,
-      category: "Development",
-      icon: "Code",
-    },
-    {
-      id: "skill-translator",
-      name: "Multi-Lang Translator",
-      description: "Real-time translation across 50+ languages. Preserves formatting and handles code blocks.",
-      author: "Lumi Labs",
-      downloads: 6673,
-      rating: 4.6,
-      category: "Language",
-      icon: "Languages",
+      installSource: "community" as const,
+      installed: fs.existsSync(path.join(SKILLS_DIR, 'email-assistant')),
     },
   ];
   res.json(communitySkills);
@@ -1191,15 +1223,37 @@ apiRouter.get("/marketplace/personalities", (_req, res) => {
 // Acquire/install a skill from the marketplace
 apiRouter.post("/marketplace/skills/acquire", async (req, res) => {
   try {
-    const { skillId, skillName } = req.body;
+    const { skillId, skillName, installSource, installPath: reqInstallPath } = req.body;
     if (!skillId || !skillName) return res.status(400).json({ error: "skillId and skillName required" });
 
-    // For marketplace skills, record them as acquired.
-    // Actual installation requires a git URL or local path — marketplace skills
-    // are registered as "acquired" (bookmarked) until the user provides install source.
+    // Bundled skills: copy from bundled directory into ~/lumi_skills/
+    if (installSource === 'bundled' && reqInstallPath) {
+      const skillDir = path.join(SKILLS_DIR, skillName);
+      if (fs.existsSync(skillDir)) {
+        return res.json({ success: true, name: skillName, message: `Skill "${skillName}" already installed.`, path: skillDir });
+      }
+      // Copy the bundled skill to lumi_skills
+      fs.cpSync(reqInstallPath, skillDir, { recursive: true });
+      // Register in MCP config
+      const config = getMCPConfig();
+      const updated = { ...config };
+      (updated as any)[skillName] = {
+        command: 'npx',
+        args: ['tsx', path.join(skillDir, 'index.ts')],
+        description: `Lumi Official: ${skillName}`,
+        enabled: true,
+        source: 'local',
+        autoGenerated: false,
+      };
+      await updateMCPConfig(updated);
+      // Restart to connect
+      await mcpManager.restartServer(skillName);
+      return res.json({ success: true, name: skillName, message: `Skill "${skillName}" installed and activated!`, path: skillDir });
+    }
+
+    // Community / external skills: record as acquired (bookmarked)
     const config = getMCPConfig();
     if (!config[skillName]) {
-      // Register as an external skill placeholder
       const updated = { ...config };
       (updated as any)[skillName] = {
         command: '',
@@ -1224,8 +1278,26 @@ apiRouter.use("/", voiceRoutes);
 // File routes
 apiRouter.use("/", fileRoutes);
 
+// LAP routes — Lumi Agent Protocol
+apiRouter.use("/", lapRoutes);
+
+// Feishu messaging routes — bot integration with config store
+import { getMessagingConfig } from "./server/messaging/config";
+const feishuCfg = getMessagingConfig().feishu;
+if (feishuCfg.appId && feishuCfg.appSecret) {
+  apiRouter.use("/", createMessagingRoutes(feishuCfg, {
+    llmGetters: { getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen },
+    personalityRegistry,
+    queryMemories,
+    loadEmotionalState,
+  }));
+  console.log('[Feishu] Messaging routes mounted at /api/feishu/*');
+} else {
+  console.log('[Feishu] Not configured — set FEISHU_APP_ID and FEISHU_APP_SECRET in .env');
+}
+
 // MCP Server — exposes Lumi as an MCP server for remote devices
-const lumiMcp = createLumiMcpServer();
+const lumiMcp = createLumiMcpServer({ getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen }, toolRegistry);
 app.get('/mcp/sse', (req, res) => handleMcpSSE(lumiMcp, req, res));
 app.post('/mcp/message', (req, res) => handleMcpMessage(req, res));
 
@@ -1240,28 +1312,19 @@ attachMcpWebSocket(server, async (transport) => {
 });
 console.log('[MCP Server] Lumi MCP server ready at /mcp/sse + /mcp/ws');
 
+// LAP WebSocket — Lumi Agent Protocol for peer-to-peer agent collaboration
+attachLAPWebSocket(server);
+console.log('[LAP] Agent protocol ready at /lap');
+
 // Connect to remote devices (e.g. xiaozhi) that expect Lumi to act as MCP server
 const mcpConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'server', 'mcp', 'config.json'), 'utf-8'));
 if (mcpConfig.remoteDevices) {
   for (const [name, url] of Object.entries(mcpConfig.remoteDevices)) {
     console.log(`[MCP Server] Connecting to remote device: ${name}`);
     connectMcpServerToRemote(
-      url as string,
-      lumiMcp,
-      name as string,
-      (sessionId) => {
-        // Register as a device so it shows up in Device Center
-        deviceRegistry.registerMcpDevice(name as string, 'mcp_remote', {
-          audio: true,
-          video: false,
-          spatial: false,
-          haptic: false,
-          holographic: false,
-        });
-      },
-      () => {
-        deviceRegistry.unregisterMcpDevice(name as string);
-      },
+      url as string, lumiMcp, name as string,
+      (sessionId) => { deviceRegistry.registerMcpDevice(name as string, 'mcp_remote', { audio: true, video: false, spatial: false, haptic: false, holographic: false }); },
+      () => { deviceRegistry.unregisterMcpDevice(name as string); },
     );
   }
 }

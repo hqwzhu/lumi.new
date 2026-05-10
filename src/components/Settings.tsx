@@ -32,6 +32,7 @@ import { useApp } from '@/contexts/AppContext';
 import { VoiceForge } from './VoiceForge';
 import { MCPSettings } from './MCPSettings';
 import { RemoteMCPSettings } from './RemoteMCPSettings';
+import { FeishuSettings } from './FeishuSettings';
 import { MemoryExplorer } from './MemoryExplorer';
 import { PersonalityEditor } from './PersonalityEditor';
 import { PersonalityMarketplace } from './PersonalityMarketplace';
@@ -76,6 +77,7 @@ function buildSidebarGroups(t: any) {
         { id: 'hardware', label: t.settingsHardware || 'Hardware', icon: <Camera size={16} /> },
         { id: 'mcp', label: t.settingsMCP || 'MCP', icon: <Cpu size={16} /> },
         { id: 'remote-mcp', label: t.remoteMCPSidebar || 'Remote MCP', icon: <Globe size={16} /> },
+        { id: 'messaging', label: t.messaging || 'Messaging', icon: <MessagesSquare size={16} /> },
       ],
     },
   ];
@@ -378,6 +380,8 @@ export function Settings({
         return <MCPSettings t={t} />;
       case 'remote-mcp':
         return <RemoteMCPSettings t={t} />;
+      case 'messaging':
+        return <FeishuSettings t={t} />;
       default:
         return null;
     }

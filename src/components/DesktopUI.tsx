@@ -44,6 +44,7 @@ import { PersonalityQuickSwitch } from './PersonalityQuickSwitch';
 import { LLMConfigPanel } from './LLMConfigPanel';
 import { ToolPanel } from './ToolPanel';
 import { GitHubMCPBrowser } from './GitHubMCPBrowser';
+import { SkillCenter } from './SkillCenter';
 import { PersonalityDashboard } from './PersonalityDashboard';
 import { NotificationCenter } from './NotificationCenter';
 import { TokenDashboard } from './TokenDashboard';
@@ -857,6 +858,7 @@ export function DesktopUI({
     { id: 'devices', label: t.devices || 'Devices', icon: <Cpu size={24} />, color: 'from-blue-600 to-cyan-400' },
     { id: 'music', label: t.mediaCenter || 'Cosmic Drift', icon: <Music size={24} />, color: 'from-pink-500 to-rose-500' },
     { id: 'settings', label: t.settings || 'OS Integrity', icon: <SettingsIcon size={24} />, color: 'from-gray-400 to-slate-600' },
+    { id: 'skills', label: t.skills || 'Skill Center', icon: <Sparkles size={24} />, color: 'from-emerald-500 to-teal-600' },
   ];
 
   const sphereSentiment = 
@@ -879,6 +881,7 @@ export function DesktopUI({
     if (windowId === 'notifications') return { w: '700px', h: '550px' };
     if (windowId === 'devices') return { w: '900px', h: '700px' };
     if (windowId === 'tokens') return { w: '800px', h: '620px' };
+    if (windowId === 'skills') return { w: '900px', h: '700px' };
     return { w: '900px', h: '700px' };
   };
 
@@ -1573,6 +1576,8 @@ export function DesktopUI({
                     <DeviceSyncCenter t={t} />
                   ) : windowId === 'tokens' ? (
                     <TokenDashboard />
+                  ) : windowId === 'skills' ? (
+                    <SkillCenter t={t} />
                   ) : windowId === 'chat' ? (
                     <AgentChatPage t={t} user={user} onBack={() => closeWindow('chat')} />
                   ) : renderTabContent(windowId)}

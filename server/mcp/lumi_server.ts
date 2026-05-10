@@ -10,7 +10,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
 import { queryMemories, addMemory, getDueReminders } from '../memory';
 import { runWithTools } from '../llm/adapter';
-import { toolRegistry } from '../tools/registry';
+import { toolRegistry, ToolRegistry } from '../tools/registry';
 import { personalityRegistry } from '../personality';
 import { deviceRegistry } from '../devices';
 import { canOutputHolographic, textToHolographicOutput } from '../output/holographic';
@@ -20,7 +20,15 @@ import type { Request, Response } from 'express';
 // Track active transports per session
 const transports: Map<string, SSEServerTransport> = new Map();
 
-export function createLumiMcpServer(): McpServer {
+export function createLumiMcpServer(llmGetters?: {
+  getDeepSeek?: () => any;
+  getGemini?: () => any;
+  getOpenAI?: () => any;
+  getAnthropic?: () => any;
+  getQwen?: () => any;
+}, toolReg?: ToolRegistry): McpServer {
+  const g = llmGetters || {};
+  const tr = toolReg || toolRegistry;
   const mcp = new McpServer({
     name: 'lumi-mcp',
     version: '2.0.0',
@@ -78,7 +86,11 @@ export function createLumiMcpServer(): McpServer {
           },
           undefined, // onToolCall
           personality.toolPolicy.maxIterations || 3,
-          () => null, () => null, () => null, () => null, () => null,
+          g.getDeepSeek || (() => null),
+          g.getGemini || (() => null),
+          g.getOpenAI || (() => null),
+          g.getAnthropic || (() => null),
+          g.getQwen || (() => null),
           undefined, // onStreamChunk
           { toolPolicy: personality.toolPolicy },
         );
@@ -96,7 +108,11 @@ export function createLumiMcpServer(): McpServer {
                 model: 'qwen-plus',
                 userId: 'mcp_remote',
               },
-              () => null, () => null, () => null, () => null, () => null,
+              g.getDeepSeek || (() => null),
+              g.getGemini || (() => null),
+              g.getOpenAI || (() => null),
+              g.getAnthropic || (() => null),
+              g.getQwen || (() => null),
             );
             for (const mem of result.memories) {
               addMemory({
@@ -265,7 +281,7 @@ export function createLumiMcpServer(): McpServer {
       inputSchema: {},
     },
     async () => {
-      const tools = toolRegistry.list();
+      const tools = tr.list();
       return {
         content: [{
           type: 'text' as const,
@@ -273,12 +289,57 @@ export function createLumiMcpServer(): McpServer {
             name: t.name,
             description: t.description,
             parameters: t.parameters,
-            security: toolRegistry.resolveSecurity(t.name).level,
+            security: tr.resolveSecurity(t.name).level,
           })), null, 2),
         }],
       };
     },
   );
+
+  // Auto-register ALL "safe" internal tools as direct MCP tools
+  // so remote devices (xiaozhi, etc.) see a rich tool set
+  const safeTools = tr.list().filter(t => tr.resolveSecurity(t.name).level === 'safe');
+  for (const tool of safeTools) {
+    const mcpToolName = `lumi_${tool.name}`;
+
+    // Build Zod schema from the tool's JSON Schema parameters
+    let inputSchema: Record<string, any> = {};
+    const params = tool.parameters;
+    if (params?.properties) {
+      for (const [key, def] of Object.entries(params.properties)) {
+        const d = def as Record<string, any>;
+        if (d.type === 'string') {
+          inputSchema[key] = z.string().optional().describe(d.description || '');
+        } else if (d.type === 'number' || d.type === 'integer') {
+          inputSchema[key] = z.number().optional().describe(d.description || '');
+        } else if (d.type === 'boolean') {
+          inputSchema[key] = z.boolean().optional().describe(d.description || '');
+        } else if (d.type === 'array') {
+          inputSchema[key] = z.array(z.any()).optional().describe(d.description || '');
+        } else {
+          inputSchema[key] = z.any().optional().describe(d.description || '');
+        }
+      }
+    }
+
+    mcp.registerTool(
+      mcpToolName,
+      {
+        description: tool.description,
+        inputSchema,
+      },
+      async (args) => {
+        try {
+          const result = await tr.execute(tool.name, args || {});
+          return {
+            content: [{ type: 'text' as const, text: typeof result === 'string' ? result : JSON.stringify(result, null, 2) }],
+          };
+        } catch (err: any) {
+          return { content: [{ type: 'text' as const, text: `${tool.name} error: ${err.message}` }], isError: true };
+        }
+      },
+    );
+  }
 
   return mcp;
 }
