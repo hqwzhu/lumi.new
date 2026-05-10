@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ShoppingBag, Cpu, Download, Trash2, Power, PowerOff, RefreshCw, Star, Wrench, CheckCircle, Globe, Search, Zap } from 'lucide-react';
+import { Sparkles, ShoppingBag, Cpu, Download, Trash2, Power, PowerOff, RefreshCw, Star, Wrench, CheckCircle, Globe, Search, Zap, Tag } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { toast } from 'sonner';
@@ -114,33 +114,36 @@ export function SkillCenter({ t }: { t: any }) {
   ];
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-            <Zap size={16} className="text-violet-400" />
-          </div>
-          <div>
-            <h2 className="text-base font-black tracking-tight text-white">Skill Center</h2>
-            <p className="text-[10px] text-white/25 font-medium">Browse, install &amp; generate</p>
-          </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Zap className="text-celestial-saturn" size={20} />
+          <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">Skill Center</h3>
         </div>
-        <button
-          onClick={() => { fetchMarketplace(); fetchInstalled(); }}
-          className="p-2 rounded-lg hover:bg-white/5 text-white/30 hover:text-white/60 transition-all"
-        >
-          <RefreshCw size={14} />
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-white/20 font-mono">{filteredMarket.length} available</span>
+          <button
+            onClick={() => { fetchMarketplace(); fetchInstalled(); }}
+            className="p-2 rounded-lg hover:bg-white/5 text-white/30 hover:text-white/60 transition-all"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
       </div>
 
+      <p className="text-sm text-white/40 max-w-xl">
+        Browse, install and generate MCP skills. Each skill expands Lumi's capabilities with new tools,
+        APIs, and automations. Installed skills appear in your MCP ecosystem.
+      </p>
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 bg-white/5 rounded-xl p-1">
+      <div className="flex gap-1 bg-white/5 rounded-xl p-1 w-fit">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${
               activeTab === tab.id
                 ? 'bg-white/10 text-white'
                 : 'text-white/30 hover:text-white/50'
@@ -156,135 +159,185 @@ export function SkillCenter({ t }: { t: any }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <AnimatePresence mode="wait">
-          {activeTab === 'marketplace' && (
-            <motion.div key="marketplace" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-3">
-              <div className="relative">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
-                <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search skills..." className="w-full pl-9 bg-white/5 border-white/10 rounded-xl py-2 text-xs" />
-              </div>
-              {filteredMarket.map(skill => (
-                <div key={skill.id} className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-all group">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex gap-3 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${ICON_CLASSES[skill.icon] || 'bg-white/5 text-white/30 border-white/10'}`}>
-                        <Globe size={18} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-white text-sm">{skill.name}</h4>
-                          <span className="text-[9px] px-1.5 py-0.5 bg-white/5 rounded-full text-white/25">{skill.category}</span>
+      <AnimatePresence mode="wait">
+        {activeTab === 'marketplace' && (
+          <motion.div key="marketplace" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-6">
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search skills..." className="w-full pl-9 bg-white/5 border-white/10 rounded-xl py-2 text-xs" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <AnimatePresence>
+                {filteredMarket.map(skill => (
+                  <motion.div
+                    key={skill.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-6 bg-white/5 rounded-3xl border border-white/5 hover:border-white/10 transition-all group"
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${ICON_CLASSES[skill.icon] || 'bg-white/5 text-white/30 border-white/10'}`}>
+                          <Globe size={18} />
                         </div>
-                        <p className="text-[11px] text-white/35 mt-1 line-clamp-2">{skill.description}</p>
-                        <div className="flex items-center gap-3 mt-2 text-[10px] text-white/25">
-                          <span>{skill.author}</span>
-                          <span className="flex items-center gap-0.5"><Star size={9} className="text-amber-400" fill="currentColor" />{skill.rating}</span>
-                          <span>{skill.downloads.toLocaleString()}</span>
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-white/90 text-sm">{skill.name}</h4>
+                          <span className="text-[10px] text-white/30 font-mono">by {skill.author}</span>
                         </div>
                       </div>
-                    </div>
-                    <Button
-                      onClick={() => handleInstall(skill)}
-                      disabled={skill.installed || installing === skill.id}
-                      className={`shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all ${
-                        skill.installed
-                          ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                          : 'bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20'
-                      }`}
-                    >
-                      {skill.installed ? (
-                        <><CheckCircle size={11} className="mr-1" /> Installed</>
-                      ) : installing === skill.id ? (
-                        <><RefreshCw size={11} className="mr-1 animate-spin" /> ...</>
-                      ) : (
-                        <><Download size={11} className="mr-1" /> Install</>
+                      {skill.installed && (
+                        <span className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full text-[9px] font-bold uppercase text-green-400 shrink-0">
+                          <CheckCircle size={10} /> Installed
+                        </span>
                       )}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {filteredMarket.length === 0 && (
-                <div className="text-center py-12 text-white/20 text-xs">No skills found{search ? ' for "' + search + '"' : ''}.</div>
-              )}
-            </motion.div>
-          )}
-
-          {activeTab === 'installed' && (
-            <motion.div key="installed" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-3">
-              {loading ? (
-                <div className="text-center py-16 text-white/20 text-xs">Loading...</div>
-              ) : installedSkills.length === 0 ? (
-                <div className="text-center py-16 rounded-2xl bg-white/5 border border-white/5">
-                  <Wrench size={28} className="text-white/15 mx-auto mb-3" />
-                  <p className="text-white/25 text-sm font-bold">No skills installed</p>
-                  <p className="text-white/12 text-[11px] mt-1">Browse the marketplace or generate one.</p>
-                </div>
-              ) : (
-                installedSkills.map(skill => (
-                  <div key={skill.name} className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-white text-sm">{skill.name}</h4>
-                          {skill.autoGenerated && <span className="text-[8px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full font-bold">Auto</span>}
-                          {skill.connected && <span className="text-[8px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded-full font-bold">Connected</span>}
-                        </div>
-                        <p className="text-[11px] text-white/35 mt-1">{skill.description}</p>
-                        <div className="flex items-center gap-3 mt-2 text-[10px] text-white/20">
-                          <span>{skill.toolCount} tool{skill.toolCount !== 1 ? 's' : ''}</span>
-                          {skill.installedAt && <span>Since {new Date(skill.installedAt).toLocaleDateString()}</span>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => handleToggle(skill.name, !skill.enabled)}
-                          className={`p-2 rounded-lg transition-colors ${skill.enabled ? 'text-green-400 hover:bg-green-500/10' : 'text-white/20 hover:bg-white/5'}`}>
-                          {skill.enabled ? <Power size={13} /> : <PowerOff size={13} />}
-                        </button>
-                        <button onClick={() => handleUninstall(skill.name)}
-                          className="p-2 hover:bg-red-500/10 rounded-lg text-white/20 hover:text-red-400 transition-colors">
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </motion.div>
-          )}
 
-          {activeTab === 'generate' && (
-            <motion.div key="generate" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}>
-              <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-emerald-400" />
-                  <h4 className="text-sm font-bold text-emerald-300">Generate a New Skill</h4>
-                </div>
-                <p className="text-[11px] text-white/35">
-                  Describe what the skill should do. Lumi generates a complete MCP server package with executable handler code and input schemas.
-                </p>
-                <div className="flex gap-2">
-                  <Input value={genDescription} onChange={e => setGenDescription(e.target.value)}
-                    placeholder="e.g. Check if a website is down, generate QR codes, convert CSV to JSON..."
-                    className="flex-1 bg-white/5 border-white/10 rounded-xl py-2 text-xs"
-                    onKeyDown={e => e.key === 'Enter' && handleGenerate()} />
-                  <Button onClick={handleGenerate} disabled={generating || !genDescription.trim()}
-                    className="bg-emerald-500 text-black font-bold text-xs px-5 py-2 rounded-xl hover:scale-105 transition-transform disabled:opacity-40">
-                    {generating ? '...' : 'Generate'}
-                  </Button>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {['Website uptime monitor', 'Stock price fetcher', 'QR code generator', 'CSV to JSON'].map(ex => (
-                    <button key={ex} onClick={() => setGenDescription(ex)} className="text-[9px] px-2 py-1 rounded-lg bg-white/5 border border-white/5 text-white/30 hover:text-white/50 hover:border-white/10 transition-colors">
-                      {ex}
-                    </button>
-                  ))}
-                </div>
+                    <p className="text-xs text-white/50 leading-relaxed mb-4 line-clamp-2">{skill.description}</p>
+
+                    {/* Tags */}
+                    <div className="flex items-center gap-2 flex-wrap mb-4">
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded-full text-[9px] text-white/30">
+                        <Tag size={8} /> {skill.category}
+                      </span>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <span className="flex items-center gap-1 text-[10px] text-white/20">
+                          <Download size={10} /> {skill.downloads.toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] text-white/20">
+                          <Star size={10} className="text-amber-400" fill="currentColor" /> {skill.rating}
+                        </span>
+                      </div>
+                      <Button
+                        onClick={() => handleInstall(skill)}
+                        disabled={skill.installed || installing === skill.id}
+                        className={`text-[10px] font-bold px-3 py-1.5 h-auto rounded-xl transition-all ${
+                          skill.installed
+                            ? 'bg-green-500/20 text-green-400 cursor-default'
+                            : installing === skill.id
+                              ? 'bg-celestial-saturn/50 text-black cursor-wait'
+                              : 'bg-celestial-saturn text-black hover:scale-105'
+                        }`}
+                      >
+                        {skill.installed ? (
+                          <><CheckCircle size={12} className="mr-1" /> Installed</>
+                        ) : installing === skill.id ? (
+                          <><RefreshCw size={12} className="mr-1 animate-spin" /> Installing...</>
+                        ) : (
+                          <><Download size={12} className="mr-1" /> Install</>
+                        )}
+                      </Button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+            {filteredMarket.length === 0 && (
+              <div className="p-16 bg-white/5 rounded-[2rem] border border-white/5 text-center">
+                <ShoppingBag size={40} className="text-white/20 mx-auto mb-4" />
+                <p className="text-white/40 font-bold uppercase tracking-widest text-sm">No skills found</p>
+                <p className="text-white/20 text-xs mt-2">{search ? `No results for "${search}"` : 'Check back soon or generate your own.'}</p>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === 'installed' && (
+          <motion.div key="installed" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-6">
+            {loading ? (
+              <div className="p-16 bg-white/5 rounded-[2rem] border border-white/5 text-center">
+                <p className="text-white/40 text-sm">Loading...</p>
+              </div>
+            ) : installedSkills.length === 0 ? (
+              <div className="p-16 bg-white/5 rounded-[2rem] border border-white/5 text-center">
+                <Wrench size={40} className="text-white/20 mx-auto mb-4" />
+                <p className="text-white/40 font-bold uppercase tracking-widest text-sm">No skills installed</p>
+                <p className="text-white/20 text-xs mt-2">Browse the marketplace or generate one.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AnimatePresence>
+                  {installedSkills.map(skill => (
+                    <motion.div
+                      key={skill.name}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-6 bg-white/5 rounded-3xl border border-white/5 hover:border-white/10 transition-all"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-white/90 text-sm">{skill.name}</h4>
+                          <span className="text-[10px] text-white/30 font-mono">{skill.toolCount} tool{skill.toolCount !== 1 ? 's' : ''}{skill.installedAt ? ` · Since ${new Date(skill.installedAt).toLocaleDateString()}` : ''}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => handleToggle(skill.name, !skill.enabled)}
+                            className={`p-2 rounded-lg transition-colors ${skill.enabled ? 'text-green-400 hover:bg-green-500/10' : 'text-white/20 hover:bg-white/5'}`}>
+                            {skill.enabled ? <Power size={13} /> : <PowerOff size={13} />}
+                          </button>
+                          <button onClick={() => handleUninstall(skill.name)}
+                            className="p-2 hover:bg-red-500/10 rounded-lg text-white/20 hover:text-red-400 transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-white/50 leading-relaxed mb-4 line-clamp-2">{skill.description}</p>
+
+                      {/* Tags */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {skill.autoGenerated && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 rounded-full text-[9px] text-emerald-400 font-bold">Auto</span>
+                        )}
+                        {skill.connected && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/10 rounded-full text-[9px] text-green-400 font-bold">Connected</span>
+                        )}
+                        <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${skill.enabled ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-white/20'}`}>
+                          {skill.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === 'generate' && (
+          <motion.div key="generate" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-6">
+            <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-4">
+              <div className="flex items-center gap-3">
+                <Sparkles className="text-celestial-saturn" size={18} />
+                <h4 className="text-sm font-bold uppercase tracking-tight text-white">Generate a New Skill</h4>
+              </div>
+              <p className="text-[11px] text-white/30 leading-relaxed">
+                Describe what the skill should do. Lumi generates a complete MCP server package with executable handler code and input schemas.
+              </p>
+              <div className="flex gap-2">
+                <Input value={genDescription} onChange={e => setGenDescription(e.target.value)}
+                  placeholder="e.g. Check if a website is down, generate QR codes, convert CSV to JSON..."
+                  className="flex-1 bg-white/5 border-white/10 rounded-xl py-2 text-xs"
+                  onKeyDown={e => e.key === 'Enter' && handleGenerate()} />
+                <Button onClick={handleGenerate} disabled={generating || !genDescription.trim()}
+                  className="bg-celestial-saturn text-black font-bold text-xs px-5 py-2 rounded-xl hover:scale-105 transition-transform disabled:opacity-40">
+                  {generating ? '...' : 'Generate'}
+                </Button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {['Website uptime monitor', 'Stock price fetcher', 'QR code generator', 'CSV to JSON'].map(ex => (
+                  <button key={ex} onClick={() => setGenDescription(ex)} className="text-[9px] px-2 py-1 rounded-lg bg-white/5 border border-white/5 text-white/30 hover:text-white/50 hover:border-white/10 transition-colors">
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

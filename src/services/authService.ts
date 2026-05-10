@@ -4,6 +4,14 @@ export interface User {
   phone?: string;
 }
 
+function storeToken(token: string) {
+  try { localStorage.setItem('lumi_auth_token', token); } catch {}
+}
+
+export function getStoredToken(): string | null {
+  try { return localStorage.getItem('lumi_auth_token'); } catch { return null; }
+}
+
 export async function register(username: string, password: string, phone: string): Promise<{ success: boolean; user?: User; error?: string }> {
   try {
     const response = await fetch("/api/auth/register", {
@@ -16,6 +24,7 @@ export async function register(username: string, password: string, phone: string
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Registration failed");
+    if (data.token) storeToken(data.token);
     return data;
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -34,6 +43,7 @@ export async function login(username: string, password: string): Promise<{ succe
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Login failed");
+    if (data.token) storeToken(data.token);
     return data;
   } catch (error: any) {
     return { success: false, error: error.message };

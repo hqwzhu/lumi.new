@@ -42,7 +42,7 @@ export function mountAuthRoutes(router: Router, jwtSecret: string, getCookieOpti
     res.cookie("token", token, getCookieOptions());
 
     const { password: _, ...userWithoutPassword } = newUser;
-    return res.json({ success: true, user: userWithoutPassword });
+    return res.json({ success: true, user: userWithoutPassword, token });
   });
 
   router.post("/auth/login", authLimiter, async (req, res) => {
@@ -57,7 +57,7 @@ export function mountAuthRoutes(router: Router, jwtSecret: string, getCookieOpti
       const token = jwt.sign({ uid: user.uid, username, role: user.role }, jwtSecret, { expiresIn: "24h" });
       res.cookie("token", token, getCookieOptions());
       const { password: _, ...userWithoutPassword } = user;
-      return res.json({ success: true, user: userWithoutPassword });
+      return res.json({ success: true, user: userWithoutPassword, token });
     }
     res.status(401).json({ error: "Invalid credentials" });
   });

@@ -523,7 +523,7 @@ apiRouter.get("/llm/usage", (req, res) => {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
     const filtered = allUsage.filter((u: any) =>
-      u.userId === decoded.uid &&
+      (u.userId === decoded.uid || u.userId === 'anonymous') &&
       u.timestamp >= cutoff &&
       (!providerFilter || u.provider === providerFilter)
     );
@@ -1406,6 +1406,13 @@ personalityRegistry.load();
   /** Extract userId from socket cookie JWT — avoids duplicating this logic everywhere */
   function getUserIdFromSocket(socket: any): string {
     try {
+      // Check auth handshake token (primary for Tauri WebView2)
+      const authToken = socket.handshake?.auth?.token;
+      if (authToken) {
+        const decoded: any = jwt.verify(authToken, JWT_SECRET);
+        return decoded.uid || 'anonymous';
+      }
+      // Fallback to cookie
       const cookies = socket.handshake.headers.cookie;
       if (cookies) {
         const token = cookies.split(';').find((c: string) => c.trim().startsWith('token='))?.split('=')[1];

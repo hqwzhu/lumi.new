@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getSocketOrigin, isTauriRuntime } from '@/services/apiBridge';
+import { getStoredToken } from '@/services/authService';
 
 const isTauri = isTauriRuntime();
 
@@ -91,7 +92,11 @@ export function useSocket() {
 
   useEffect(() => {
     const url = getSocketOrigin();
-    const s = io(url, { withCredentials: true });
+    const token = getStoredToken();
+    const s = io(url, {
+      withCredentials: true,
+      auth: { token },
+    });
 
     s.on('connect', () => {
       console.log('[Socket] Connected to', url);
