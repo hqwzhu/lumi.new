@@ -67,7 +67,7 @@ interface AppContextType {
   // Core
   login: () => Promise<void>;
   logout: () => Promise<void>;
-  createAgent: (name: string, category: string, data: any) => Promise<void>;
+  createAgent: (name: string, category: string, data: any) => Promise<any>;
   deleteAgent: (id: string) => Promise<void>;
   updateBalance: (amount: number) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -161,10 +161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const createAgent = async (name: string, category: string, data: any) => {
+  const createAgent = async (name: string, category: string, data: any): Promise<any> => {
     if (!user) {
       toast.error('You must be authenticated to synthesize agents');
-      return;
+      return null;
     }
 
     try {
@@ -175,10 +175,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) throw new Error('Failed to create agent');
-      
+
       const newAgent = await response.json();
       setAgents(prev => [...prev, newAgent]);
+      addNotification({ type: 'success', title: 'Agent Synthesized', message: `${name} (${category}) has been created and is ready for use.` });
       toast.success(`${name} has been synthesized`);
+      return newAgent;
     } catch (error: any) {
       console.error('Synthesis error:', error);
       toast.error('Synthesis failed: ' + error.message);
@@ -193,7 +195,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) throw new Error('Failed to delete agent');
       
+      const deleted = agents.find(a => a.id === id);
       setAgents(prev => prev.filter(a => a.id !== id));
+      addNotification({ type: 'info', title: 'Agent Released', message: `"${deleted?.name || id}" has been dissolved.` });
       toast.success('Agent essence has been released');
     } catch (error: any) {
       console.error('Deletion error:', error);

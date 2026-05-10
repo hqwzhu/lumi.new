@@ -323,21 +323,59 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importType, setImportType] = useState<'text' | 'voice' | 'video'>('text');
+
+  const acceptMap: Record<string, string> = {
+    text: '.txt,.md,.json,.csv,.pdf,.docx,.ts,.tsx,.js,.jsx,.py,.html,.css,.yaml,.yml,.xml,.log',
+    voice: '.mp3,.wav,.m4a,.ogg,.flac,.webm',
+    video: '.mp4,.mov,.avi,.webm,.mkv',
+  };
+
   const handleImportData = (type: 'text' | 'voice' | 'video') => {
+    setImportType(type);
+    fileInputRef.current?.click();
+  };
+
+  const doUpload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
     setIsOptimizing(true);
     setOptimizationProgress(0);
-    
-    const interval = setInterval(() => {
-      setOptimizationProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
+
+    const formData = new FormData();
+    Array.from(files).forEach(f => formData.append('files', f));
+
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        setOptimizationProgress(Math.round((e.loaded / e.total) * 90));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setOptimizationProgress(100);
+        setTimeout(() => {
           setIsOptimizing(false);
-          toast.success(t.optimizationSuccess || "Optimization complete. Neural essence updated.");
-          return 100;
+          setOptimizationProgress(0);
+        }, 500);
+        toast.success(`Added to Knowledge Base: ${files.length} file(s)`);
+      } else {
+        setIsOptimizing(false);
+        try {
+          const err = JSON.parse(xhr.responseText);
+          toast.error(err.error || 'Upload failed');
+        } catch {
+          toast.error('Upload failed');
         }
-        return prev + 10;
-      });
-    }, 300);
+      }
+    };
+    xhr.onerror = () => {
+      setIsOptimizing(false);
+      toast.error('Connection error during upload');
+    };
+    xhr.open('POST', '/api/files/upload');
+    xhr.withCredentials = true;
+    xhr.send(formData);
   };
 
   if (isFounder) {
@@ -345,6 +383,15 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
   }
 
   return (
+    <>
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        multiple
+        accept={acceptMap[importType]}
+        onChange={(e) => { doUpload(e.target.files); e.target.value = ''; }}
+      />
     <div className="max-w-[90rem] mx-auto space-y-4 md:space-y-8 pb-32 md:pb-0">
       <div className="flex items-center justify-between px-4 md:px-0">
         <Button 
@@ -797,5 +844,6 @@ export function AgentChatPage({ t, user, agent, onBack }: { t: any; user: any; a
         </AnimatePresence>
       </div>
     </div>
+    </>
   );
 }

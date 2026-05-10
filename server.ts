@@ -987,6 +987,31 @@ apiRouter.post("/skills/generate", asyncHandler(async (req, res) => {
     );
 
     if (result.success) {
+      // Save generated skill code to knowledge base for agent ingestion
+      try {
+        const kbDir = path.join(process.cwd(), 'data', 'knowledge');
+        fs.mkdirSync(kbDir, { recursive: true });
+        const safeName = `skill-${result.skillName}.ts`;
+        fs.writeFileSync(path.join(kbDir, safeName), result.generatedCode || '', 'utf-8');
+        const db = readDB();
+        if (!db.knowledgeFiles) db.knowledgeFiles = [];
+        const existing = db.knowledgeFiles.find((m: any) => m.filename === safeName);
+        if (existing) {
+          existing.source = 'generated';
+          existing.updatedAt = new Date().toISOString();
+        } else {
+          db.knowledgeFiles.push({
+            filename: safeName,
+            source: 'generated',
+            agentIds: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        writeDB(db);
+      } catch (e) {
+        console.warn('[SkillGen] Failed to save to knowledge base:', e);
+      }
       res.json(result);
     } else {
       res.status(400).json(result);
@@ -1281,6 +1306,39 @@ apiRouter.use("/", voiceRoutes);
 
 // File routes
 apiRouter.use("/", fileRoutes);
+
+// System stats — real-time CPU / memory / platform info
+apiRouter.get("/system/stats", (_req: any, res: any) => {
+  try {
+    const cpus = os.cpus();
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const memPercent = Math.round((usedMem / totalMem) * 100);
+
+    // CPU: average across all cores
+    const cpuPercent = Math.round(
+      cpus.reduce((sum, core) => {
+        const total = Object.values(core.times).reduce((a, b) => a + b, 0);
+        const idle = core.times.idle;
+        return sum + (1 - idle / total) * 100;
+      }, 0) / cpus.length
+    );
+
+    res.json({
+      cpu: cpuPercent,
+      ram: { used: Math.round(usedMem / 1024 / 1024 / 1024 * 10) / 10, total: Math.round(totalMem / 1024 / 1024 / 1024 * 10) / 10, percent: memPercent },
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+      hostname: os.hostname(),
+      cpus: cpus.length,
+      uptime: Math.round(os.uptime()),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // LAP routes — Lumi Agent Protocol
 apiRouter.use("/", lapRoutes);

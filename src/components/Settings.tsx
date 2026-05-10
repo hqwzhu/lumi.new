@@ -11,7 +11,6 @@ import {
   BrainCircuit,
   ChevronDown,
   Music,
-  Disc,
   Headphones,
   Volume2,
   MessagesSquare,
@@ -330,12 +329,35 @@ export function Settings({
       case 'music':
         return (
           <div className="space-y-8">
-            <SettingsSection title={t.mediaIntegration || "Media Integration"} icon={<Music size={18} className="text-celestial-saturn" />}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ServiceCard icon={<Disc className="text-[#1DB954]" />} name="Spotify" status={t.disconnected || "Disconnected"} />
-                <ServiceCard icon={<Headphones className="text-[#FA243C]" />} name="Apple Music" status={t.disconnected || "Disconnected"} />
-                <ServiceCard icon={<Radio className="text-orange-400" />} name="Tidal HiFi" status={t.disconnected || "Disconnected"} />
-                <ServiceCard icon={<Zap className="text-yellow-400" />} name="SoundCloud" status={t.connectedLumiMix || "Connected (Lumi Mix)"} />
+            <SettingsSection title={t.audioOutput || "Audio & Voice Output"} icon={<Music size={18} className="text-celestial-saturn" />}>
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-white/80">{t.ttsEngine || 'TTS Engine'}</span>
+                  </div>
+                  <p className="text-[10px] text-white/40">
+                    {t.ttsEngineDesc || 'GPT-SoVITS + DashScope CosyVoice configured. Voice synthesis ready for all agents.'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-white/80">{t.sttEngine || 'STT Engine'}</span>
+                  </div>
+                  <p className="text-[10px] text-white/40">
+                    {t.sttEngineDesc || 'Deepgram speech recognition active. Real-time transcription available.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onSectionChange?.('voice')}
+                  className="w-full p-4 rounded-2xl bg-celestial-saturn/5 border border-celestial-saturn/20 hover:bg-celestial-saturn/10 transition-all text-left"
+                >
+                  <span className="text-[10px] font-bold text-celestial-saturn uppercase tracking-widest">
+                    {t.voiceSettings || 'Voice Settings'} →
+                  </span>
+                  <p className="text-[10px] text-white/30 mt-1">{t.voiceSettingsDesc || 'Configure speech models, voices, and audio devices.'}</p>
+                </button>
               </div>
             </SettingsSection>
           </div>
@@ -657,20 +679,6 @@ function ApiKeyField({ icon, label, placeholder, disabled = false, storageKey, s
   );
 }
 
-function ServiceCard({ icon, name, status }: { icon: React.ReactNode, name: string, status: string }) {
-  return (
-    <div className="p-6 bg-white/5 rounded-3xl border border-white/5 flex items-center justify-between group hover:bg-white/10 transition-all cursor-pointer">
-      <div className="flex items-center gap-4">
-        <div className="p-4 bg-black/40 rounded-2xl group-hover:scale-110 transition-transform">{icon}</div>
-        <div>
-          <h4 className="font-black uppercase tracking-tight text-white">{name}</h4>
-          <p className={`text-[9px] font-black uppercase tracking-widest ${status.includes('Connected') ? 'text-green-500' : 'text-white/20'}`}>{status}</p>
-        </div>
-      </div>
-      <ChevronDown size={16} className="text-white/20 -rotate-90" />
-    </div>
-  );
-}
 
 function SettingsSection({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (

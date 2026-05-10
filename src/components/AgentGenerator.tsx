@@ -83,19 +83,39 @@ export function AgentGenerator({ t, onChatAgent }: { t: any; onChatAgent?: (agen
     setIsGenerating(true);
 
     try {
-      // Upload files first
+      // 1. Upload files to knowledge base
       const formData = new FormData();
       files.forEach(f => formData.append('files', f));
-      const uploadRes = await fetch('/api/files/upload', { method: 'POST', body: formData });
+      const uploadRes = await fetch('/api/files/upload', { method: 'POST', body: formData, credentials: 'include' });
       if (!uploadRes.ok) throw new Error(t.uploadFailed || 'Upload failed');
       const uploaded = await uploadRes.json();
 
-      await createAgent(agentName, selectedCategory, { files: uploaded.uploaded, voiceCloned: isCloning });
+      // 2. Create the agent
+      const agent = await createAgent(agentName, selectedCategory, { files: uploaded.files, voiceCloned: isCloning });
+      if (!agent) throw new Error('Agent creation failed');
+
+      // 3. Auto-ingest uploaded files into the agent's memory
+      let ingested = 0;
+      for (const fileId of uploaded.files) {
+        try {
+          const ingestRes = await fetch('/api/files/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileId, agentId: agent.id }),
+            credentials: 'include',
+          });
+          if (ingestRes.ok) ingested++;
+        } catch {}
+      }
+
+      toast.success(`Agent synthesized: ${agentName} · ${ingested} files indexed`);
+
       setAgentName('');
       setFiles([]);
       setCurrentStep(1);
     } catch (err: any) {
       console.error('Synthesis error:', err);
+      toast.error(err.message || 'Synthesis failed');
     } finally {
       setIsGenerating(false);
     }

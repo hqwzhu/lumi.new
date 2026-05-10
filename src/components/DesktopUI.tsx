@@ -484,23 +484,21 @@ function DesktopIcon({ label, icon, colorClass, onClick }: DesktopIconProps) {
 
 function KernelMonitorApp({ t }: { t: any }) {
   const [data, setData] = useState<number[]>([]);
-  const [stats, setStats] = useState({ cpu: 0, ram: 'N/A', disk: 'N/A' });
+  const [stats, setStats] = useState({ cpu: 0, ram: { used: 0, total: 0, percent: 0 }, platform: '', release: '', arch: '', hostname: '', cpus: 0, uptime: 0 });
   const [tasks, setTasks] = useState<any[]>([]);
-  
+
   useEffect(() => {
     const fetchStats = async () => {
-      const res = await systemService.getSystemStats();
-      if (res) {
-        setStats({
-          cpu: res.cpu || 0,
-          ram: res.ram || 'N/A',
-          disk: res.disk || 'N/A'
-        });
+      try {
+        const res = await fetch('/api/system/stats');
+        if (!res.ok) return;
+        const sys = await res.json();
+        setStats(sys);
         setData(prev => {
-          const next = [...prev, res.cpu || 0];
+          const next = [...prev, sys.cpu || 0];
           return next.slice(-30);
         });
-      }
+      } catch {}
     };
 
     fetchStats();
@@ -522,6 +520,10 @@ function KernelMonitorApp({ t }: { t: any }) {
     return () => clearInterval(interval);
   }, []);
 
+  const chipLabel = stats.platform ? `${stats.platform.toUpperCase()}_${stats.arch.toUpperCase()}_NODE` : 'NEURAL_NODE';
+  const uptimeFmt = stats.uptime ? `${Math.floor(stats.uptime / 3600)}h ${Math.floor((stats.uptime % 3600) / 60)}m` : '';
+  const loadStatus = stats.cpu > 80 ? 'WARN' : stats.cpu > 50 ? 'LOAD' : 'IDLE';
+
   return (
     <div className="p-8 h-full flex flex-col space-y-6 font-sans">
       <div className="flex justify-between items-center bg-black/40 p-5 rounded-[2rem] border border-white/5 backdrop-blur-xl">
@@ -530,30 +532,30 @@ function KernelMonitorApp({ t }: { t: any }) {
             <Cpu size={24} />
           </div>
           <div>
-            <div className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">{t.localIntelNode || 'Local Intelligence Node'}</div>
-            <div className="text-lg font-black text-white tracking-tight">SILICON_ADAPTIVE_V2.4</div>
+            <div className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none mb-1">{stats.hostname || t.localIntelNode || 'Local Node'}</div>
+            <div className="text-lg font-black text-white tracking-tight">{chipLabel}</div>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[10px] font-black text-celestial-saturn uppercase tracking-widest leading-none mb-1">{t.status || 'Status'}: {t.optimal || 'Optimal'}</div>
-          <div className="text-xs font-mono text-white/40">{t.nodeReady || 'NODE_READY'} / {stats.cpu.toFixed(1)}% LOAD</div>
+          <div className="text-[10px] font-black text-celestial-saturn uppercase tracking-widest leading-none mb-1">{loadStatus} · {stats.cpus}c · {uptimeFmt}</div>
+          <div className="text-xs font-mono text-white/40">{stats.release || ''} / CPU {stats.cpu}%</div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: t.neuralThroughput || 'CPU Utilization', value: `${stats.cpu.toFixed(1)}%`, color: 'bg-celestial-saturn' },
-          { label: t.synapticLoad || 'Memory Status', value: stats.ram, color: 'bg-emerald-500' },
-          { label: t.meshLatency || 'Storage Node', value: stats.disk, color: 'bg-blue-500' }
+          { label: t.neuralThroughput || 'CPU Load', value: `${stats.cpu}%`, bar: stats.cpu, color: 'bg-celestial-saturn' },
+          { label: t.synapticLoad || 'Memory', value: `${stats.ram.used} / ${stats.ram.total} GB`, bar: stats.ram.percent, color: 'bg-emerald-500' },
+          { label: t.meshLatency || 'Disk I/O', value: `${stats.cpus} Cores · ${stats.arch}`, bar: 0, color: 'bg-blue-500' }
         ].map((stat, i) => (
           <div key={i} className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-3 hover:bg-white/10 transition-colors cursor-default">
             <div className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em]">{stat.label}</div>
             <div className="text-xl font-black text-white tracking-tighter">{stat.value}</div>
             <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-               <motion.div 
+               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: i === 0 ? `${stats.cpu}%` : '40%' }}
-                className={`h-full ${stat.color}`} 
+                animate={{ width: `${stat.bar}%` }}
+                className={`h-full ${stat.color}`}
                />
             </div>
           </div>

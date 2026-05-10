@@ -1,12 +1,14 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { generateDemoNodes, generateDemoConnections } from './mockData';
+import { generateDemoNodes, generateDemoConnections, type LumiNode, type LumiConnection } from './mockData';
 
 interface NeuralNetworkProps {
   color: string;
   syncRate: number;
   accentColor: string;
+  nodes?: LumiNode[];
+  connections?: LumiConnection[];
 }
 
 const GLOBE_RADIUS = 1.85;
@@ -21,13 +23,25 @@ function latLngToVec3(lat: number, lng: number, radius: number): THREE.Vector3 {
   );
 }
 
-export function NeuralNetwork({ color, syncRate, accentColor }: NeuralNetworkProps) {
+function hashLat(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h) + id.charCodeAt(i);
+  return (Math.abs(h) % 180) - 90;
+}
+
+function hashLng(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h) + (id.charCodeAt(i) || 0);
+  return (Math.abs(h) % 360) - 180;
+}
+
+export function NeuralNetwork({ color, syncRate, accentColor, nodes: propNodes, connections: propConnections }: NeuralNetworkProps) {
   const pulseGroupRef = useRef<THREE.Group>(null);
   const linesRef = useRef<THREE.Group>(null);
 
   const { nodes, connections, nodeMeshes, arcCurves } = useMemo(() => {
-    const nodes = generateDemoNodes();
-    const connections = generateDemoConnections(nodes);
+    const nodes = (propNodes && propNodes.length > 0) ? propNodes : generateDemoNodes();
+    const connections = (propConnections && propConnections.length > 0) ? propConnections : generateDemoConnections(nodes);
     const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
     // Node mesh data
