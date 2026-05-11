@@ -25,6 +25,8 @@ interface AudioSession {
   isSpeaking: boolean;
   /** Tool iteration loop is running — new input is queued, not dropped */
   isProcessing: boolean;
+  /** AbortController for the full LLM+tool pipeline — aborted on barge-in */
+  pipelineAbortController: AbortController | null;
   /** Queue of pending utterances while isProcessing=true */
   inputQueue: string[];
 }
@@ -40,6 +42,7 @@ function getAudioSession(socket: Socket): AudioSession {
       accumulatedText: '',
       isSpeaking: false,
       isProcessing: false,
+      pipelineAbortController: null,
       inputQueue: [],
       userId: '',
       agentId: '',
@@ -63,6 +66,7 @@ async function processVoiceInput(
 ): Promise<void> {
   session.isSpeaking = true;
   session.isProcessing = true;
+  session.pipelineAbortController = new AbortController();
   socket.emit("agent:status", { status: "thinking", agentName: "Lumi" });
   session.ttsAbortController = new AbortController();
   socket.emit("audio:status", { status: "thinking" });
@@ -147,7 +151,11 @@ SAFETY:
     });
   };
 
-  const toolContext = { desktopRelay, requestConfirmation };
+  const toolContext = {
+    desktopRelay,
+    requestConfirmation,
+    isCancelled: () => session.pipelineAbortController?.signal.aborted ?? false,
+  };
   const ttsProvider = getTTSProvider();
   let responseText = '';
   let toolResults: any[] = [];
@@ -180,6 +188,7 @@ SAFETY:
     // ── Iterative tool loop ──
     for (let iter = 0; iter < maxIterations; iter++) {
       if (!session.isActive) break;
+      if (session.pipelineAbortController?.signal.aborted) break;
 
       logger.info(`[Audio] LLM iteration ${iter + 1}/${maxIterations}: provider=${provider} model=${voiceModel}`);
       const toolDeclarations = toolRegistry.getToolDeclarations();
@@ -310,6 +319,7 @@ SAFETY:
     session.isSpeaking = false;
     session.isProcessing = false;
     session.ttsAbortController = null;
+    session.pipelineAbortController = null;
 
     // ── Process next in queue ──
     if (session.isActive && session.inputQueue.length > 0) {
@@ -430,8 +440,11 @@ export function registerVoiceHandlers(
       session.ttsAbortController.abort();
       session.ttsAbortController = null;
     }
-    // Don't clear inputQueue — queued inputs survive interrupt
-    // Don't reset isProcessing — tool chain continues (hands keep working)
+    // Stop LLM+tool pipeline (the "hands")
+    if (session.pipelineAbortController) {
+      session.pipelineAbortController.abort();
+      session.pipelineAbortController = null;
+    }
     socket.emit("audio:interrupt-ack", {});
   });
 
