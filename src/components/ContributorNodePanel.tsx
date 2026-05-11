@@ -5,7 +5,6 @@ import { GlassCard } from './SharedUI';
 
 export function ContributorNodePanel({ t }: { t?: any }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const syncRate = 98.2;
   const creditsPerDay = 12.5;
 
   const contributionTypes = [
@@ -21,7 +20,7 @@ export function ContributorNodePanel({ t }: { t?: any }) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -40 }}
       transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
-      className="absolute left-8 top-24 w-72 pointer-events-auto"
+className="w-72"
     >
       <GlassCard className="p-4 rounded-[1.5rem] space-y-3 border-white/5 bg-black/30 backdrop-blur-3xl">
         {/* Header — always visible */}
@@ -32,7 +31,6 @@ export function ContributorNodePanel({ t }: { t?: any }) {
           <div className="flex items-center gap-2">
             <Activity size={14} className="text-celestial-saturn" />
             <span className="text-xs font-black text-white/70">{t?.activeNode || 'Active Node'}</span>
-            <span className="text-[8px] text-white/20 font-bold uppercase">{t?.contributorNode || '贡献者节点'}</span>
           </div>
           <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.2 }}>
             <ChevronRight size={14} className="text-white/30 group-hover:text-white/60" />
@@ -42,7 +40,7 @@ export function ContributorNodePanel({ t }: { t?: any }) {
         {/* Compact stats row */}
         <div className="flex items-center justify-between px-1">
           <div className="text-center">
-            <div className="text-sm font-black text-celestial-saturn">{syncRate}%</div>
+            <div className="text-sm font-black text-celestial-saturn">98.2%</div>
             <div className="text-[7px] text-white/20 font-bold uppercase">Sync</div>
           </div>
           <div className="w-px h-6 bg-white/5" />
@@ -72,12 +70,10 @@ export function ContributorNodePanel({ t }: { t?: any }) {
               transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
               className="overflow-hidden space-y-3"
             >
-              {/* Description */}
               <p className="text-[9px] text-white/25 leading-relaxed border-t border-white/5 pt-3">
                 {t?.contributorDesc || '即便不是全职架构师，您也可以通过贡献本地算力或参与伦理讨论，成为生态的一部分。'}
               </p>
 
-              {/* Reward Protocol */}
               <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
                 <h4 className="text-[8px] font-black uppercase tracking-widest text-white/20 flex items-center gap-1 mb-1">
                   <Zap size={9} className="text-amber-400" />
@@ -88,7 +84,6 @@ export function ContributorNodePanel({ t }: { t?: any }) {
                 </div>
               </div>
 
-              {/* Contribution Types */}
               <div className="space-y-1.5">
                 <h4 className="text-[8px] font-black uppercase tracking-widest text-white/20">
                   {t?.contributionTypes || 'Contribution Types'}
@@ -109,7 +104,6 @@ export function ContributorNodePanel({ t }: { t?: any }) {
                 </div>
               </div>
 
-              {/* Node Simulator bar */}
               <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
                 <h4 className="text-[8px] font-black uppercase tracking-widest text-white/20 mb-2">
                   {t?.nodeSimulator || 'Node Simulator'}
@@ -117,7 +111,7 @@ export function ContributorNodePanel({ t }: { t?: any }) {
                 <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${syncRate}%` }}
+                    animate={{ width: '98.2%' }}
                     transition={{ duration: 1.5, ease: 'easeOut' }}
                     className="h-full bg-gradient-to-r from-cyan-400 to-celestial-saturn rounded-full"
                   />
