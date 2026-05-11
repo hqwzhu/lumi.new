@@ -33,9 +33,7 @@ import {
   Box,
   Wrench,
   MessageSquare,
-  Crown,
-  Mic,
-  MicOff
+  Crown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -737,7 +735,6 @@ export function DesktopUI({
   const [volume, setVolume] = useState(60);
   const [time, setTime] = useState(new Date());
   const [isWallpaperMode, setIsWallpaperMode] = useState(false);
-  const [isMiniMode, setIsMiniMode] = useState(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return localStorage.getItem('lumi_onboarding_seen') !== 'true';
@@ -760,7 +757,7 @@ export function DesktopUI({
   }, [personalityId]);
 
   const socket = useSocket();
-  const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, responseText, isMuted, interrupt, toggleMute } = useVoiceCall({
+  const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, responseText, interrupt, toggleMute } = useVoiceCall({
     socket,
   });
 
@@ -800,12 +797,6 @@ export function DesktopUI({
     });
   };
 
-  const toggleMiniMode = async () => {
-    const next = !isMiniMode;
-    setIsMiniMode(next);
-    if (next) sounds.playPulse();
-    systemService.setMiniMode(next).catch(() => {});
-  };
 
   // MCP Live Activity socket listener
   useEffect(() => {
@@ -1039,215 +1030,6 @@ export function DesktopUI({
     if (windowId === 'subscription') return { w: '850px', h: '640px' };
     return { w: '900px', h: '700px' };
   };
-
-  // Mini mode — floating orb + expandable chat panel
-  const [isMiniPanelOpen, setIsMiniPanelOpen] = useState(false);
-
-  if (isMiniMode) {
-    const isActive = callState !== 'idle';
-    return (
-      <div className="fixed inset-0 h-screen w-screen overflow-hidden bg-transparent pointer-events-none">
-        {/* Collapsed orb — always visible, bottom-right */}
-        {!isMiniPanelOpen && (
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="absolute bottom-4 right-4 pointer-events-auto"
-          >
-            <motion.button
-              onClick={() => setIsMiniPanelOpen(true)}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="relative w-14 h-14 rounded-full border-2 border-white/10 bg-black/60 backdrop-blur-xl flex items-center justify-center cursor-pointer hover:border-white/30 transition-colors shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
-            >
-              {/* Glow */}
-              {isActive && (
-                <motion.div
-                  animate={{ scale: [1, 1.3, 1], opacity: [0.4, 0.15, 0.4] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className={`absolute inset-0 rounded-full blur-md ${
-                    callState === 'listening' ? 'bg-celestial-saturn/40' :
-                    callState === 'thinking' ? 'bg-purple-500/40' :
-                    'bg-emerald-400/40'
-                  }`}
-                />
-              )}
-              {callState === 'listening' ? (
-                <Mic size={18} className="text-celestial-saturn relative z-10" />
-              ) : callState === 'speaking' ? (
-                <Volume2 size={18} className="text-emerald-400 relative z-10" />
-              ) : callState === 'thinking' ? (
-                <Sparkles size={18} className="text-purple-400 relative z-10" />
-              ) : (
-                <Sparkles size={18} className="text-white/40 relative z-10" />
-              )}
-            </motion.button>
-          </motion.div>
-        )}
-
-        {/* Expanded chat panel */}
-        <AnimatePresence>
-          {isMiniPanelOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="absolute bottom-4 right-4 w-[360px] max-h-[520px] pointer-events-auto"
-            >
-              <div className="glass-dark rounded-[2rem] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl flex flex-col overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
-                  <div className="flex items-center gap-2">
-                    <motion.button
-                      onClick={() => setIsMiniPanelOpen(false)}
-                      className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10"
-                    >
-                      <ChevronRight size={14} className="text-white/40 rotate-180" />
-                    </motion.button>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Lumi</span>
-                    {isActive && (
-                      <div className={`w-1.5 h-1.5 rounded-full ${
-                        callState === 'listening' ? 'bg-celestial-saturn animate-pulse' :
-                        callState === 'thinking' ? 'bg-purple-400 animate-pulse' :
-                        'bg-emerald-400'
-                      }`} />
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={toggleMute}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center ${isMuted ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
-                    >
-                      {isMuted ? <MicOff size={12} /> : <Mic size={12} />}
-                    </button>
-                    <button
-                      onClick={toggleMiniMode}
-                      className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white/40 hover:bg-white/10"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Messages area */}
-                <div className="flex-1 px-4 py-3 space-y-3 max-h-[340px] overflow-y-auto custom-scrollbar min-h-[120px]">
-                  {callState === 'idle' && !transcript && !responseText && (
-                    <div className="text-center py-8 text-[10px] text-white/20 font-mono uppercase tracking-widest">
-                      Click mic or say "Computer" →<br/>start a conversation
-                    </div>
-                  )}
-
-                  {/* User transcript */}
-                  {transcript && (
-                    <div className="flex justify-end">
-                      <div className="max-w-[80%] px-4 py-2 rounded-2xl bg-white/10 text-sm text-white/80">
-                        {transcript}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* AI response */}
-                  {responseText && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[85%] px-4 py-2 rounded-2xl bg-celestial-saturn/10 border border-celestial-saturn/20 text-sm text-celestial-saturn/90">
-                        {responseText}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Thinking indicator */}
-                  {callState === 'thinking' && !responseText && (
-                    <div className="flex justify-start">
-                      <div className="px-4 py-2 rounded-2xl bg-white/5">
-                        <motion.div
-                          animate={{ opacity: [0.3, 1, 0.3] }}
-                          transition={{ duration: 1.5, repeat: Infinity }}
-                          className="flex gap-1"
-                        >
-                          {[0, 1, 2].map(i => (
-                            <div key={i} className="w-1.5 h-1.5 rounded-full bg-purple-400" style={{ animationDelay: `${i * 0.2}s` }} />
-                          ))}
-                        </motion.div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Listening indicator */}
-                  {callState === 'listening' && !transcript && (
-                    <div className="text-center py-4">
-                      <div className="flex items-center justify-center gap-0.5">
-                        {[...Array(5)].map((_, i) => (
-                          <motion.div
-                            key={i}
-                            className="w-1 bg-celestial-saturn/60 rounded-full"
-                            animate={{ height: [4, 12 + audioLevel * 16, 4] }}
-                            transition={{ duration: 0.4, repeat: Infinity, delay: i * 0.08 }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Input bar */}
-                <div className="px-4 py-3 border-t border-white/5 flex items-center gap-2">
-                  {/* Mic button */}
-                  <motion.button
-                    onClick={() => {
-                      if (callState === 'idle') {
-                        startCall(selectedVoiceId, personalityId, personalityId);
-                      } else {
-                        endCall();
-                      }
-                    }}
-                    whileTap={{ scale: 0.9 }}
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-colors ${
-                      callState !== 'idle'
-                        ? 'bg-celestial-saturn text-black shadow-[0_0_20px_rgba(255,200,80,0.3)]'
-                        : 'bg-white/5 text-white/40 hover:bg-white/10'
-                    }`}
-                  >
-                    {callState !== 'idle' ? (
-                      <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                        <Mic size={16} />
-                      </motion.div>
-                    ) : (
-                      <Mic size={16} />
-                    )}
-                  </motion.button>
-
-                  {/* Text input */}
-                  <input
-                    type="text"
-                    placeholder="Type or speak..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-white/20 transition-colors"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                        // Send text via socket
-                        socket?.emit('audio:chat_text', { text: e.currentTarget.value.trim(), personalityId, agentId: personalityId });
-                        e.currentTarget.value = '';
-                      }
-                    }}
-                  />
-
-                  {/* Interrupt button */}
-                  {(callState === 'speaking' || callState === 'thinking') && (
-                    <motion.button
-                      onClick={interrupt}
-                      whileTap={{ scale: 0.9 }}
-                      className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 flex-shrink-0"
-                    >
-                      <Box size={14} />
-                    </motion.button>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  }
 
   return (
     <div className={`fixed inset-0 h-screen w-screen overflow-hidden cursor-default select-none transition-all duration-1000 ${
@@ -1636,17 +1418,6 @@ export function DesktopUI({
                   >
                     <Zap size={14} className={isWallpaperMode ? 'animate-pulse' : ''} />
                     {isWallpaperMode ? (t.fusionActive || 'Fusion Active') : (t.wallpaperMode || 'Wallpaper Mode')}
-                  </button>
-                  <button
-                    onClick={toggleMiniMode}
-                    className={`h-10 px-4 rounded-xl border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl ${
-                      isMiniMode
-                        ? 'bg-purple-500 text-white border-purple-500'
-                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <Box size={14} className={isMiniMode ? 'animate-pulse' : ''} />
-                    {isMiniMode ? 'Expand' : 'Mini'}
                   </button>
                 </div>
               </div>
