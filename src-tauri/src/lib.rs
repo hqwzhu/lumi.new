@@ -72,6 +72,7 @@ pub struct LiveStats {
     pub gpu_vendor: Option<String>,
     pub gpu_utilization: Option<f32>,
     pub temperatures: Vec<TempReading>,
+    pub fan_speed_rpm: Option<f32>,
     pub hostname: String,
     pub uptime_seconds: u64,
 }
@@ -155,6 +156,7 @@ fn get_live_stats() -> LiveStats {
         gpu_vendor,
         gpu_utilization: None,
         temperatures,
+        fan_speed_rpm: None,
         hostname: sys_info::hostname().unwrap_or_default(),
         uptime_seconds: System::uptime(),
     }

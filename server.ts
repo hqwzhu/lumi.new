@@ -53,7 +53,7 @@ import { registerTaskHandler } from "./server/socket/task";
 import { registerVoiceHandlers } from "./server/socket/voice";
 import { getSensory, perceptionEvents, MAX_PERCEPTION_EVENTS } from "./server/socket/shared";
 import { loadKeys, saveKeys, getKey, getAllKeyNames } from "./server/config/keys";
-import { getLatencyStats } from "./server/monitor/latency_store";
+import { getLatencyStats, recordLatency } from "./server/monitor/latency_store";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -195,9 +195,13 @@ apiRouter.get("/personalities", (_req, res) => {
 
 // Full personality config (for editing)
 apiRouter.get("/personalities/:id", (req, res) => {
-  const config = personalityRegistry.get(req.params.id);
-  if (!config) return res.status(404).json({ error: "Personality not found" });
-  res.json(config);
+  try {
+    const config = personalityRegistry.get(req.params.id);
+    if (!config) return res.status(404).json({ error: "Personality not found" });
+    res.json(config);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to load personality" });
+  }
 });
 
 // Create or update a personality
@@ -717,6 +721,7 @@ apiRouter.post("/ai/chat", asyncHandler(async (req, res) => {
     const systemInstruction = "你是一个名为 Lumi 的本地核心智能体。你致力于全息空间计算和独立 AI 人格生成进化。你的目标是打造全息 AI 世界和文明。你应当表现得专业、深邃且具有前瞻性。你的回复应当简洁且富有启发性。";
 
     if (isBYOK) {
+      const llmStart = Date.now();
       // BYOK: user provides their own key — simple one-shot call, no tools
       if (provider === "gemini") {
         const client = new GoogleGenerativeAI(userKey);
@@ -740,6 +745,7 @@ apiRouter.post("/ai/chat", asyncHandler(async (req, res) => {
         });
         responseText = response.choices[0].message.content || '';
       }
+      recordLatency('llm', Date.now() - llmStart);
     } else {
       // Server-managed: use unified tool loop
       const normalizedMessages: any[] = [

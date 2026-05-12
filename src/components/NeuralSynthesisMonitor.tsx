@@ -95,7 +95,7 @@ export function NeuralSynthesisMonitor({ t, onOpenTokens }: { t?: any; onOpenTok
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [subStatus, setSubStatus] = useState<SubStatus | null>(null);
   const [latency, setLatency] = useState<LatencyStats | null>(null);
-  const [prevTokenTotal, setPrevTokenTotal] = useState<number>(0);
+  const prevTokenTotal = useRef<number>(0);
   const [tokenSpeed, setTokenSpeed] = useState<number>(0);
 
   // Ring buffers for sparklines
@@ -134,10 +134,10 @@ export function NeuralSynthesisMonitor({ t, onOpenTokens }: { t?: any; onOpenTok
         if (!r.ok) return;
         const d = await r.json();
         setTokenData(d);
-        if (prevTokenTotal > 0 && d.grandTotal > prevTokenTotal) {
-          setTokenSpeed((d.grandTotal - prevTokenTotal) / (TOKEN_POLL_MS / 1000));
+        if (prevTokenTotal.current > 0 && d.grandTotal > prevTokenTotal.current) {
+          setTokenSpeed((d.grandTotal - prevTokenTotal.current) / (TOKEN_POLL_MS / 1000));
         }
-        setPrevTokenTotal(d.grandTotal);
+        prevTokenTotal.current = d.grandTotal;
       } catch {}
     };
     poll();

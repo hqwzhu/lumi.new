@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { HardcoreBootSequence } from './HardcoreBootSequence';
 import { GlobalNodeMap } from './GlobalNodeMap';
@@ -785,14 +785,14 @@ export function DesktopUI({
   }, [socket]);
 
 
-  const toggleWallpaperMode = () => {
+  const toggleWallpaperMode = useCallback(() => {
     const nextMode = !isWallpaperMode;
     setIsWallpaperMode(nextMode);
     systemService.setWallpaperMode(nextMode);
     toast(nextMode ? (t.wallpaperFusionActive || 'Wallpaper Fusion Active') : (t.standardFocusMode || 'Standard Focus Mode'), {
       icon: nextMode ? <Sparkles className="text-celestial-saturn" /> : <Box className="text-white/40" />
     });
-  };
+  }, [isWallpaperMode, t]);
 
 
   // MCP Live Activity socket listener

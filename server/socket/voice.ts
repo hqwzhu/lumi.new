@@ -10,6 +10,7 @@ import { toolRegistry } from "../tools/registry";
 import { personalityRegistry } from "../personality";
 import { createStreamingSession, getActiveSTTProvider } from "../stt/adapter";
 import { synthesizeSpeech, getActiveProvider as getTTSProvider } from "../tts/adapter";
+import { recordLatency } from "../monitor/latency_store";
 import { getOrCreateActiveConversation, addMessage } from "../conversation/manager";
 
 interface AudioSession {
@@ -173,11 +174,13 @@ SAFETY:
     if (!sentence.trim() || !ttsProvider || !session.currentVoiceId || !session.isActive) return;
     if (session.ttsAbortController?.signal.aborted) return;
     sentenceIdx++;
+    const ttsStart = Date.now();
     const ttsPromise = synthesizeSpeech(sentence.trim(), {
       provider: ttsProvider,
       voiceId: session.currentVoiceId,
       signal: session.ttsAbortController?.signal,
     }).then(ttsResult => {
+      recordLatency('tts', Date.now() - ttsStart);
       if (session.isActive && !session.ttsAbortController?.signal.aborted) {
         socket.emit("audio:status", { status: "speaking" });
         socket.emit("audio:response", ttsResult.audioBuffer);

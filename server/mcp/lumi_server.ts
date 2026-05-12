@@ -15,6 +15,9 @@ import { personalityRegistry } from '../personality';
 import { deviceRegistry } from '../devices';
 import { canOutputHolographic, textToHolographicOutput } from '../output/holographic';
 import { setOfficeBroadcast } from '../tools/definitions/office_tools';
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { logger } from '../../logger';
 import type { Request, Response } from 'express';
 
@@ -82,7 +85,7 @@ export function createLumiMcpServer(llmGetters?: {
 
         const response = await runWithTools(
           messages,
-          toolRegistry,
+          tr,
           {
             provider: 'deepseek',
             model: 'deepseek-v4-pro',
@@ -321,9 +324,6 @@ export function createLumiMcpServer(llmGetters?: {
     },
     async ({ title, slides, filename }) => {
       try {
-        const os = require('os');
-        const fs = require('fs');
-        const path = require('path');
         const safeName = (filename || title).replace(/[\\/:*?"<>|]/g, '_');
 
         bc('mcp:activity', { device: 'xiaozhi', action: 'create_ppt', status: 'started', title, slidesCount: slides.length });

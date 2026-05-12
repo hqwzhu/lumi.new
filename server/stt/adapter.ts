@@ -15,27 +15,25 @@ export async function transcribe(audioBuffer: Buffer, config: STTConfig): Promis
     case 'deepgram':
       result = await new Promise((resolve, reject) => {
         const session = deepgram.createStream(config.language, false);
-        let finalResult: STTResult = { text: '', isFinal: false };
         session.onResult((result) => {
-          if (result.isFinal) finalResult = result;
+          if (result.isFinal) resolve(result);
         });
         session.onError(reject);
         session.sendAudio(audioBuffer);
         session.end();
-        setTimeout(() => resolve(finalResult), 3000);
+        setTimeout(() => resolve({ text: '', isFinal: false }), 8000);
       });
       break;
     case 'qwen':
       result = await new Promise((resolve, reject) => {
         const session = qwen.createStream(config.language || 'zh', false);
-        let finalResult: STTResult = { text: '', isFinal: false };
         session.onResult((result) => {
-          if (result.isFinal) finalResult = result;
+          if (result.isFinal) resolve(result);
         });
         session.onError(reject);
         session.sendAudio(audioBuffer);
         session.end();
-        setTimeout(() => resolve(finalResult), 3000);
+        setTimeout(() => resolve({ text: '', isFinal: false }), 8000);
       });
       break;
     default:

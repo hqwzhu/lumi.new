@@ -135,15 +135,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
       setLoading(true);
       try {
         await refreshUser();
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     init();
+    return () => { cancelled = true; };
   }, []);
 
   const login = async () => {
