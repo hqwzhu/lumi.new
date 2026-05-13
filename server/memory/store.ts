@@ -220,10 +220,23 @@ export function addMemory(
 ): Memory {
   const all = getMemoryStore();
 
+  // Check for contradictions with existing memories of same user+type
+  const candidates = all.filter(m => m.userId === memory.userId && m.type === memory.type);
+  const contradictions = findContradictions(memory.content, memory.userId, memory.type, candidates);
+  for (const conflicted of contradictions) {
+    // Reduce confidence of the older memory — it may be outdated
+    conflicted.confidence = Math.max(0.1, +(conflicted.confidence - 0.15).toFixed(2));
+    conflicted.updatedAt = new Date().toISOString();
+    console.log(
+      `[Memory] Contradiction detected: new="${memory.content.slice(0, 50)}..." ` +
+      `vs existing="${conflicted.content.slice(0, 50)}..." (confidence: ${(conflicted.confidence + 0.15).toFixed(2)}→${conflicted.confidence.toFixed(2)})`,
+    );
+  }
+
   // Deduplicate using index — only scan same userId + type
   const idx = getDedupIndex();
-  const candidates = idx.get(memory.userId)?.get(memory.type) || [];
-  const existing = candidates.find(m =>
+  const dedupCandidates = idx.get(memory.userId)?.get(memory.type) || [];
+  const existing = dedupCandidates.find(m =>
     contentSimilarity(m.content, memory.content) > 0.7,
   );
 
@@ -361,18 +374,133 @@ export function formatMemoriesForContext(memories: Memory[]): string {
   return lines.join('\n');
 }
 
-// ── Helpers ──
+// ── Semantic dedup & contradiction detection ──
 
-function contentSimilarity(a: string, b: string): number {
-  const tokensA = new Set(tokenize(a));
-  const tokensB = new Set(tokenize(b));
-  if (tokensA.size === 0 || tokensB.size === 0) return 0;
-  let overlap = 0;
-  for (const w of tokensA) {
-    if (tokensB.has(w)) overlap++;
+// Negation patterns in Chinese and English
+const NEGATION_PATTERNS = [
+  /不[^过论妨仅管只论止断愧外必再会]/u, /没[有想]/u, /别/u, /否/u, /非/u,
+  /\bnot\b/i, /\bdon'?t\b/i, /\bnever\b/i, /\bno\b/i, /\bcan'?t\b/i, /\bwon'?t\b/i,
+];
+
+// Common polarity-flip pairs: positive → negative
+const POLARITY_PAIRS: [RegExp, string][] = [
+  [/喜欢|爱|享受|热爱/g, '讨厌|恨|厌恶|反感'],
+  [/好|棒|优秀|出色|赞/g, '差|烂|糟糕|坏|垃圾'],
+  [/快|迅速|高效/g, '慢|缓慢|拖沓'],
+  [/简单|容易/g, '复杂|困难'],
+  [/美|漂亮|好看/g, '丑|难看'],
+  [/有用|方便|实用/g, '没用|不便|鸡肋'],
+  [/开启|打开|启用|使用/g, '关闭|禁用|停用|不用'],
+  [/经常|一直|总是/g, '从不|很少|偶尔'],
+];
+
+/**
+ * Extract key semantic units from text — CJK bigrams + normalized English words,
+ * with negation markers preserved for polarity-aware comparison.
+ */
+function semanticTokens(text: string): { tokens: Set<string>; negated: Set<string> } {
+  const base = tokenize(text);
+  const tokens = new Set(base);
+  const negated = new Set<string>();
+
+  // Detect negated tokens: if a negation word appears within ±3 chars of a token
+  const lower = text.toLowerCase();
+  for (const negPat of NEGATION_PATTERNS) {
+    const match = lower.match(negPat);
+    if (match && match.index !== undefined) {
+      const negPos = match.index;
+      // Mark tokens near the negation as negated
+      for (const t of base) {
+        const tpos = lower.indexOf(t);
+        if (tpos >= 0 && Math.abs(tpos - negPos) <= 8) {
+          negated.add(t);
+        }
+      }
+    }
   }
-  return overlap / Math.max(tokensA.size, tokensB.size);
+
+  return { tokens, negated };
 }
+
+/** Check if high-overlap texts have opposite polarity (contradiction) */
+function hasPolarityConflict(a: string, b: string): boolean {
+  const lowerA = a.toLowerCase();
+  const lowerB = b.toLowerCase();
+
+  for (const [posPat, negList] of POLARITY_PAIRS) {
+    const negPats = negList.split('|');
+    const aHasPos = posPat.test(lowerA);
+    const bHasPos = posPat.test(lowerB);
+
+    for (const negStr of negPats) {
+      const negRe = new RegExp(negStr, 'g');
+      const aHasNeg = negRe.test(lowerA);
+      const bHasNeg = negRe.test(lowerB);
+
+      // One text is positive, the other negative → contradiction
+      if ((aHasPos && bHasNeg) || (aHasNeg && bHasPos)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Improved content similarity: combines fast lexical overlap with
+ * negation-aware semantic comparison. Returns [score, hasContradiction].
+ */
+function contentSimilarity(a: string, b: string): number {
+  const { tokens: tokA, negated: negA } = semanticTokens(a);
+  const { tokens: tokB, negated: negB } = semanticTokens(b);
+  if (tokA.size === 0 || tokB.size === 0) return 0;
+
+  // Core lexical overlap (Jaccard with negation penalty)
+  let overlap = 0;
+  let negOverlap = 0;
+  for (const w of tokA) {
+    if (tokB.has(w)) {
+      overlap++;
+      // If one side is negated but the other isn't, reduce effective overlap
+      if ((negA.has(w) && !negB.has(w)) || (!negA.has(w) && negB.has(w))) {
+        negOverlap++;
+      }
+    }
+  }
+
+  const baseScore = overlap / Math.max(tokA.size, tokB.size);
+  // Penalize negated overlaps — they indicate opposite meanings
+  const penalty = overlap > 0 ? (negOverlap / overlap) * 0.5 : 0;
+  return Math.max(0, baseScore - penalty);
+}
+
+/** Check if a new memory contradicts any existing memories for the same user */
+function findContradictions(
+  newContent: string,
+  userId: string,
+  memType: string,
+  existingMemories: Memory[],
+): Memory[] {
+  const contradictions: Memory[] = [];
+  const lower = newContent.toLowerCase();
+
+  for (const existing of existingMemories) {
+    if (existing.userId !== userId || existing.type !== memType) continue;
+
+    const sim = contentSimilarity(newContent, existing.content);
+    // Only check for contradiction when there's meaningful overlap
+    if (sim < 0.35) continue;
+
+    if (hasPolarityConflict(lower, existing.content.toLowerCase())) {
+      contradictions.push(existing);
+    }
+  }
+
+  return contradictions;
+}
+
+// ── Helpers ──
 
 function dedupeKeywords(keywords: string[]): string[] {
   return [...new Set(keywords.map(k => k.toLowerCase()))].slice(0, 10);

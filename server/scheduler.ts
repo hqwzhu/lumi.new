@@ -4,6 +4,8 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { queryMemories, getDueReminders, fireReminder, runBehavioralAnalysis, decayMemories, getUnconsolidatedEpisodic } from './memory';
 import { consolidateEpisodic, selfReflect, ConsolidationContext } from './memory/consolidator';
+import { buildTree, ensureBranch, moveNode } from './memory/tree';
+import { makeLLMCall } from './llm/providers';
 import { getWeatherBrief, getTimeGreeting } from './services/weather';
 import { autoGenerateSkill } from './skills/generator';
 import { readDB } from '../db_layer';
@@ -244,6 +246,96 @@ export function registerScheduledTasks(
       }
       if (totalCount > 0) {
         return `I've discovered ${totalCount} new behavioral patterns from your interactions. Check Memory Explorer to review.`;
+      }
+      return null;
+    },
+  });
+
+  // Memory tree auto-organize (every 6h) — LLM groups orphan leaves into topic branches
+  scheduler.register({
+    id: 'memory_auto_organize',
+    cron: 'every_6h',
+    lastRun: null,
+    handler: async () => {
+      const userIds = getAllUserIds();
+      let totalBranches = 0;
+      let totalAssigned = 0;
+
+      for (const userId of userIds) {
+        try {
+          const db = readDB();
+          const allMemories: any[] = db.memories || [];
+          const orphans = allMemories.filter(
+            (m: any) => m.userId === userId && m.nodeType !== 'branch' && !m.parentId,
+          );
+          if (orphans.length < 3) continue;
+
+          const tree = buildTree(allMemories.filter((m: any) => m.userId === userId));
+          const treeSummary = tree.map(
+            t => `- ${t.node.content} [${t.node.nodeType}] (${t.children.length} children)`,
+          ).join('\n');
+
+          const prompt = `You are organizing a memory tree. Below is the current tree structure and a list of unorganized memories.
+
+CURRENT TREE:
+${treeSummary || '(empty)'}
+
+UNORGANIZED MEMORIES:
+${orphans.map((m: any) => `- [${m.id}] ${m.content}`).join('\n')}
+
+Group these unorganized memories into 3-8 topic branches. For each memory, decide which topic it belongs to.
+Return JSON:
+{
+  "branches": [
+    { "title": "Topic name (short, 2-4 words)", "memoryIds": ["mem_xxx", "mem_yyy"] }
+  ]
+}
+
+Rules:
+- Every unorganized memory MUST be assigned to exactly one branch
+- Branch titles should be meaningful topic names
+- Create as few branches as necessary (merge similar topics)
+- Return ONLY valid JSON, no markdown`;
+
+          const llmResult = await makeLLMCall(
+            [{ role: 'user', content: prompt }],
+            [],
+            { provider: 'qwen', model: 'qwen-plus' },
+            getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+          );
+
+          let plan: { branches: { title: string; memoryIds: string[] }[] };
+          try {
+            const json = (llmResult.text || '').replace(/```json|```/g, '').trim();
+            plan = JSON.parse(json);
+          } catch {
+            console.warn(`[Scheduler] Auto-organize: LLM returned invalid JSON for ${userId}`);
+            continue;
+          }
+
+          for (const branch of plan.branches) {
+            if (!branch.title || !Array.isArray(branch.memoryIds)) continue;
+            const branchNode = ensureBranch(userId, branch.title, '', null);
+            totalBranches++;
+            for (const memId of branch.memoryIds) {
+              const ok = moveNode(memId, branchNode.id);
+              if (ok) totalAssigned++;
+            }
+          }
+
+          if (plan.branches.length > 0) {
+            console.log(
+              `[Scheduler] Auto-organized ${userId}: ${plan.branches.length} branches, ` +
+              `${plan.branches.reduce((s, b) => s + b.memoryIds.length, 0)} memories`,
+            );
+          }
+        } catch (err: any) {
+          console.warn(`[Scheduler] Auto-organize failed for ${userId}:`, err.message);
+        }
+      }
+
+      if (totalBranches > 0) {
+        return `I've organized ${totalAssigned} memories into ${totalBranches} topic branches for easier recall.`;
       }
       return null;
     },
