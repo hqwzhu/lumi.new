@@ -49,7 +49,7 @@ function getAudioSession(socket: Socket): AudioSession {
       inputQueue: [],
       lastChunkTime: 0,
       userId: '',
-      agentId: '',
+      agentId: 'lumi',
     };
   }
   return socket.data.audioSession as AudioSession;
@@ -375,7 +375,7 @@ export function registerVoiceHandlers(
     session.inputQueue = [];
     session.lastChunkTime = 0;
     session.userId = getUserId(socket);
-    session.agentId = data.agentId || '';
+    session.agentId = data.agentId || 'lumi';
     const personalityCfg = personalityRegistry.get(data.personalityId || 'lumi');
     // Use explicit voiceId, then personality's TTS voice, then null (TTS provider default)
     session.currentVoiceId = data.voiceId || personalityCfg?.ttsVoiceId || null;

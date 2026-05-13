@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brush, Sparkles, Cat, Bird, Disc3, Flame, Loader2, Check, ArrowRight, Wand2, ChevronLeft, ChevronRight, Play, Pause, RotateCcw, Download, Upload, Image } from 'lucide-react';
+import { Brush, Sparkles, Cat, Bird, Disc3, Flame, Loader2, Check, ArrowRight, Wand2, ChevronLeft, ChevronRight, Play, Pause, RotateCcw, Download, Upload, Image, Shirt } from 'lucide-react';
 import { toast } from 'sonner';
 import { getDefaultPets, generateCustomPet } from '../pets/defaults';
 import { PetConfig } from '../pets/types';
 import { SpriteAnimator, PetAvatar } from './SpriteAnimator';
+import { ALL_ACCESSORIES, AccessoryDef } from '../pets/accessories';
 
 const BUILTIN_ANIMATIONS = ['idle', 'run', 'wave', 'jump', 'waiting'];
 
@@ -27,11 +28,15 @@ export function AvatarStudio({
   selectedPetId,
   onSelectPet,
   onResetToSphere,
+  equippedAccessories,
+  onChangeAccessories,
 }: {
   t: any;
   selectedPetId?: string;
   onSelectPet: (pet: PetConfig) => void;
   onResetToSphere?: () => void;
+  equippedAccessories?: string[];
+  onChangeAccessories?: (ids: string[]) => void;
 }) {
   const pets = getDefaultPets();
   const [activePet, setActivePet] = useState<PetConfig>(
@@ -39,7 +44,7 @@ export function AvatarStudio({
   );
   const [previewAnim, setPreviewAnim] = useState('idle');
   const [animKey, setAnimKey] = useState(0);
-  const [tab, setTab] = useState<'gallery' | 'generate'>('gallery');
+  const [tab, setTab] = useState<'gallery' | 'generate' | 'wardrobe'>('gallery');
   const [genPrompt, setGenPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [aiMode, setAiMode] = useState(false);
@@ -176,6 +181,14 @@ export function AvatarStudio({
           >
             AI 定制
           </button>
+          <button
+            onClick={() => setTab('wardrobe')}
+            className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+              tab === 'wardrobe' ? 'bg-emerald-500/20 text-emerald-400' : 'text-white/30 hover:text-white/50'
+            }`}
+          >
+            <Shirt size={12} className="inline mr-1" /> 装扮
+          </button>
         </div>
       </div>
 
@@ -197,7 +210,7 @@ export function AvatarStudio({
                   >
                     <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
                       <div className="scale-[0.35] origin-center">
-                        <PetAvatar pet={pet} animation="idle" scale={0.35} />
+                        <PetAvatar pet={pet} animation="idle" scale={0.35} accessoryIds={equippedAccessories} />
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -231,6 +244,11 @@ export function AvatarStudio({
                 导入社区宠物
               </button>
             </div>
+          ) : tab === 'wardrobe' ? (
+            <WardrobePanel
+              equipped={equippedAccessories || []}
+              onChange={onChangeAccessories || (() => {})}
+            />
           ) : (
             <div className="space-y-4">
               <p className="text-[9px] font-bold uppercase tracking-wider text-white/20">AI 形象生成</p>
@@ -285,7 +303,7 @@ export function AvatarStudio({
                   exit={{ opacity: 0, scale: 0.8 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <PetAvatar pet={activePet} animation={previewAnim} scale={1.1} />
+                  <PetAvatar pet={activePet} animation={previewAnim} scale={1.1} accessoryIds={equippedAccessories} />
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -342,6 +360,94 @@ export function AvatarStudio({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Wardrobe Panel ──
+
+const CATEGORY_LABELS: Record<string, string> = {
+  hat: '帽子',
+  glasses: '眼镜',
+  scarf: '围巾',
+  collar: '项圈',
+  ears: '耳朵',
+  tail: '尾巴',
+};
+
+function WardrobePanel({
+  equipped,
+  onChange,
+}: {
+  equipped: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const categories = [...new Set(ALL_ACCESSORIES.map(a => a.category))];
+
+  const toggle = (id: string) => {
+    if (equipped.includes(id)) {
+      onChange(equipped.filter(x => x !== id));
+    } else {
+      // Only one per category
+      const acc = ALL_ACCESSORIES.find(a => a.id === id);
+      const filtered = equipped.filter(x => {
+        const existing = ALL_ACCESSORIES.find(a => a.id === x);
+        return acc && existing && existing.category !== acc.category;
+      });
+      onChange([...filtered, id]);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Shirt size={14} className="text-emerald-400" />
+        <p className="text-[10px] font-black uppercase tracking-wider text-white/50">配件装扮</p>
+        <span className="text-[9px] text-white/20">({equipped.length} 件)</span>
+      </div>
+
+      {categories.map(cat => (
+        <div key={cat} className="space-y-1.5">
+          <p className="text-[8px] font-bold uppercase tracking-widest text-white/15">
+            {CATEGORY_LABELS[cat] || cat}
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {ALL_ACCESSORIES.filter(a => a.category === cat).map(acc => {
+              const active = equipped.includes(acc.id);
+              return (
+                <button
+                  key={acc.id}
+                  onClick={() => toggle(acc.id)}
+                  className={`p-2 rounded-xl border text-left transition-all ${
+                    active
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : 'bg-white/5 border-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {active && <Check size={10} className="text-emerald-400 flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-bold truncate ${active ? 'text-emerald-400' : 'text-white/50'}`}>
+                        {acc.nameCN}
+                      </div>
+                      <div className="text-[8px] text-white/15 truncate">{acc.name}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {equipped.length > 0 && (
+        <button
+          onClick={() => onChange([])}
+          className="w-full p-2 bg-white/5 border border-white/5 rounded-xl text-[9px] text-white/20 hover:text-white/40 hover:bg-white/10 transition-all"
+        >
+          卸下全部
+        </button>
+      )}
     </div>
   );
 }

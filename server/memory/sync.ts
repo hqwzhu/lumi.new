@@ -43,3 +43,17 @@ export function broadcastDeviceChange(userId: string): void {
     }
   }
 }
+
+/** Broadcast preference change to all devices of a user (pet, accessories, wallpaper, etc.) */
+export function broadcastPreferenceChange(userId: string, key: string, value: any): void {
+  if (!_io) return;
+  const sockets = userSockets.get(userId);
+  const payload = { key, value, userId, timestamp: new Date().toISOString() };
+  if (sockets && sockets.size > 0) {
+    for (const sid of sockets) {
+      _io.to(sid).emit('preferences:changed', payload);
+    }
+  } else {
+    _io.emit('preferences:changed', payload);
+  }
+}

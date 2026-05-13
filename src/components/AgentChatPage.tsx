@@ -86,6 +86,8 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose }: { t: any; use
   const { speak, stop, pause, resume, isSpeaking, isPaused } = useTTS();
   const recognition = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeCidRef = useRef<string | null>(null);
+  const agentNameRef = useRef<string>('Lumi');
 
   // Escape to close panels
   useEffect(() => {
@@ -101,9 +103,13 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose }: { t: any; use
 
   const agentName = agent?.name || 'Lumi Essence';
   const agentCategory = agent?.category || 'friend';
-  const agentId = agent?.id || 'lumi_default';
+  const agentId = agent?.id || 'lumi';
 
   const isFounder = agentId === 'founder' || agentCategory === 'founder' || agentName.includes('Founder') || agentName.includes('创始人');
+
+  // Keep refs in sync for socket callback closures
+  useEffect(() => { activeCidRef.current = activeConversationId; }, [activeConversationId]);
+  useEffect(() => { agentNameRef.current = agentName; }, [agentName]);
 
   useEffect(() => {
     // Initialize Speech Recognition
@@ -314,10 +320,29 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose }: { t: any; use
       toast.error(data.message);
     });
 
-    // Refresh conversation list when voice saves new messages
+    // Live-refresh messages when voice/other sources save to conversation
     socket.on("chat:conversation_updated", (data: { conversationId: string; agentId: string }) => {
       if (data.agentId === agentId) {
         fetchConversations();
+        // Reload messages for the active conversation in real-time
+        const cid = activeCidRef.current;
+        if (cid && data.conversationId === cid) {
+          fetch(`/api/conversations/${data.conversationId}/messages?limit=100`)
+            .then(r => r.json())
+            .then(result => {
+              if (result.messages && Array.isArray(result.messages)) {
+                setMessages(result.messages.map((m: any, idx: number) => ({
+                  id: m.id || `hist-${idx}`,
+                  text: m.content,
+                  userName: m.role === 'assistant' ? (agentNameRef.current || 'Lumi') : (user?.displayName || 'You'),
+                  timestamp: m.createdAt,
+                  type: m.role === 'assistant' ? 'agent' : 'user',
+                  mode: m.mode,
+                })));
+              }
+            })
+            .catch(() => {});
+        }
       }
     });
 

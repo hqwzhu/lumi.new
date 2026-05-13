@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { getAccessoryById } from '../pets/accessories';
 
 export interface AtlasDef {
   columns: number;
@@ -34,6 +35,7 @@ export function SpriteAnimator({
   audioLevel = 0,
   callState = 'idle',
   behavior = 'default',
+  accessoryIds,
 }: {
   spritesheet: string;
   atlas: AtlasDef;
@@ -46,6 +48,7 @@ export function SpriteAnimator({
   audioLevel?: number;
   callState?: string;
   behavior?: PetBehavior;
+  accessoryIds?: string[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -89,8 +92,23 @@ export function SpriteAnimator({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, sx, sy, cellWidth, cellHeight, 0, 0, cellWidth * scale, cellHeight * scale);
 
+    // Draw accessory overlays
+    if (accessoryIds && accessoryIds.length > 0) {
+      ctx.save();
+      ctx.scale(scale, scale);
+      for (const aid of accessoryIds) {
+        const acc = getAccessoryById(aid);
+        if (acc) {
+          ctx.save();
+          acc.draw(ctx, cellWidth, cellHeight, frameIndex);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+
     onFrame?.(frameIndex);
-  }, [atlas, scale, onFrame]);
+  }, [atlas, scale, onFrame, accessoryIds]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -166,6 +184,7 @@ export function PetAvatar({
   audioLevel = 0,
   callState = 'idle',
   behavior = 'default',
+  accessoryIds,
 }: {
   pet: { spritesheet: string; atlas: AtlasDef };
   animation?: string;
@@ -175,6 +194,7 @@ export function PetAvatar({
   audioLevel?: number;
   callState?: string;
   behavior?: PetBehavior;
+  accessoryIds?: string[];
 }) {
   // Audio-reactive: scale up slightly when speaking, mouth-like pulse on audioLevel
   const audioScale = callState !== 'idle' ? 1 + audioLevel * 0.15 : 1;
@@ -199,6 +219,7 @@ export function PetAvatar({
         audioLevel={audioLevel}
         callState={callState}
         behavior={behavior}
+        accessoryIds={accessoryIds}
       />
     </div>
   );

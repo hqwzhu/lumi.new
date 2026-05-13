@@ -17,7 +17,8 @@ export function LocalAgentSphere({
   onStartCall,
   onEndCall,
   onInterrupt,
-  onToggleMute
+  onToggleMute,
+  reaction,
 }: {
   t: any;
   onMessage?: (text: string) => void;
@@ -33,8 +34,23 @@ export function LocalAgentSphere({
   onEndCall?: () => void;
   onInterrupt?: () => void;
   onToggleMute?: () => void;
+  /** Tool/notification reaction override: 'jump', 'failed', 'wave' */
+  reaction?: string | null;
 }) {
   const [interactionPulse, setInteractionPulse] = useState(0);
+  const [reactionColor, setReactionColor] = useState('rgba(255,200,80,0.2)');
+
+  // Trigger visual reaction on tool/notification events
+  useEffect(() => {
+    if (reaction) {
+      setInteractionPulse(p => p + 1);
+      setReactionColor(
+        reaction === 'failed' ? 'rgba(255,60,60,0.25)' :
+        reaction === 'jump' ? 'rgba(80,255,120,0.2)' :
+        'rgba(255,200,80,0.2)'
+      );
+    }
+  }, [reaction]);
   const [spatialMode, setSpatialMode] = useState<'geometric' | 'humanoid'>('geometric');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 0, y: 0, isDown: false });
@@ -267,7 +283,8 @@ export function LocalAgentSphere({
           {[...Array(2)].map((_, i) => (
             <motion.div
               key={`${interactionPulse}-${i}`}
-              className="absolute inset-0 rounded-full border border-red-500/20 pointer-events-none will-change-transform"
+              className="absolute inset-0 rounded-full border pointer-events-none will-change-transform"
+              style={{ borderColor: reactionColor }}
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1.5, opacity: 0 }}
               transition={{ duration: 1.5, delay: i * 0.3 }}

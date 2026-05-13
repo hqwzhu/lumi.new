@@ -25,7 +25,7 @@ import { runWithTools } from "./server/llm/adapter";
 import { checkLLMAccess, recordUsage, estimateTokens } from "./server/subscription/proxy";
 import { toolRegistry } from "./server/tools/registry";
 import { registerAllTools } from "./server/tools/definitions/index";
-import { queryMemories, addMemory, removeMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, getUnconsolidatedEpisodic, markConsolidated, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange, initMemoryAssociations } from "./server/memory";
+import { queryMemories, addMemory, removeMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, getUnconsolidatedEpisodic, markConsolidated, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange, broadcastPreferenceChange, initMemoryAssociations } from "./server/memory";
 import { consolidateEpisodic, selfReflect, ConsolidationContext } from "./server/memory/consolidator";
 import { personalityRegistry } from "./server/personality";
 import { evolvePersonality } from "./server/personality/evolution";
@@ -1109,6 +1109,53 @@ Choose features that best match the user's description. Be creative but coherent
     },
   });
 }));
+
+// ── Pet Preferences — cross-device sync of selected pet + accessories ──
+apiRouter.get("/preferences/pet", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const db = readDB();
+    const setting = (db.settings || []).find((s: any) => s.key === `pet_prefs_${decoded.uid}`);
+    if (setting) {
+      res.json(JSON.parse(setting.value));
+    } else {
+      res.json({ pet: null, accessories: [] });
+    }
+  } catch (e: any) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+apiRouter.put("/preferences/pet", (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const { pet, accessories } = req.body || {};
+    const db = readDB();
+    if (!db.settings) db.settings = [];
+    const key = `pet_prefs_${decoded.uid}`;
+    const value = JSON.stringify({ pet: pet || null, accessories: accessories || [] });
+    const existing = db.settings.findIndex((s: any) => s.key === key);
+    if (existing >= 0) {
+      db.settings[existing].value = value;
+    } else {
+      db.settings.push({ key, value });
+    }
+    writeDB(db);
+
+    // Broadcast to other devices
+    broadcastPreferenceChange(decoded.uid, 'pet', { pet: pet || null, accessories: accessories || [] });
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
 
 // 4. Interactions
 apiRouter.get("/interactions", (req, res) => {

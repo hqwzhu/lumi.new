@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import { HardcoreBootSequence } from './HardcoreBootSequence';
 import { GlobalNodeMap } from './GlobalNodeMap';
@@ -37,6 +37,7 @@ import {
   Crown,
   Castle,
   Brush,
+  Mic,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -58,6 +59,7 @@ import { AgentChatPage } from './AgentChatPage';
 import { Sanctuary } from './Sanctuary';
 import { MemoryAvatarLab } from './MemoryAvatarLab';
 import { AvatarStudio } from './AvatarStudio';
+import { ReminderPanel } from './ReminderPanel';
 import { PetAvatar } from './SpriteAnimator';
 import { getDefaultPets } from '../pets/defaults';
 import type { PetConfig } from '../pets/types';
@@ -723,7 +725,22 @@ export function DesktopUI({
   const [chatOpen, setChatOpen] = useState(false);
   const [sanctuaryOpen, setSanctuaryOpen] = useState(false);
   const [sanctuaryAgent, setSanctuaryAgent] = useState<any>(null);
+  const [petReaction, setPetReaction] = useState<{ animation: string; until: number } | null>(null);
+  const petReactionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerPetReaction = (animation: string, ms: number = 1500) => {
+    if (petReactionTimeout.current) clearTimeout(petReactionTimeout.current);
+    setPetReaction({ animation, until: Date.now() + ms });
+    petReactionTimeout.current = setTimeout(() => setPetReaction(null), ms);
+  };
+
   const [memoryLabOpen, setMemoryLabOpen] = useState(false);
+  const [equippedAccessories, setEquippedAccessories] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('lumi_accessories');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [selectedPet, setSelectedPet] = useState<PetConfig | null>(() => {
     try {
       const saved = localStorage.getItem('lumi_selected_pet');
@@ -737,6 +754,31 @@ export function DesktopUI({
     } catch {}
     return null;
   });
+
+  // Ref to prevent echoing our own preference changes back via socket
+  const petPrefsSavingRef = useRef(false);
+  const savePetPrefsToServer = useCallback(async (pet: PetConfig | null, accessories: string[]) => {
+    localStorage.setItem('lumi_accessories', JSON.stringify(accessories));
+    if (pet) {
+      localStorage.setItem('lumi_selected_pet', JSON.stringify({ id: pet.id, name: pet.name, author: pet.author }));
+    } else {
+      localStorage.removeItem('lumi_selected_pet');
+    }
+    petPrefsSavingRef.current = true;
+    try {
+      await fetch('/api/preferences/pet', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pet: pet ? { id: pet.id, name: pet.name, author: pet.author } : null,
+          accessories,
+        }),
+        credentials: 'include',
+      });
+    } catch {}
+    setTimeout(() => { petPrefsSavingRef.current = false; }, 500);
+  }, []);
+
   const [theme, setTheme] = useState<string>('celestial');
   const [nativeFiles, setNativeFiles] = useState<NativeFile[]>([]);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
@@ -881,6 +923,7 @@ export function DesktopUI({
     const onToolCall = (data: { correlationId?: string; name: string; arguments?: any; result?: string; error?: string }) => {
       if (data.result !== undefined) {
         setAgentStatus('executing');
+        triggerPetReaction('jump', 1200);
         setWorkflowSteps(prev => [...prev, {
           id: `tool-ok-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
           type: 'tool_result',
@@ -890,6 +933,7 @@ export function DesktopUI({
         }]);
       } else if (data.error !== undefined) {
         setAgentStatus('executing');
+        triggerPetReaction('failed', 2000);
         setWorkflowSteps(prev => [...prev, {
           id: `tool-err-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
           type: 'error',
@@ -937,17 +981,86 @@ export function DesktopUI({
       }, 5000);
     };
 
+    const onProactive = (data: { taskId: string; message: string; timestamp: string }) => {
+      // Trigger pet reaction based on notification type
+      switch (data.taskId) {
+        case 'reminder_check':
+          triggerPetReaction('wave', 2000);
+          break;
+        case 'daily_summary':
+          triggerPetReaction('wave', 2000);
+          break;
+        case 'evening_wrapup':
+          triggerPetReaction('wave', 2000);
+          break;
+        case 'memory_decay':
+          triggerPetReaction('jump', 1500);
+          break;
+        case 'behavioral_analysis':
+          triggerPetReaction('jump', 1500);
+          break;
+        default:
+          triggerPetReaction('jump', 1200);
+      }
+    };
+
     socket.on('agent:status', onStatus);
     socket.on('agent:tool_call', onToolCall);
     socket.on('agent:response', onResponse);
     socket.on('agent:error', onError);
+    socket.on('agent:proactive', onProactive);
+    socket.on('preferences:changed', (data: { key: string; value: any }) => {
+      if (petPrefsSavingRef.current) return; // ignore our own changes
+      if (data.key === 'pet' && data.value) {
+        const { pet, accessories } = data.value;
+        if (pet) {
+          const defaults = getDefaultPets();
+          const found = defaults.find(d => d.id === pet.id);
+          setSelectedPet(found || pet);
+          localStorage.setItem('lumi_selected_pet', JSON.stringify(pet));
+        } else {
+          setSelectedPet(null);
+          localStorage.removeItem('lumi_selected_pet');
+        }
+        if (accessories) {
+          setEquippedAccessories(accessories);
+          localStorage.setItem('lumi_accessories', JSON.stringify(accessories));
+        }
+        toast.info('桌面形象已从另一设备同步');
+      }
+    });
     return () => {
       socket.off('agent:status', onStatus);
       socket.off('agent:tool_call', onToolCall);
       socket.off('agent:response', onResponse);
       socket.off('agent:error', onError);
+      socket.off('agent:proactive', onProactive);
+      socket.off('preferences:changed');
     };
   }, [socket]);
+
+  // Fetch pet preferences from server on mount (cross-device sync source of truth)
+  useEffect(() => {
+    const fetchPrefs = async () => {
+      try {
+        const res = await fetch('/api/preferences/pet', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pet) {
+            const defaults = getDefaultPets();
+            const found = defaults.find(d => d.id === data.pet.id);
+            setSelectedPet(found || data.pet);
+            localStorage.setItem('lumi_selected_pet', JSON.stringify(data.pet));
+          }
+          if (data.accessories?.length > 0) {
+            setEquippedAccessories(data.accessories);
+            localStorage.setItem('lumi_accessories', JSON.stringify(data.accessories));
+          }
+        }
+      } catch {}
+    };
+    fetchPrefs();
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -976,7 +1089,7 @@ export function DesktopUI({
 
   const handleSelectPet = (pet: PetConfig) => {
     setSelectedPet(pet);
-    localStorage.setItem('lumi_selected_pet', JSON.stringify({ id: pet.id, name: pet.name, author: pet.author }));
+    savePetPrefsToServer(pet, equippedAccessories);
     toast.info(`${pet.name} ${t.avatarSetAsDesktop || 'set as desktop avatar'}`);
   };
 
@@ -1103,6 +1216,7 @@ export function DesktopUI({
     if (windowId === 'github-mcp') return { w: '850px', h: '620px' };
     if (windowId === 'llm') return { w: '700px', h: '550px' };
     if (windowId === 'notifications') return { w: '700px', h: '550px' };
+    if (windowId === 'reminders') return { w: '650px', h: '620px' };
     if (windowId === 'devices') return { w: '900px', h: '700px' };
     if (windowId === 'tokens') return { w: '800px', h: '620px' };
     if (windowId === 'skills') return { w: '900px', h: '700px' };
@@ -1481,7 +1595,7 @@ export function DesktopUI({
         >
           <div className="relative flex flex-col items-center">
             {selectedPet ? (
-              <div className="relative group">
+              <div className="relative group flex flex-col items-center gap-3">
                 <button
                   onClick={() => toggleWindow('avatar-studio')}
                   className={`cursor-pointer transition-all ${callState !== 'idle' ? 'animate-pulse' : ''}`}
@@ -1490,10 +1604,12 @@ export function DesktopUI({
                   <PetAvatar
                     pet={selectedPet}
                     animation={
+                      petReaction ? petReaction.animation as any :
                       callState === 'speaking' ? 'wave' :
                       callState === 'listening' ? 'idle' :
                       callState !== 'idle' ? 'jump' : 'idle'
                     }
+                    accessoryIds={equippedAccessories}
                     scale={1.2}
                     audioLevel={audioLevel}
                     callState={callState}
@@ -1502,12 +1618,23 @@ export function DesktopUI({
                     }
                   />
                 </button>
+                {/* Voice call button below pet */}
+                <button
+                  onClick={callState === 'idle' ? () => startCall(selectedVoiceId, 'lumi', 'lumi') : endCall}
+                  className={`w-12 h-12 rounded-full border transition-all flex items-center justify-center ${
+                    callState !== 'idle'
+                      ? 'bg-red-500/20 border-red-500/40 text-red-400'
+                      : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {callState !== 'idle' ? <Mic size={20} className="animate-pulse" /> : <Mic size={20} />}
+                </button>
                 {/* Reset to sphere button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedPet(null);
-                    localStorage.removeItem('lumi_selected_pet');
+                    savePetPrefsToServer(null, equippedAccessories);
                     toast.info('已切换回原始圆球');
                   }}
                   className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-white/10 border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/30 hover:border-red-500/40"
@@ -1524,7 +1651,8 @@ export function DesktopUI({
                 audioLevel={audioLevel}
                 highPerformance={isTauri}
                 isWallpaperMode={isWallpaperMode}
-                onStartCall={() => startCall(selectedVoiceId)}
+                reaction={petReaction?.animation || null}
+                onStartCall={() => startCall(selectedVoiceId, 'lumi', 'lumi')}
                 onEndCall={endCall}
                 onInterrupt={interrupt}
                 onToggleMute={toggleMute}
@@ -1821,6 +1949,8 @@ export function DesktopUI({
                     <GitHubMCPBrowser t={t} />
                   ) : windowId === 'notifications' ? (
                     <NotificationCenter />
+                  ) : windowId === 'reminders' ? (
+                    <ReminderPanel t={t} />
                   ) : windowId === 'devices' ? (
                     <DeviceSyncCenter t={t} />
                   ) : windowId === 'tokens' ? (
@@ -1834,9 +1964,14 @@ export function DesktopUI({
                       t={t}
                       selectedPetId={selectedPet?.id}
                       onSelectPet={handleSelectPet}
+                      equippedAccessories={equippedAccessories}
+                      onChangeAccessories={(ids) => {
+                        setEquippedAccessories(ids);
+                        savePetPrefsToServer(selectedPet, ids);
+                      }}
                       onResetToSphere={() => {
                         setSelectedPet(null);
-                        localStorage.removeItem('lumi_selected_pet');
+                        savePetPrefsToServer(null, equippedAccessories);
                         toast.info('已切换回原始圆球');
                       }}
                     />

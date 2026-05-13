@@ -5,6 +5,6 @@ export type { ExtractedMemory, MemoryTier, MemoryPerspective } from './types';
 export type { ExtractedReminder } from './extractor';
 export { analyzeBehavioralPatterns, runBehavioralAnalysis } from './behavioral';
 export type { BehavioralPattern } from './behavioral';
-export { initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange, broadcastDeviceChange } from './sync';
+export { initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange, broadcastDeviceChange, broadcastPreferenceChange } from './sync';
 export { buildNarrativeChain } from './narrative';
 export type { NarrativeChainResult } from './narrative';
