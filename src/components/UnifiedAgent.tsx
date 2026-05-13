@@ -86,14 +86,30 @@ export function UnifiedAgent({ t, user, onEnterSanctuary }: { t: any; user: any;
       setIsTyping(false);
     };
 
+    const handleProactive = (data: { type: string; message: string; agentName?: string; timestamp: string }) => {
+      if (data.type === 'greeting') {
+        const greetingMsg = {
+          id: `greeting-${data.timestamp}`,
+          text: data.message,
+          userName: data.agentName || 'Lumi',
+          timestamp: data.timestamp,
+          type: 'agent'
+        };
+        setMessages(prev => [...prev, greetingMsg]);
+        if (isVoiceMode) speak(data.message);
+      }
+    };
+
     socket.on("agent:response", handleAgentResponse);
     socket.on("agent:status", handleStatus);
     socket.on("agent:error", handleError);
+    socket.on("agent:proactive", handleProactive);
 
     return () => {
       socket.off("agent:response", handleAgentResponse);
       socket.off("agent:status", handleStatus);
       socket.off("agent:error", handleError);
+      socket.off("agent:proactive", handleProactive);
     };
   }, [socket, speak, isVoiceMode]);
 

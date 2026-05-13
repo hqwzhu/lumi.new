@@ -379,13 +379,33 @@ export function registerChatHandler(
 
       // Emit contextual greeting on reconnect (sanctuary agents don't initiate)
       if (!isSanctuary && isReconnect && updatedState.intimacy > 0.2) {
-        const greeting = generateContextualGreeting(updatedState);
+        const greeting = generateContextualGreeting(updatedState, uid);
         if (greeting) {
+          const greetingTs = new Date().toISOString();
+          // Save to chat log
+          const greetingDb = readDB();
+          greetingDb.interactions.push({
+            id: `greeting-${uid}-${Date.now()}`,
+            userId: uid,
+            agentId: agentId || '',
+            conversationId: conversationId || '',
+            content: greeting,
+            response: '',
+            role: 'agent',
+            personality: personality.id,
+            timestamp: greetingTs,
+            cognitiveIntent: 'greeting',
+            llmWasCalled: false,
+          });
+          writeDB(greetingDb);
+
+          // Emit to chat window and notification center
           socket.emit('agent:proactive', {
             type: 'greeting',
             message: greeting,
+            agentName: personality.name,
             intimacy: updatedState.intimacy,
-            timestamp: new Date().toISOString(),
+            timestamp: greetingTs,
           });
         }
       }

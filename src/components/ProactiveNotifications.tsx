@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useSocket } from '@/hooks/useSocket';
+import { useApp } from '@/contexts/AppContext';
 import { toast } from 'sonner';
 
 /**
@@ -8,25 +9,37 @@ import { toast } from 'sonner';
  */
 export function ProactiveNotifications() {
   const socket = useSocket();
+  const { addNotification } = useApp();
 
   useEffect(() => {
     if (!socket) return;
 
-    const handleProactive = (data: { taskId: string; message: string; timestamp: string }) => {
-      switch (data.taskId) {
+    const handleProactive = (data: { type?: string; taskId?: string; message: string; timestamp: string }) => {
+      const taskId = data.type || data.taskId || 'unknown';
+
+      switch (taskId) {
+        case 'greeting':
+          addNotification({ type: 'system', title: 'Lumi', message: data.message });
+          toast(data.message, { duration: 8000, id: `proactive-${data.timestamp}` });
+          break;
         case 'reminder_check':
+          addNotification({ type: 'info', title: 'Reminder', message: data.message });
           toast.info(data.message, { duration: 8000, id: `proactive-${data.timestamp}` });
           break;
         case 'memory_decay':
+          addNotification({ type: 'warning', title: 'Memory Alert', message: data.message });
           toast.warning(data.message, { duration: 6000, id: `proactive-${data.timestamp}` });
           break;
         case 'daily_summary':
+          addNotification({ type: 'success', title: 'Daily Summary', message: data.message });
           toast.success(data.message, { duration: 12000, id: `proactive-${data.timestamp}` });
           break;
         case 'evening_wrapup':
+          addNotification({ type: 'system', title: 'Evening Wrap-up', message: data.message });
           toast(data.message, { duration: 10000, id: `proactive-${data.timestamp}`, style: { background: '#1e1b4b', color: '#e0e7ff' } });
           break;
         case 'behavioral_analysis':
+          addNotification({ type: 'success', title: 'Behavioral Insight', message: data.message });
           toast.success(data.message, { duration: 8000, id: `proactive-${data.timestamp}` });
           break;
         default:
@@ -52,7 +65,7 @@ export function ProactiveNotifications() {
       socket.off('agent:proactive', handleProactive);
       socket.off('agent:tool_call', handleToolCall);
     };
-  }, [socket]);
+  }, [socket, addNotification]);
 
   return null;
 }
