@@ -13,6 +13,8 @@ import { AgentRuntime, AgentRecord } from './agents/runtime';
 import { personalityRegistry } from './personality';
 import { evolvePersonality } from './personality/evolution';
 import { loadEmotionalState } from './personality/state';
+import { getSameMonthDayPast, getMonthDayFromISO } from './time/utils';
+import { detectSpatiotemporalPatterns } from './time/spatiotemporal';
 
 interface ScheduledTask {
   id: string;
@@ -58,43 +60,118 @@ class Scheduler {
   }
 
   private scheduleTask(task: ScheduledTask) {
-    const intervalMs = this.parseInterval(task.cron);
-    const timer = setInterval(async () => {
-      try {
-        const message = await task.handler();
-        task.lastRun = new Date().toISOString();
-        if (message && this.io) {
-          this.io.emit('agent:proactive', {
-            taskId: task.id,
-            message,
-            timestamp: task.lastRun,
-          });
-        }
-      } catch (err: any) {
-        console.warn(`[Scheduler] Task "${task.id}" failed:`, err.message);
-      }
-    }, intervalMs);
+    const parsed = this.parseCron(task.cron);
 
-    this.timers.set(task.id, timer);
-    console.log(`[Scheduler] Registered task "${task.id}" every ${intervalMs / 1000}s`);
+    if (parsed.type === 'interval') {
+      // Simple fixed interval — use setInterval (backward compat)
+      const timer = setInterval(async () => {
+        try {
+          const message = await task.handler();
+          task.lastRun = new Date().toISOString();
+          if (message && this.io) {
+            this.io.emit('agent:proactive', {
+              taskId: task.id,
+              message,
+              timestamp: task.lastRun,
+            });
+          }
+        } catch (err: any) {
+          console.warn(`[Scheduler] Task "${task.id}" failed:`, err.message);
+        }
+      }, parsed.intervalMs);
+      this.timers.set(task.id, timer);
+      console.log(`[Scheduler] Registered task "${task.id}" every ${parsed.intervalMs / 1000}s`);
+    } else {
+      // Real cron expression — use recursive setTimeout to hit exact times
+      const runAndReschedule = async () => {
+        try {
+          const message = await task.handler();
+          task.lastRun = new Date().toISOString();
+          if (message && this.io) {
+            this.io.emit('agent:proactive', {
+              taskId: task.id,
+              message,
+              timestamp: task.lastRun,
+            });
+          }
+        } catch (err: any) {
+          console.warn(`[Scheduler] Task "${task.id}" failed:`, err.message);
+        }
+        // Schedule next run
+        const nextMs = this.nextCronTime(parsed.fields!);
+        const timer = setTimeout(runAndReschedule, nextMs);
+        this.timers.set(task.id, timer);
+      };
+      const firstMs = this.nextCronTime(parsed.fields!);
+      const timer = setTimeout(runAndReschedule, firstMs);
+      this.timers.set(task.id, timer);
+      const [m, h, dom, mon, dow] = parsed.fields!;
+      console.log(`[Scheduler] Registered cron task "${task.id}" — ${m} ${h} ${dom} ${mon} ${dow} (next in ${Math.round(firstMs / 1000)}s)`);
+    }
   }
 
-  private parseInterval(cron: string): number {
+  /** Parse a cron string — returns either a fixed interval or cron field array */
+  private parseCron(cron: string): { type: 'interval'; intervalMs: number } | { type: 'cron'; fields: number[] } {
+    // Aliases (backward compatible)
     switch (cron) {
-      case 'every_5m': return 5 * 60 * 1000;
-      case 'every_1h': return 60 * 60 * 1000;
-      case 'every_6h': return 6 * 60 * 60 * 1000;
-      case 'daily_9am': return 24 * 60 * 60 * 1000;
-      case 'evening_8pm': return 24 * 60 * 60 * 1000;
-      case 'every_30m': return 30 * 60 * 1000;
-      case 'every_7d': return 7 * 24 * 60 * 60 * 1000;
-      default: return 60 * 60 * 1000;
+      case 'every_5m': return { type: 'interval', intervalMs: 5 * 60 * 1000 };
+      case 'every_1h': return { type: 'interval', intervalMs: 60 * 60 * 1000 };
+      case 'every_6h': return { type: 'interval', intervalMs: 6 * 60 * 60 * 1000 };
+      case 'daily_9am': return { type: 'interval', intervalMs: 24 * 60 * 60 * 1000 };
+      case 'evening_8pm': return { type: 'interval', intervalMs: 24 * 60 * 60 * 1000 };
+      case 'every_30m': return { type: 'interval', intervalMs: 30 * 60 * 1000 };
+      case 'every_7d': return { type: 'interval', intervalMs: 7 * 24 * 60 * 60 * 1000 };
     }
+
+    // Real cron: 5 fields — minute hour dom month dow
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length === 5) {
+      const fields = parts.map(p => {
+        const n = parseInt(p, 10);
+        return isNaN(n) ? -1 : n; // -1 = wildcard (*)
+      });
+      return { type: 'cron', fields };
+    }
+
+    // Fallback: treat as interval alias
+    return { type: 'interval', intervalMs: 60 * 60 * 1000 };
+  }
+
+  /** Compute milliseconds until the next cron match */
+  private nextCronTime(fields: number[]): number {
+    const [minute, hour, dom, month, dow] = fields;
+    const now = new Date();
+    let next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0);
+
+    // Try up to 366 days ahead (cover a full year)
+    for (let i = 0; i < 366 * 24 * 60; i++) {
+      const m = next.getMinutes();
+      const h = next.getHours();
+      const d = next.getDate();
+      const mo = next.getMonth() + 1;
+      const w = next.getDay();
+
+      const mMatch = minute < 0 || m === minute;
+      const hMatch = hour < 0 || h === hour;
+      const domMatch = dom < 0 || d === dom;
+      const monMatch = month < 0 || mo === month;
+      const dowMatch = dow < 0 || w === dow;
+
+      if (mMatch && hMatch && domMatch && monMatch && dowMatch) {
+        const ms = next.getTime() - now.getTime();
+        return Math.max(1000, ms); // Minimum 1 second
+      }
+
+      next = new Date(next.getTime() + 60000); // +1 minute
+    }
+
+    return 60 * 60 * 1000; // Fallback: 1 hour
   }
 
   stop() {
     for (const timer of this.timers.values()) {
       clearInterval(timer);
+      clearTimeout(timer); // Also clear cron timeouts
     }
     this.timers.clear();
   }
@@ -626,6 +703,114 @@ Write in first-person as Lumi, warm and introspective tone. Keep it under 150 Ch
       }
 
       return messages.length > 0 ? messages.join('\n') : null;
+    },
+  });
+
+  // ── "This Day in History" (daily) — find memories from this day in past years ──
+  scheduler.register({
+    id: 'memory_this_day',
+    cron: 'daily_9am',
+    lastRun: null,
+    handler: async () => {
+      const userIds = getAllUserIds();
+      const messages: string[] = [];
+
+      for (const userId of userIds) {
+        try {
+          // Look back across all past years for today's month-day
+          const now = new Date();
+          const month = now.getMonth() + 1;
+          const day = now.getDate();
+
+          const pastMemories: { content: string; year: number }[] = [];
+          // Check last 3 years
+          for (let yearOffset = 1; yearOffset <= 3; yearOffset++) {
+            const year = now.getFullYear() - yearOffset;
+            const after = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+            const before = `${year}-${String(month).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}T00:00:00.000Z`;
+
+            const matches = queryMemories({
+              userId,
+              after,
+              before,
+              limit: 20,
+            });
+
+            for (const m of matches) {
+              pastMemories.push({ content: m.content.slice(0, 100), year });
+            }
+          }
+
+          if (pastMemories.length > 0) {
+            const sample = pastMemories.slice(0, 3);
+            const refs = sample.map(m => `"${m.content}" (${m.year}年)`).join('; ');
+            const yearsAgo = pastMemories[0].year;
+            messages.push(
+              `[${userId}] 历史上的今天: ${pastMemories.length} 条过去${now.getFullYear() - yearsAgo}年${month}月${day}日的记忆: ${refs}`,
+            );
+
+            // Store as a special episodic memory for temporal context
+            const { addMemory } = await import('./memory');
+            addMemory({
+              userId,
+              type: 'fact',
+              content: `[This Day ${month}/${day}] ${pastMemories.length} 条历史上的今天记忆: ${sample.map(m => m.content).join('; ')}`,
+              keywords: ['this_day_in_history', `${month}/${day}`, 'temporal_memory'],
+              confidence: 1.0,
+              sourceInteractionId: 'memory_this_day_scheduler',
+              agentId: undefined,
+            } as any, { tier: 'episodic', perspective: 'lumi_self', importance: 0.4 });
+          }
+        } catch (err: any) {
+          console.warn(`[MemoryThisDay] Failed for ${userId}:`, err.message);
+        }
+      }
+
+      return messages.length > 0
+        ? `历史上的今天 — ${messages.join('\n')}`
+        : null;
+    },
+  });
+
+  // ── Spatiotemporal pattern analysis (every 6h) — detect location+time patterns ──
+  scheduler.register({
+    id: 'spatiotemporal_analysis',
+    cron: 'every_6h',
+    lastRun: null,
+    handler: async () => {
+      const userIds = getAllUserIds();
+      const messages: string[] = [];
+
+      for (const userId of userIds) {
+        try {
+          const patterns = detectSpatiotemporalPatterns(userId);
+          if (patterns.length > 0) {
+            // Store new patterns as growth memories
+            const { addMemory } = await import('./memory');
+            const newPatterns = patterns.filter(p => p.confidence >= 0.5);
+            for (const p of newPatterns.slice(0, 3)) {
+              addMemory({
+                userId,
+                type: 'habit',
+                content: `[时空模式] ${p.description}`,
+                keywords: ['spatiotemporal_pattern', p.type, 'lumi_learning'],
+                confidence: p.confidence,
+                sourceInteractionId: 'spatiotemporal_analysis_scheduler',
+                agentId: undefined,
+              } as any, { tier: 'growth', perspective: 'lumi_self', importance: 0.5 });
+            }
+            messages.push(
+              `[${userId}] 发现 ${newPatterns.length} 个时空行为模式`,
+            );
+          }
+        } catch (err: any) {
+          console.warn(`[SpatiotemporalAnalysis] Failed for ${userId}:`, err.message);
+        }
+      }
+
+      return messages.length > 0
+        ? `时空模式分析 — ${messages.join('\n')}`
+        : null;
     },
   });
 }

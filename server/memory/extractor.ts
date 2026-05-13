@@ -68,6 +68,8 @@ export interface ExtractionContext {
   model: string;
   userId?: string;
   treeBranches?: string[];
+  /** Location tag from sensory context or user message (e.g. 'home', 'office', 'cafe') */
+  locationTag?: string;
 }
 
 export async function extractMemories(

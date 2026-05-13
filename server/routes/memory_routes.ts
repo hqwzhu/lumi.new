@@ -491,4 +491,45 @@ Rules:
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Memory timeline — returns chronological memory timeline view grouped by date
+  router.get("/memory/timeline", (req, res) => {
+    try {
+      const token = req.cookies.token;
+      if (!token) return res.status(401).json({ error: "Unauthorized" });
+      const decoded: any = jwt.verify(token, jwtSecret);
+      const userId = decoded.uid;
+
+      const start = (req.query.start as string) || undefined;
+      const end = (req.query.end as string) || undefined;
+      const limit = parseInt(req.query.limit as string) || 500;
+
+      const memories = queryMemories({
+        userId,
+        after: start,
+        before: end,
+        limit,
+        minConfidence: 0,
+      });
+
+      // Group by date
+      const byDate = new Map<string, { count: number; topMemories: typeof memories }>();
+      for (const m of memories) {
+        const date = (m.createdAt || '').slice(0, 10);
+        if (!date) continue;
+        if (!byDate.has(date)) byDate.set(date, { count: 0, topMemories: [] });
+        const entry = byDate.get(date)!;
+        entry.count++;
+        if (entry.topMemories.length < 3) entry.topMemories.push(m);
+      }
+
+      const timeline = [...byDate.entries()]
+        .map(([date, data]) => ({ date, count: data.count, topMemories: data.topMemories }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      res.json({ timeline });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 }

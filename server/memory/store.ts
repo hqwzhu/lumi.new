@@ -215,7 +215,8 @@ function relevanceScore(query: string, memory: Memory): number {
 export function queryMemories(q: MemoryQuery): Memory[] {
   const all = getMemoryStore();
 
-  const cutoff = q.before ? new Date(q.before).getTime() : 0;
+  const cutoffB = q.before ? new Date(q.before).getTime() : 0;
+  const cutoffA = q.after ? new Date(q.after).getTime() : 0;
 
   // Single-pass filter combining all conditions
   let memories = all.filter(m => {
@@ -229,7 +230,9 @@ export function queryMemories(q: MemoryQuery): Memory[] {
     if (q.unconsolidatedOnly && m.parentId) return false;
     if (q.parentId !== undefined && m.parentId !== q.parentId) return false;
     if (q.nodeType && m.nodeType !== q.nodeType) return false;
-    if (q.before && new Date(m.createdAt).getTime() > cutoff) return false;
+    if (q.before && new Date(m.createdAt).getTime() > cutoffB) return false;
+    if (q.after && new Date(m.createdAt).getTime() < cutoffA) return false;
+    if (q.location !== undefined && (m.location || '') !== q.location) return false;
     return true;
   });
 
@@ -395,7 +398,7 @@ export function fireReminder(id: string): void {
 
 export function addMemory(
   memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' | 'lastRetrievedAt' | 'retrieveCount' | 'tier' | 'perspective' | 'importance' | 'parentId' | 'agentId' | 'nodeType'>,
-  overrides?: { tier?: Memory['tier']; perspective?: Memory['perspective']; importance?: number; parentId?: string | null; agentId?: string; nodeType?: Memory['nodeType'] },
+  overrides?: { tier?: Memory['tier']; perspective?: Memory['perspective']; importance?: number; parentId?: string | null; agentId?: string; nodeType?: Memory['nodeType']; location?: string },
 ): Memory {
   const all = getMemoryStore();
 
@@ -445,6 +448,7 @@ export function addMemory(
     parentId: overrides?.parentId ?? null,
     agentId: overrides?.agentId ?? '',
     nodeType: overrides?.nodeType ?? 'leaf',
+    location: overrides?.location,
   };
 
   all.push(newMemory);

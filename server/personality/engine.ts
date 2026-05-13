@@ -2,6 +2,7 @@ import { PersonalityConfig, PersonalityContext, ExpressionStyle, PersonalityVect
 import { Memory } from '../memory/types';
 import { formatMemoriesForContext } from '../memory/store';
 import { EmotionalState, formatEmotionalStateForPrompt, resolveVerbosityFromState, applyIntimacyToVector } from './state';
+import { generateSpatiotemporalContext } from '../time/spatiotemporal';
 
 const TONE_GUIDE: Record<ExpressionStyle['tone'], string> = {
   neutral: 'Communicate in a balanced, matter-of-fact manner.',
@@ -237,6 +238,8 @@ export function generateSystemPrompt(
     ragKnowledge?: string[];
     /** Current emotional state of this personality */
     emotionalState?: EmotionalState;
+    /** User ID for temporal/spatial context injection */
+    userId?: string;
   },
 ): string {
   const effective = resolveEffectiveConfig(config, ctx);
@@ -352,7 +355,15 @@ export function generateSystemPrompt(
     }
   }
 
-  // 10. Capabilities & Operating Directives (task mode)
+  // 10. Spatiotemporal context — time, season, holidays, location patterns
+  if (options?.userId) {
+    const spCtx = generateSpatiotemporalContext(options.userId);
+    if (spCtx) {
+      blocks.push(spCtx);
+    }
+  }
+
+  // 11. Capabilities & Operating Directives (task mode)
   if (ctx.mode === 'task') {
     const toolPolicy = effective.toolPolicy;
     if (toolPolicy.allowedTools.length > 0) {

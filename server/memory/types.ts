@@ -47,6 +47,8 @@ export interface Memory {
   crossAgentShare?: boolean;
   /** Specific agent IDs this memory is shared with. Empty = all agents can borrow. */
   sharedToAgentIds?: string[];
+  /** Location where this memory was formed (e.g. 'home', 'office', 'cafe', 'mobile') */
+  location?: string;
 }
 
 export interface MemoryTree {
@@ -74,6 +76,10 @@ export interface MemoryQuery {
   nodeType?: MemoryNodeType;
   /** ISO 8601 cutoff — only return memories created on or before this date */
   before?: string;
+  /** ISO 8601 cutoff — only return memories created on or after this date */
+  after?: string;
+  /** Filter by location tag (e.g. 'home', 'office', 'cafe') */
+  location?: string;
   /** Personality vector for retrieval biasing — higher warmth prefers shared/personal memories */
   personalityVector?: { cognitiveStyle: Record<string,number>; socialStyle: Record<string,number> };
   /** Pre-computed type weights from vectorMemoryBias() */
