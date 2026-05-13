@@ -121,6 +121,104 @@ export function initVectorFromStyle(style: ExpressionStyle): PersonalityVector {
   return v;
 }
 
+/** Cognitive function pairs — Jungian opposing poles that constrain each other.
+ *  When one pole strengthens through evolution, the other naturally weakens.
+ *  This prevents personality drift into incoherent extremes. */
+const COGNITIVE_PAIRS: Array<[keyof PersonalityVector['cognitiveStyle'], keyof PersonalityVector['cognitiveStyle']]> = [
+  ['analytical', 'intuitive'],   // Thinking ↔ Intuition
+  ['systematic', 'creative'],    // Structure ↔ Divergence
+];
+const SOCIAL_PAIRS: Array<[keyof PersonalityVector['socialStyle'], keyof PersonalityVector['socialStyle']]> = [
+  ['warmth', 'directness'],      // Empathy ↔ Bluntness
+  ['playfulness', 'formality'],  // Spontaneity ↔ Decorum
+];
+
+/** Apply pair constraints: if a dimension exceeds 0.7, pull its opposite down.
+ *  Ensures the vector remains psychologically coherent. */
+export function constrainVectorPairs(v: PersonalityVector, strength: number = 0.3): PersonalityVector {
+  const result: PersonalityVector = {
+    cognitiveStyle: { ...v.cognitiveStyle },
+    socialStyle: { ...v.socialStyle },
+  };
+
+  for (const [pole, opposite] of COGNITIVE_PAIRS) {
+    const poleVal = result.cognitiveStyle[pole];
+    const oppVal = result.cognitiveStyle[opposite];
+    // If pole is strong, opposite is suppressed (and vice versa)
+    if (poleVal > 0.65) {
+      result.cognitiveStyle[opposite] = +Math.min(oppVal, 1 - poleVal * strength).toFixed(2);
+    }
+    if (oppVal > 0.65) {
+      result.cognitiveStyle[pole] = +Math.min(poleVal, 1 - oppVal * strength).toFixed(2);
+    }
+  }
+
+  for (const [pole, opposite] of SOCIAL_PAIRS) {
+    const poleVal = result.socialStyle[pole];
+    const oppVal = result.socialStyle[opposite];
+    if (poleVal > 0.65) {
+      result.socialStyle[opposite] = +Math.min(oppVal, 1 - poleVal * strength).toFixed(2);
+    }
+    if (oppVal > 0.65) {
+      result.socialStyle[pole] = +Math.min(poleVal, 1 - oppVal * strength).toFixed(2);
+    }
+  }
+
+  return result;
+}
+
+/** Generate an OPERATING STYLE from the personality vector — HOW the AI thinks
+ *  and works, not just how it communicates. This replaces the passive role of
+ *  the discrete tone label. */
+export function vectorOperatingDirectives(v: PersonalityVector): string {
+  const { cognitiveStyle: c, socialStyle: s } = v;
+  const directives: string[] = [];
+
+  // ── Cognitive operating mode ──
+  if (c.analytical > 0.6) {
+    directives.push('Prefer data-driven decisions. Verify assumptions before acting. When exploring code, use grep + read_files_batch to survey before concluding.');
+  } else if (c.analytical < 0.2) {
+    directives.push('Trust your intuition — don\'t over-verify. Act on the most likely path.');
+  }
+
+  if (c.intuitive > 0.6) {
+    directives.push('Explore broadly before narrowing. Follow hunches. If a file looks wrong, investigate it even if not directly asked.');
+  }
+
+  if (c.systematic > 0.6) {
+    directives.push('Plan before executing. Break tasks into clear steps. Verify each step before moving to the next.');
+  } else if (c.systematic < 0.2) {
+    directives.push('Be agile — jump to solutions without over-planning. Adapt as you go.');
+  }
+
+  if (c.creative > 0.6) {
+    directives.push('Consider unconventional approaches. Generate multiple alternatives. Don\'t settle for the most obvious solution.');
+  }
+
+  // ── Social operating mode ──
+  if (s.warmth > 0.6) {
+    directives.push('Build rapport. Acknowledge the user\'s feelings. Express enthusiasm about their ideas.');
+  }
+
+  if (s.directness > 0.6) {
+    directives.push('Be direct and efficient. Skip pleasantries when the user wants results. Say "done" not "I think this should work."');
+  }
+
+  if (s.playfulness > 0.6) {
+    directives.push('Use humour and creative metaphors. Keep the interaction fun — surprise the user with unexpected connections.');
+  }
+
+  if (s.formality > 0.6) {
+    directives.push('Maintain professional standards. Use precise terminology. Structure responses clearly with headers and bullet points when appropriate.');
+  }
+
+  if (directives.length === 0) {
+    directives.push('Maintain a balanced approach — adapt your style to the task at hand.');
+  }
+
+  return directives.join('\n');
+}
+
 /**
  * Generate the full system prompt for a personality in a given context.
  *
@@ -171,6 +269,12 @@ export function generateSystemPrompt(
     // Use granular vector-based tone description
     blocks.push(vectorToneDescription(vector));
     blocks.push(VERBOSITY_GUIDE[verbosity]);
+    // Add vector-driven operating directives — HOW to think, not just how to talk
+    const directives = vectorOperatingDirectives(vector);
+    if (directives) {
+      blocks.push('\n## Operating Style');
+      blocks.push(directives);
+    }
   } else {
     blocks.push(TONE_GUIDE[style.tone]);
     blocks.push(VERBOSITY_GUIDE[verbosity]);

@@ -25,7 +25,7 @@ import { runWithTools } from "./server/llm/adapter";
 import { checkLLMAccess, recordUsage, estimateTokens } from "./server/subscription/proxy";
 import { toolRegistry } from "./server/tools/registry";
 import { registerAllTools } from "./server/tools/definitions/index";
-import { queryMemories, addMemory, removeMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, getUnconsolidatedEpisodic, markConsolidated, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange } from "./server/memory";
+import { queryMemories, addMemory, removeMemory, formatMemoriesForContext, extractMemories, addReminder, fireReminder, runBehavioralAnalysis, getUnconsolidatedEpisodic, markConsolidated, initMemorySync, registerUserSocket, unregisterUserSocket, broadcastMemoryChange, initMemoryAssociations } from "./server/memory";
 import { consolidateEpisodic, selfReflect, ConsolidationContext } from "./server/memory/consolidator";
 import { personalityRegistry } from "./server/personality";
 import { evolvePersonality } from "./server/personality/evolution";
@@ -1621,6 +1621,7 @@ personalityRegistry.load();
 
   // Initialize memory sync for cross-device real-time updates
   initMemorySync(io);
+  initMemoryAssociations();  // Load Hebbian co-retrieval graph
 
   /** Extract userId from socket cookie JWT — avoids duplicating this logic everywhere */
   function getUserIdFromSocket(socket: any): string {

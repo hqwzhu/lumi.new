@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PersonalityConfig, PersonalityContext } from './types';
-import { generateSystemPrompt, initVectorFromStyle, vectorToTone, vectorToVerbosity } from './engine';
+import { generateSystemPrompt, initVectorFromStyle, vectorToTone, vectorToVerbosity, constrainVectorPairs } from './engine';
 import { Memory } from '../memory/types';
 import { EmotionalState } from './state';
 import { EvolutionStep, EvolutionConfig, DEFAULT_EVOLUTION_CONFIG } from './evolution';
@@ -106,6 +106,14 @@ class PersonalityRegistry {
     // Apply each mutation
     for (const m of step.mutations) {
       this.applyMutation(config, m);
+    }
+
+    // Apply Jungian pair constraints — keep the vector psychologically coherent
+    if (config.personalityVector) {
+      config.personalityVector = constrainVectorPairs(config.personalityVector);
+      // Re-sync discrete fields after constraint
+      config.expressionStyle.tone = vectorToTone(config.personalityVector);
+      config.expressionStyle.verbosity = vectorToVerbosity(config.personalityVector);
     }
 
     // Update version

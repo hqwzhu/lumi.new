@@ -8,7 +8,7 @@ import { LLMUsage } from "../tools/types";
 import { toolRegistry } from "../tools/registry";
 import { runWithTools } from "../llm/adapter";
 import { queryMemories, addMemory, addReminder, extractMemories } from "../memory";
-import { loadEmotionalState, saveEmotionalState, updateEmotionalState } from "../personality/state";
+import { loadEmotionalState, saveEmotionalState, updateEmotionalState, generateContextualGreeting } from "../personality/state";
 import { personalityRegistry } from "../personality";
 import { getOrCreateActiveConversation, addMessage, getMessages } from "../conversation/manager";
 import { ensureBranch } from "../memory/tree";
@@ -278,6 +278,19 @@ export function registerChatHandler(
         updatedState = updateEmotionalState(updatedState, { type: 'novel_topic', userId: uid, timestamp: new Date().toISOString() });
       }
       saveEmotionalState(emotionKey, updatedState);
+
+      // Emit contextual greeting on reconnect
+      if (isReconnect && updatedState.intimacy > 0.2) {
+        const greeting = generateContextualGreeting(updatedState);
+        if (greeting) {
+          socket.emit('agent:proactive', {
+            type: 'greeting',
+            message: greeting,
+            intimacy: updatedState.intimacy,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
 
     } catch (error: any) {
       console.error("[Socket Agent Error]:", error);

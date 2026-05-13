@@ -7,6 +7,137 @@ function getMemoryStore(): Memory[] {
   return db.memories;
 }
 
+// ── Hebbian Co-Retrieval Map — "cells that fire together, wire together" ──
+// When memories are retrieved in the same query, their pairwise association strengthens.
+// Over time, this builds an organic associative network that mirrors the user's mental model.
+
+type CoRetrievalMap = Map<string, Map<string, Map<string, number>>>;
+// userId → memoryId → (associatedMemoryId → strength 0-1)
+
+let coRetrievalMap: CoRetrievalMap = new Map();
+const ASSOCIATION_STRENGTH_INCREMENT = 0.08;  // Per co-retrieval boost
+const ASSOCIATION_DECAY_RATE = 0.02;           // Per decay cycle
+const ASSOCIATION_THRESHOLD = 0.25;            // Min strength to be considered "associated"
+
+function getAssocKey(idA: string, idB: string): [string, string] {
+  return idA < idB ? [idA, idB] : [idB, idA]; // Canonical ordering
+}
+
+/** Load co-retrieval map from DB on startup */
+function loadCoRetrievalMap(): void {
+  try {
+    const db = readDB();
+    if (db.memoryAssociations && Array.isArray(db.memoryAssociations)) {
+      for (const row of db.memoryAssociations) {
+        if (!coRetrievalMap.has(row.userId)) {
+          coRetrievalMap.set(row.userId, new Map());
+        }
+        const userMap = coRetrievalMap.get(row.userId)!;
+        if (!userMap.has(row.memA)) userMap.set(row.memA, new Map());
+        userMap.get(row.memA)!.set(row.memB, row.strength);
+        // Symmetric
+        if (!userMap.has(row.memB)) userMap.set(row.memB, new Map());
+        userMap.get(row.memB)!.set(row.memA, row.strength);
+      }
+    }
+  } catch {}
+}
+
+/** Persist co-retrieval map to DB */
+function saveCoRetrievalMap(): void {
+  try {
+    const db = readDB();
+    const rows: { userId: string; memA: string; memB: string; strength: number }[] = [];
+    for (const [userId, userMap] of coRetrievalMap) {
+      for (const [memA, assocMap] of userMap) {
+        for (const [memB, strength] of assocMap) {
+          if (memA < memB && strength >= ASSOCIATION_THRESHOLD) {
+            rows.push({ userId, memA, memB, strength: +strength.toFixed(3) });
+          }
+        }
+      }
+    }
+    db.memoryAssociations = rows;
+    writeDB(db);
+  } catch {}
+}
+
+/** Hebbian strengthen: increment association strength between all pairs in a co-retrieved set */
+function strengthenAssociations(userId: string, memoryIds: string[]): void {
+  if (memoryIds.length < 2) return;
+
+  if (!coRetrievalMap.has(userId)) coRetrievalMap.set(userId, new Map());
+  const userMap = coRetrievalMap.get(userId)!;
+
+  for (let i = 0; i < memoryIds.length; i++) {
+    for (let j = i + 1; j < memoryIds.length; j++) {
+      const idA = memoryIds[i], idB = memoryIds[j];
+
+      if (!userMap.has(idA)) userMap.set(idA, new Map());
+      const aMap = userMap.get(idA)!;
+      const prev = aMap.get(idB) || 0;
+      aMap.set(idB, Math.min(1, +(prev + ASSOCIATION_STRENGTH_INCREMENT).toFixed(3)));
+
+      if (!userMap.has(idB)) userMap.set(idB, new Map());
+      userMap.get(idB)!.set(idA, Math.min(1, +(prev + ASSOCIATION_STRENGTH_INCREMENT).toFixed(3)));
+    }
+  }
+
+  // Persist periodically (on every ~10th co-retrieval, to avoid excessive writes)
+  saveCoRetrievalMap();
+}
+
+/** Periodically decay weak associations and remove dead ones */
+export function decayMemoryAssociations(userId: string): number {
+  const sizeBefore = coRetrievalMap.get(userId)?.size || 0;
+  decayAssociations(userId);
+  const sizeAfter = coRetrievalMap.get(userId)?.size || 0;
+  if (sizeBefore !== sizeAfter) saveCoRetrievalMap();
+  return sizeBefore - sizeAfter;
+}
+
+/** Initialize co-retrieval map from persistent storage */
+export function initMemoryAssociations(): void {
+  loadCoRetrievalMap();
+}
+
+/** Decay all associations — weak ones fade, strong ones persist */
+function decayAssociations(userId: string): void {
+  const userMap = coRetrievalMap.get(userId);
+  if (!userMap) return;
+
+  for (const [memId, assocMap] of userMap) {
+    for (const [otherId, strength] of assocMap) {
+      const newStrength = +(strength - ASSOCIATION_DECAY_RATE).toFixed(3);
+      if (newStrength <= 0) {
+        assocMap.delete(otherId);
+      } else {
+        assocMap.set(otherId, newStrength);
+      }
+    }
+    if (assocMap.size === 0) userMap.delete(memId);
+  }
+  if (userMap.size === 0) coRetrievalMap.delete(userId);
+}
+
+/** Get memories strongly associated with a given memory ID */
+function getAssociatedMemories(memoryId: string, userId: string, threshold: number = ASSOCIATION_THRESHOLD): Memory[] {
+  const userMap = coRetrievalMap.get(userId);
+  if (!userMap) return [];
+  const assocMap = userMap.get(memoryId);
+  if (!assocMap) return [];
+
+  const all = getMemoryStore();
+  const result: Memory[] = [];
+  for (const [assocId, strength] of assocMap) {
+    if (strength >= threshold) {
+      const mem = all.find(m => m.id === assocId);
+      if (mem) result.push(mem);
+    }
+  }
+  return result;
+}
+
 // ── Dedup index (lazy, invalidated on write) ──
 
 let dedupIndex: Map<string, Map<string, Memory[]>> | null = null;
@@ -139,7 +270,34 @@ export function queryMemories(q: MemoryQuery): Memory[] {
   const limit = q.limit || 10;
   const result = memories.slice(0, limit);
 
-  // Mark as retrieved
+  // ── Hebbian learning: co-retrieved memories strengthen pairwise associations ──
+  if (q.userId && result.length >= 2) {
+    const resultIds = result.map(m => m.id);
+    strengthenAssociations(q.userId, resultIds);
+
+    // Enrich: pull in strongly associated memories not already in the result
+    const resultIdSet = new Set(resultIds);
+    const associated: Memory[] = [];
+    for (const m of result) {
+      const assoc = getAssociatedMemories(m.id, q.userId);
+      for (const am of assoc) {
+        if (!resultIdSet.has(am.id)) {
+          resultIdSet.add(am.id);
+          associated.push(am);
+        }
+      }
+    }
+    if (associated.length > 0) {
+      // Append associated memories after direct matches
+      associated.sort((a, b) => (b.importance || 0) - (a.importance || 0));
+      result.push(...associated.slice(0, Math.ceil(limit * 0.5)));
+    }
+  } else if (q.userId && result.length === 1) {
+    // Single result: still record it for future co-retrieval opportunities
+    // (no pairwise to strengthen, but we can use this info later)
+  }
+
+  // Mark as retrieved (including associated ones)
   const now = new Date().toISOString();
   const store = getMemoryStore();
   for (const m of result) {

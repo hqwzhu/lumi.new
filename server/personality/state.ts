@@ -212,6 +212,13 @@ export function formatEmotionalStateForPrompt(state: EmotionalState): string {
   }
   if (state.intimacy > 0.6) {
     lines.push('- We have shared many moments together — I feel a deep familiarity.');
+    lines.push('- I may spontaneously recall past shared experiences.');
+  }
+  if (state.intimacy > 0.4 && state.initiative > 0.4) {
+    lines.push('- I feel comfortable sharing observations and suggestions unprompted.');
+  }
+  if (state.intimacy < 0.15) {
+    lines.push('- We are still getting to know each other — I will be attentive but not presumptuous.');
   }
   if (state.curiosity > 0.8) {
     lines.push('- I am very curious — I will ask follow-up questions to explore the topic further.');
