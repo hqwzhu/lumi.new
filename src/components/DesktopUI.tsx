@@ -33,7 +33,8 @@ import {
   Box,
   Wrench,
   MessageSquare,
-  Crown
+  Crown,
+  GitBranch,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -46,6 +47,7 @@ import { ToolPanel } from './ToolPanel';
 import { GitHubMCPBrowser } from './GitHubMCPBrowser';
 import { SkillCenter } from './SkillCenter';
 import { PersonalityDashboard } from './PersonalityDashboard';
+import { PersonalityEvolution } from './PersonalityEvolution';
 import { NotificationCenter } from './NotificationCenter';
 import { TokenDashboard } from './TokenDashboard';
 import { SubscriptionPanel } from './SubscriptionPanel';
@@ -747,6 +749,7 @@ export function DesktopUI({
     { id: 'tools', labelKey: 'tools', icon: <Wrench size={24} />, colorClass: 'from-amber-500 to-orange-600', windowId: 'tools' },
     { id: 'github-mcp', labelKey: 'githubMCP', icon: <Globe size={24} />, colorClass: 'from-purple-500 to-violet-600', windowId: 'github-mcp' },
     { id: 'persona-stats', labelKey: 'personaStats', icon: <Activity size={24} />, colorClass: 'from-violet-500 to-fuchsia-600', windowId: 'persona-stats' },
+    { id: 'personality-evolution', labelKey: 'evolutionTitle', icon: <GitBranch size={24} />, colorClass: 'from-fuchsia-500 to-pink-600', windowId: 'personality-evolution' },
     { id: 'devices', labelKey: 'deviceMesh', icon: <Wifi size={24} />, colorClass: 'from-cyan-500 to-blue-600', windowId: 'devices' },
     { id: 'skills', labelKey: 'skills', icon: <Sparkles size={24} />, colorClass: 'from-emerald-500 to-teal-600', windowId: 'skills' },
     { id: 'subscription', labelKey: 'subscription', icon: <Crown size={24} />, colorClass: 'from-amber-400 to-yellow-600', windowId: 'subscription' },
@@ -1072,6 +1075,7 @@ export function DesktopUI({
     if (windowId === 'kernel') return { w: '1050px', h: '720px' };
     if (windowId === 'personality') return { w: '1050px', h: '720px' };
     if (windowId === 'persona-stats') return { w: '1050px', h: '720px' };
+    if (windowId === 'personality-evolution') return { w: '1100px', h: '750px' };
     if (windowId === 'generate') return { w: '1050px', h: '720px' };
     if (windowId === 'music') return { w: '850px', h: '620px' };
     if (windowId === 'tools') return { w: '850px', h: '620px' };
@@ -1782,6 +1786,8 @@ export function DesktopUI({
                     <GitHubMCPBrowser t={t} />
                   ) : windowId === 'persona-stats' ? (
                     <PersonalityDashboard />
+                  ) : windowId === 'personality-evolution' ? (
+                    <PersonalityEvolution personalityId={personalityId} />
                   ) : windowId === 'notifications' ? (
                     <NotificationCenter />
                   ) : windowId === 'devices' ? (

@@ -121,7 +121,7 @@ function decayAssociations(userId: string): void {
 }
 
 /** Get memories strongly associated with a given memory ID */
-function getAssociatedMemories(memoryId: string, userId: string, threshold: number = ASSOCIATION_THRESHOLD): Memory[] {
+export function getAssociatedMemories(memoryId: string, userId: string, threshold: number = ASSOCIATION_THRESHOLD): Memory[] {
   const userMap = coRetrievalMap.get(userId);
   if (!userMap) return [];
   const assocMap = userMap.get(memoryId);

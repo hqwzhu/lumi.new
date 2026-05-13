@@ -127,6 +127,7 @@ class PersonalityRegistry {
       version: step.version,
       timestamp: step.timestamp,
       trigger: step.trigger,
+      ownerProfile: step.ownerProfile,
       mutations: step.mutations,
       narrative: step.narrative,
     });

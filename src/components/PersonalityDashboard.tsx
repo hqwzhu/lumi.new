@@ -27,6 +27,65 @@ const TYPE_COLORS: Record<string, string> = {
   knowledge: 'bg-emerald-500',
 };
 
+function MemoryNarrativeSection() {
+  const [topic, setTopic] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ narrative: string; sourceMemoryIds: string[]; memoryChain?: any[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async () => {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/memory/narrative?topic=${encodeURIComponent(topic)}&limit=10`);
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const data = await res.json();
+      setResult(data);
+      if (!data.narrative) setError('No memories found for this topic.');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-5 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+      <h3 className="text-[10px] font-black uppercase text-white/30 tracking-wider flex items-center gap-2">
+        <GitBranch size={12} /> Memory Narrative
+      </h3>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Enter a topic to weave memories..."
+          value={topic}
+          onChange={e => setTopic(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') generate(); }}
+          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white/80 placeholder:text-white/20 outline-none focus:border-violet-500/50"
+        />
+        <button
+          onClick={generate}
+          disabled={loading || !topic.trim()}
+          className="px-4 py-2 bg-violet-500/20 border border-violet-500/30 rounded-xl text-[10px] font-black uppercase text-violet-400 hover:bg-violet-500/30 disabled:opacity-30 transition-all whitespace-nowrap"
+        >
+          {loading ? 'Weaving...' : 'Weave'}
+        </button>
+      </div>
+      {error && <p className="text-[10px] text-red-400">{error}</p>}
+      {result?.narrative && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+          <p className="text-xs text-white/70 leading-relaxed italic">{result.narrative}</p>
+          <div className="flex items-center gap-2 text-[8px] text-white/30 font-mono">
+            <span>Source:</span>
+            <span>{result.sourceMemoryIds.length} memories</span>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
 export function PersonalityDashboard() {
   const { personalityId } = useApp();
   const [stats, setStats] = useState<PersonalityStats | null>(null);
@@ -211,6 +270,9 @@ export function PersonalityDashboard() {
             <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-white/10 border border-white/20" /> Normal</span>
           </div>
         </div>
+
+        {/* Memory Narrative Chain */}
+        <MemoryNarrativeSection />
       </div>
     </div>
   );

@@ -8,7 +8,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
-import { queryMemories, addMemory, getDueReminders } from '../memory';
+import { queryMemories, addMemory, getDueReminders, buildNarrativeChain } from '../memory';
 import { runWithTools } from '../llm/adapter';
 import { toolRegistry, ToolRegistry } from '../tools/registry';
 import { personalityRegistry } from '../personality';
@@ -321,6 +321,42 @@ export function createLumiMcpServer(llmGetters?: {
         };
       } catch (err: any) {
         return { content: [{ type: 'text' as const, text: `Speech synthesis failed: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // Tool: memory narrative chain — weave related memories into a chronological story
+  mcp.registerTool(
+    'lumi_narrative',
+    {
+      description: '将分散的记忆片段按时间顺序编织成连贯的第一人称中文叙事。输入一个主题，Lumi 会搜索相关记忆并生成叙事故事。',
+      inputSchema: {
+        topic: z.string().describe('叙事主题，用于搜索相关记忆'),
+        limit: z.number().optional().default(10).describe('最大记忆数量'),
+      },
+    },
+    async ({ topic, limit }) => {
+      try {
+        const result = await buildNarrativeChain({
+          userId: 'mcp_remote',
+          topic,
+          limit,
+          getDeepSeek: g.getDeepSeek || (() => null),
+          getGemini: g.getGemini || (() => null),
+          getQwen: g.getQwen || (() => null),
+        });
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              narrative: result.narrative,
+              sourceMemoryIds: result.sourceMemoryIds,
+              chainLength: result.memoryChain.length,
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text' as const, text: `Narrative generation failed: ${err.message}` }], isError: true };
       }
     },
   );

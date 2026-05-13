@@ -9,6 +9,7 @@ import {
 } from "../memory";
 import { buildTree, moveNode, flattenTree, ensureBranch } from "../memory/tree";
 import { consolidateEpisodic, selfReflect, ConsolidationContext } from "../memory/consolidator";
+import { buildNarrativeChain } from "../memory/narrative";
 import { makeLLMCall } from "../llm/providers";
 
 export function mountMemoryRoutes(
@@ -463,6 +464,31 @@ Rules:
       );
       broadcastMemoryChange(mem.userId, 'updated', updated.id);
       res.json({ success: true, protected: true, memory: updated });
+    }
+  });
+
+  // Memory narrative chain — weave related memories into a chronological story
+  router.get("/memory/narrative", async (req, res) => {
+    try {
+      const token = req.cookies.token;
+      if (!token) return res.status(401).json({ error: "Unauthorized" });
+      const decoded: any = jwt.verify(token, jwtSecret);
+      const userId = decoded.uid;
+      const topic = req.query.topic as string;
+      if (!topic) return res.status(400).json({ error: "topic query parameter is required" });
+
+      const limit = parseInt(req.query.limit as string) || 10;
+      const result = await buildNarrativeChain({
+        userId,
+        topic,
+        limit,
+        getDeepSeek: llmGetters.getDeepSeek,
+        getGemini: llmGetters.getGemini,
+        getQwen: llmGetters.getQwen,
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 }

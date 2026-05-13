@@ -323,9 +323,17 @@ apiRouter.get("/personality/stats", (req, res) => {
 
 // Personality evolution — get evolution history for a personality
 apiRouter.get("/personality/:id/evolution", (req, res) => {
+  const config = personalityRegistry.get(req.params.id);
+  if (!config) return res.status(404).json({ error: "Personality not found" });
   const history = personalityRegistry.getEvolutionHistory(req.params.id);
   const evolutionConfig = personalityRegistry.getEvolutionConfig(req.params.id);
-  res.json({ personalityId: req.params.id, evolutionConfig, history });
+  res.json({
+    personalityId: req.params.id,
+    currentVector: config.personalityVector || null,
+    version: config.version,
+    evolutionConfig,
+    history,
+  });
 });
 
 // Personality evolution — manually trigger evolution for a personality
