@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ShoppingBag, Cpu, Download, Trash2, Power, PowerOff, RefreshCw, Star, Wrench, CheckCircle, Globe, Search, Zap, Tag, ChevronDown, Upload } from 'lucide-react';
+import { Sparkles, ShoppingBag, Cpu, Download, Trash2, Power, PowerOff, RefreshCw, Star, Wrench, CheckCircle, Globe, Search, Zap, Tag, ChevronDown, Upload, Palette, Terminal, Monitor, Film, Key } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { toast } from 'sonner';
@@ -19,6 +19,23 @@ const ICON_CLASSES: Record<string, string> = {
   Link: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
   Image: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
   FileText: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  Palette: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+  Sparkles: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  Terminal: 'bg-green-500/10 text-green-400 border-green-500/20',
+  Monitor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  Search: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  Film: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+};
+
+const ICON_COMPONENTS: Record<string, React.ReactNode> = {
+  Globe: <Globe size={18} />,
+  Sparkles: <Sparkles size={18} />,
+  Terminal: <Terminal size={18} />,
+  Monitor: <Monitor size={18} />,
+  Search: <Search size={18} />,
+  Palette: <Palette size={18} />,
+  Film: <Film size={18} />,
+  Zap: <Zap size={18} />,
 };
 
 interface MarketplaceSkill {
@@ -26,6 +43,8 @@ interface MarketplaceSkill {
   downloads: number; rating: number; category: string; icon: string;
   installSource?: 'bundled' | 'community'; installPath?: string; installed: boolean;
   version?: string; toolCount?: number;
+  requiresApiKey?: boolean; apiKeyEnv?: string; apiKeyUrl?: string;
+  requiresSetup?: boolean; setupNote?: string;
 }
 
 interface InstalledSkill {
@@ -292,21 +311,47 @@ export function SkillCenter({ t }: { t: any }) {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${ICON_CLASSES[skill.icon] || 'bg-white/5 text-white/30 border-white/10'}`}>
-                          <Globe size={18} />
+                          {ICON_COMPONENTS[skill.icon] || <Zap size={18} />}
                         </div>
                         <div className="min-w-0">
                           <h4 className="font-bold text-white/90 text-sm">{skill.name}</h4>
                           <span className="text-[10px] text-white/30 font-mono">{t.version || 'v'} {skill.version || '1.0'} &middot; {skill.toolCount || 1} {t.toolsCount || 'tools'}</span>
                         </div>
                       </div>
-                      {skill.installed && (
-                        <span className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full text-[9px] font-bold uppercase text-green-400 shrink-0">
-                          <CheckCircle size={10} /> {t.installed || 'Installed'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {skill.requiresApiKey && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 rounded-full text-[8px] font-bold uppercase text-amber-400" title={`Requires ${skill.apiKeyEnv} API key`}>
+                            <Key size={8} /> API
+                          </span>
+                        )}
+                        {skill.requiresSetup && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-500/10 rounded-full text-[8px] font-bold uppercase text-purple-400" title={skill.setupNote || 'Requires manual setup'}>
+                            <Wrench size={8} /> Setup
+                          </span>
+                        )}
+                        {skill.installed && (
+                          <span className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full text-[9px] font-bold uppercase text-green-400">
+                            <CheckCircle size={10} /> {t.installed || 'Installed'}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <p className="text-xs text-white/50 leading-relaxed mb-4 line-clamp-2">{skill.description}</p>
+
+                    {/* Setup note */}
+                    {skill.requiresSetup && skill.setupNote && (
+                      <div className="mb-3 p-2 bg-purple-500/5 border border-purple-500/10 rounded-xl">
+                        <p className="text-[9px] text-purple-300/70 leading-relaxed">{skill.setupNote}</p>
+                      </div>
+                    )}
+                    {skill.requiresApiKey && skill.apiKeyUrl && (
+                      <div className="mb-3 p-2 bg-amber-500/5 border border-amber-500/10 rounded-xl">
+                        <p className="text-[9px] text-amber-300/70 leading-relaxed">
+                          Requires <strong>{skill.apiKeyEnv}</strong> — <a href={skill.apiKeyUrl} target="_blank" rel="noopener" className="underline hover:text-amber-200">get API key</a>
+                        </p>
+                      </div>
+                    )}
 
                     {/* Tags */}
                     <div className="flex items-center gap-2 flex-wrap mb-4">

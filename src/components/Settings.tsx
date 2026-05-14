@@ -19,7 +19,8 @@ import {
   Mic,
   CheckCircle,
   AlertCircle,
-  LogOut
+  LogOut,
+  Terminal
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
@@ -629,7 +630,7 @@ function LLMProviderRow({ icon, label, providerId, models, placeholder, disabled
 }
 
 function ApiMatrixPage({ t, providerStatus }: { t: any; providerStatus: Record<string, { available: boolean; model: string }> }) {
-  const [tab, setTab] = useState<'llm' | 'voice'>('llm');
+  const [tab, setTab] = useState<'llm' | 'voice' | 'skills'>('llm');
 
   return (
     <div className="space-y-8">
@@ -651,6 +652,14 @@ function ApiMatrixPage({ t, providerStatus }: { t: any; providerStatus: Record<s
             }`}
           >
             {t.voiceServices || 'Voice Services'}
+          </button>
+          <button
+            onClick={() => setTab('skills')}
+            className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              tab === 'skills' ? 'bg-celestial-saturn text-black' : 'text-white/30 hover:text-white/60'
+            }`}
+          >
+            {t.skillServices || 'Skills & Tools'}
           </button>
         </div>
 
@@ -703,6 +712,32 @@ function ApiMatrixPage({ t, providerStatus }: { t: any; providerStatus: Record<s
                 models={['claude-sonnet-4-6', 'claude-opus-4-7', 'claude-haiku-4-5']}
                 placeholder="sk-ant-..."
                 serverKey="ANTHROPIC_API_KEY"
+                t={t}
+              />
+            </div>
+          </>
+        ) : tab === 'skills' ? (
+          <>
+            <p className="text-sm text-white/40 max-w-xl mb-6">
+              API keys for premium skill services. These enable creative generation, music, video, code sandboxing, and more.
+            </p>
+            <div className="grid grid-cols-1 gap-6">
+              <ApiKeyField
+                icon={<Sparkle size={18} className="text-amber-400" />}
+                label="MiniMax (Music + Video + TTS + Voice Clone)"
+                placeholder="Enter MiniMax API key..."
+                storageKey="lumi_minimax_key"
+                serverKey="MINIMAX_API_KEY"
+                hint="Powers music generation, video creation, image synthesis, text-to-speech, and voice cloning. Get your key at platform.minimaxi.com"
+                t={t}
+              />
+              <ApiKeyField
+                icon={<Terminal size={18} className="text-green-400" />}
+                label="E2B (Code Sandbox)"
+                placeholder="Enter E2B API key..."
+                storageKey="lumi_e2b_key"
+                serverKey="E2B_API_KEY"
+                hint="Secure cloud sandbox for executing Python and JavaScript code. Get your key at e2b.dev"
                 t={t}
               />
             </div>

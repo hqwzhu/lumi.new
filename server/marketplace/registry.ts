@@ -32,6 +32,11 @@ export interface MarketplaceSkill {
   installed: boolean;
   version?: string;
   toolCount?: number;
+  requiresApiKey?: boolean;
+  apiKeyEnv?: string;
+  apiKeyUrl?: string;
+  requiresSetup?: boolean;
+  setupNote?: string;
 }
 
 export interface SkillRating {
@@ -71,6 +76,11 @@ function discoverBundledSkills(): MarketplaceSkill[] {
         installed,
         version: pkg.version,
         toolCount: lumi.toolCount || 1,
+        requiresApiKey: lumi.requiresApiKey || false,
+        apiKeyEnv: lumi.apiKeyEnv,
+        apiKeyUrl: lumi.apiKeyUrl,
+        requiresSetup: lumi.requiresSetup || false,
+        setupNote: lumi.setupNote,
       });
     } catch { /* skip invalid packages */ }
   }
