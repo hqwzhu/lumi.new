@@ -125,8 +125,20 @@ SAFETY:
     { role: 'user', content: userText },
   ];
 
-  const provider = 'qwen' as const;
-  const voiceModel = 'qwen-plus';
+  const DEFAULT_MODELS: Record<string, string> = {
+    deepseek: 'deepseek-chat', qwen: 'qwen-plus', openai: 'gpt-4o',
+    gemini: 'gemini-2.0-flash', anthropic: 'claude-sonnet-4-6',
+  };
+  const userLLMPrefs = (() => {
+    try {
+      const db = readDB();
+      const setting = (db.settings || []).find((s: any) => s.key === `llm_prefs_${session.userId}`);
+      if (setting) return JSON.parse(setting.value);
+    } catch {}
+    return { provider: '', models: {} };
+  })();
+  const provider = (userLLMPrefs.provider || 'deepseek') as 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen';
+  const voiceModel = (userLLMPrefs.models || {})[provider] || DEFAULT_MODELS[provider] || 'deepseek-chat';
 
   const maxIterations = personality.toolPolicy.maxIterations || 5;
 
