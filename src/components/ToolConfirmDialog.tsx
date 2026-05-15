@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ShieldAlert, Check, X, AlertTriangle } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -12,8 +13,8 @@ interface PendingConfirm {
 /**
  * Listens for agent:confirm_tool socket events and renders a modal dialog
  * asking the user to approve or deny tool execution.
- * Must receive the SAME socket instance used by the task handler,
- * since confirm_tool events are emitted on the task socket specifically.
+ * Rendered via Portal to document.body so it works in wallpaper mode
+ * where the main container has pointer-events:none.
  */
 export function ToolConfirmDialog({ socket }: { socket: any }) {
   const [pending, setPending] = useState<PendingConfirm[]>([]);
@@ -36,14 +37,14 @@ export function ToolConfirmDialog({ socket }: { socket: any }) {
 
   const current = pending[0];
 
-  return (
+  const dialog = (
     <AnimatePresence>
       {current && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto"
           onClick={() => respond(current.correlationId, false)}
         >
           <motion.div
@@ -51,7 +52,7 @@ export function ToolConfirmDialog({ socket }: { socket: any }) {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             onClick={e => e.stopPropagation()}
-            className="bg-zinc-900 border border-yellow-500/30 rounded-[2rem] p-8 max-w-md w-full mx-4 shadow-2xl"
+            className="bg-zinc-900 border border-yellow-500/30 rounded-[2rem] p-8 max-w-md w-full mx-4 shadow-2xl pointer-events-auto"
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="p-3 bg-yellow-500/10 rounded-2xl">
@@ -102,4 +103,6 @@ export function ToolConfirmDialog({ socket }: { socket: any }) {
       )}
     </AnimatePresence>
   );
+
+  return createPortal(dialog, document.body);
 }
