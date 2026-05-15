@@ -2147,7 +2147,7 @@ export function DesktopUI({
         )}
       </AnimatePresence>
 
-      <ToolConfirmDialog socket={socket} />
+      <ToolConfirmDialog socket={socket} isWallpaperMode={isWallpaperMode} />
 
     </div>
   );

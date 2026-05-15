@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ShieldAlert, Check, X, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
+import { systemService } from '@/services/systemService';
 
 interface PendingConfirm {
   correlationId: string;
@@ -11,13 +12,25 @@ interface PendingConfirm {
 }
 
 /**
- * Listens for agent:confirm_tool socket events and renders a modal dialog
- * asking the user to approve or deny tool execution.
- * Rendered via Portal to document.body so it works in wallpaper mode
- * where the main container has pointer-events:none.
+ * Listens for agent:confirm_tool socket events and renders a modal dialog.
+ * Rendered via Portal to document.body. Temporarily exits wallpaper mode
+ * when a dialog appears, since set_ignore_cursor_events(true) makes the
+ * entire window click-through at the Win32 level.
  */
-export function ToolConfirmDialog({ socket }: { socket: any }) {
+export function ToolConfirmDialog({ socket, isWallpaperMode = false }: { socket: any; isWallpaperMode?: boolean }) {
   const [pending, setPending] = useState<PendingConfirm[]>([]);
+  const wasWallpaperRef = useRef(false);
+
+  // Temporarily exit wallpaper mode while confirm dialog is showing
+  useEffect(() => {
+    if (pending.length > 0 && isWallpaperMode) {
+      wasWallpaperRef.current = true;
+      systemService.setWallpaperMode(false);
+    } else if (pending.length === 0 && wasWallpaperRef.current) {
+      wasWallpaperRef.current = false;
+      systemService.setWallpaperMode(true);
+    }
+  }, [pending.length, isWallpaperMode]);
 
   useEffect(() => {
     if (!socket) return;
@@ -44,7 +57,7 @@ export function ToolConfirmDialog({ socket }: { socket: any }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto"
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => respond(current.correlationId, false)}
         >
           <motion.div
@@ -52,7 +65,7 @@ export function ToolConfirmDialog({ socket }: { socket: any }) {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             onClick={e => e.stopPropagation()}
-            className="bg-zinc-900 border border-yellow-500/30 rounded-[2rem] p-8 max-w-md w-full mx-4 shadow-2xl pointer-events-auto"
+            className="bg-zinc-900 border border-yellow-500/30 rounded-[2rem] p-8 max-w-md w-full mx-4 shadow-2xl"
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="p-3 bg-yellow-500/10 rounded-2xl">
