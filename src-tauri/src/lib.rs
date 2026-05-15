@@ -385,39 +385,33 @@ pub struct CaptureResult {
 
 #[tauri::command]
 fn get_active_window_info() -> ActiveWindowInfo {
+    let mut title = String::new();
+    let mut process_name = String::new();
+    let mut pid: u32 = 0;
+
     #[cfg(target_os = "windows")]
     {
-        // Native Win32 FFI — no PowerShell overhead
         extern "system" {
             fn GetForegroundWindow() -> isize;
             fn GetWindowTextW(hwnd: isize, lpString: *mut u16, nMaxCount: i32) -> i32;
             fn GetWindowThreadProcessId(hwnd: isize, lpdwProcessId: *mut u32) -> u32;
         }
-
         unsafe {
             let hwnd = GetForegroundWindow();
-            if hwnd == 0 {
-                return ActiveWindowInfo { title: String::new(), process_name: String::new(), pid: 0 };
+            if hwnd != 0 {
+                let mut buf: [u16; 512] = [0; 512];
+                let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 512);
+                title = String::from_utf16_lossy(&buf[..len as usize]);
+                GetWindowThreadProcessId(hwnd, &mut pid);
             }
-
-            let mut buf: [u16; 512] = [0; 512];
-            let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 512);
-            let title = String::from_utf16_lossy(&buf[..len as usize]);
-
-            let mut pid: u32 = 0;
-            GetWindowThreadProcessId(hwnd, &mut pid);
-
-            let process_name = if pid != 0 {
-                use sysinfo::System;
-                let sys = System::new_all();
-                sys.process(sysinfo::Pid::from(pid as usize))
-                    .map(|p| p.name().to_string_lossy().to_string())
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-
-            return ActiveWindowInfo { title, process_name, pid };
+        }
+        if pid != 0 {
+            use sysinfo::System;
+            let sys = System::new_all();
+            process_name = sys
+                .process(sysinfo::Pid::from(pid as usize))
+                .map(|p| p.name().to_string_lossy().to_string())
+                .unwrap_or_default();
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -428,11 +422,12 @@ fn get_active_window_info() -> ActiveWindowInfo {
         if let Ok(out) = output {
             let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if !name.is_empty() {
-                return ActiveWindowInfo { title: name.clone(), process_name: name, pid: 0 };
+                title = name.clone();
+                process_name = name;
             }
         }
     }
-    ActiveWindowInfo { title: String::new(), process_name: String::new(), pid: 0 }
+    ActiveWindowInfo { title, process_name, pid }
 }
 
 #[tauri::command]
@@ -519,7 +514,7 @@ fn get_idle_time() -> IdleInfo {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        IdleInfo { idle_ms: 0, idle_seconds: 0 }
+        return IdleInfo { idle_ms: 0, idle_seconds: 0 };
     }
     IdleInfo { idle_ms: 0, idle_seconds: 0 }
 }
@@ -570,7 +565,7 @@ Write-Output "$([Convert]::ToBase64String($bytes))|${w}|${h}"#
             .output();
         if let Ok(out) = output {
             let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if let Some(first_newline) = text.find('\n') {
+            if let Some(_first_newline) = text.find('\n') {
                 // PowerShell may add extra output before our Write-Output
                 let lines: Vec<&str> = text.lines().collect();
                 if let Some(last) = lines.last() {
