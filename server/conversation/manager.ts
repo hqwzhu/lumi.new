@@ -14,6 +14,10 @@ export interface Conversation {
   messageCount: number;
   lastActiveAt: string;
   createdAt: string;
+  /** Recent topic tags — tracked for cross-session continuity */
+  recentTopics?: string[];
+  /** ISO timestamp of the last topic change */
+  lastTopicChangeAt?: string;
 }
 
 export interface MessageRecord {
@@ -261,6 +265,101 @@ export function getConversationSummary(conversationId: string): string | null {
     parts.push('Earlier: ' + conv.summaryChain.join(' | '));
   }
   return parts.join('\n');
+}
+
+/**
+ * Track a topic for a conversation. Appends to recentTopics, keeping max 8 entries.
+ * If the same topic was already recent, it moves to the end (most recent).
+ */
+export function trackTopic(conversationId: string, topic: string): void {
+  const db = readDB();
+  if (!db.conversations) return;
+  const conv = db.conversations.find((c: Conversation) => c.id === conversationId);
+  if (!conv) return;
+
+  if (!conv.recentTopics) conv.recentTopics = [];
+  // Remove if already exists — re-insert at end so it's "most recent"
+  const idx = conv.recentTopics.indexOf(topic);
+  if (idx >= 0) conv.recentTopics.splice(idx, 1);
+  conv.recentTopics.push(topic);
+  // Keep max 8
+  if (conv.recentTopics.length > 8) conv.recentTopics.shift();
+  conv.lastTopicChangeAt = new Date().toISOString();
+  writeDB(db);
+}
+
+/**
+ * Extract likely topics from a user message using simple keyword extraction.
+ * Returns 1-3 topic strings, or empty array if nothing discernible.
+ */
+export function extractTopics(text: string): string[] {
+  const topics: string[] = [];
+  const lower = text.toLowerCase();
+
+  // Programming-related topics
+  const techPatterns: [RegExp, string][] = [
+    [/\b(rust|rustlang|cargo|borrow\s*checker|ownership|lifetime)\b/i, 'Rust'],
+    [/\b(python|py|pip|django|flask|fastapi|pytorch|numpy)\b/i, 'Python'],
+    [/\b(javascript|js|typescript|ts|react|vue|angular|node\.js|nodejs|npm)\b/i, 'JS/TS开发'],
+    [/\b(go|golang|goroutine)\b/i, 'Go'],
+    [/\b(java|spring|maven|gradle|kotlin)\b/i, 'Java'],
+    [/\b(c\+\+|cpp|cmake|unreal|ue5|ue4)\b/i, 'C++'],
+    [/\b(docker|kubernetes|k8s|container|pod)\b/i, '容器/Docker'],
+    [/\b(git|github|pr|pull\s*request|commit|branch|merge)\b/i, 'Git'],
+    [/\b(database|sql|mysql|postgres|mongodb|redis|db)\b/i, '数据库'],
+    [/\b(api|rest|graphql|grpc|endpoint|http)\b/i, 'API开发'],
+    [/\b(ai|llm|gpt|model|training|inference|embedding|transformer|deepseek|qwen)\b/i, 'AI/LLM'],
+    [/\b(debug|bug|error|crash|fix|修复|调试)\b/i, '调试/Debug'],
+    [/\b(test|testing|unit\s*test|测试|coverage)\b/i, '测试'],
+    [/\b(deploy|deployment|ci|cd|pipeline|release)\b/i, '部署'],
+  ];
+
+  for (const [pattern, label] of techPatterns) {
+    if (pattern.test(lower)) {
+      topics.push(label);
+    }
+  }
+
+  // Non-tech topics
+  if (/(天气|weather|温度|temperature|下雨|晴天)/i.test(lower)) topics.push('天气');
+  if (/(新闻|news|发生|最新)/i.test(lower)) topics.push('时事');
+  if (/(音乐|music|song|歌|播放|听)/i.test(lower)) topics.push('音乐');
+  if (/(游戏|game|玩|gaming|steam)/i.test(lower)) topics.push('游戏');
+  if (/(电影|movie|film|视频|video|看片)/i.test(lower)) topics.push('影视');
+  if (/(文件|file|folder|目录|路径|打开|保存)/i.test(lower)) topics.push('文件操作');
+  if (/(设置|setting|配置|config|开关|toggle)/i.test(lower)) topics.push('系统设置');
+  if (/(桌面|desktop|app|application|应用|程序|软件)/i.test(lower)) topics.push('桌面应用');
+  if (/(邮件|email|mail|消息|message)/i.test(lower)) topics.push('通讯');
+  if (/(文档|document|doc|ppt|excel|word|写作|write|笔记|note)/i.test(lower)) topics.push('文档/写作');
+
+  // Deduplicate and limit
+  return [...new Set(topics)].slice(0, 3);
+}
+
+/**
+ * Build a topic continuity block for the system prompt.
+ * Returns null if no recent topics exist.
+ */
+export function getTopicContext(conversationId: string): string | null {
+  const db = readDB();
+  if (!db.conversations) return null;
+  const conv = db.conversations.find((c: Conversation) => c.id === conversationId);
+  if (!conv?.recentTopics || conv.recentTopics.length === 0) return null;
+
+  const topics = conv.recentTopics.slice(-5);
+  const lastChange = conv.lastTopicChangeAt
+    ? Math.round((Date.now() - new Date(conv.lastTopicChangeAt).getTime()) / (1000 * 60))
+    : null;
+
+  const lines: string[] = [];
+  lines.push('\n## Conversation Topics');
+  lines.push(`Recent topics discussed: ${topics.join(' → ')}.`);
+  if (lastChange !== null && lastChange > 0) {
+    lines.push(`Last topic change was ${lastChange} minutes ago.`);
+  }
+  lines.push('If the user references "that thing we discussed" or returns to a prior topic, check these recent topics for context.');
+
+  return lines.join('\n');
 }
 
 export function getUnclosedConversation(userId: string): Conversation | null {

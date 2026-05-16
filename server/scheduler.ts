@@ -3,7 +3,7 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import { queryMemories, getDueReminders, fireReminder, runBehavioralAnalysis, decayMemories, dynamicDecayMemories, promoteMemories, getUnconsolidatedEpisodic, autoMarkCrossAgentShare } from './memory';
-import { consolidateEpisodic, selfReflect, ConsolidationContext } from './memory/consolidator';
+import { consolidateEpisodic, selfReflect, consolidateNarrative, ConsolidationContext } from './memory/consolidator';
 import { buildTree, ensureBranch, moveNode } from './memory/tree';
 import { makeLLMCall } from './llm/providers';
 import { getWeatherBrief, getTimeGreeting } from './services/weather';
@@ -17,6 +17,7 @@ import { loadEmotionalState } from './personality/state';
 import { getSameMonthDayPast, getMonthDayFromISO } from './time/utils';
 import { detectSpatiotemporalPatterns } from './time/spatiotemporal';
 import { cleanupEphemeralAgents } from './agents/orchestrator';
+import { getRecentActivity } from './context/activity_stream';
 
 interface ScheduledTask {
   id: string;
@@ -290,47 +291,148 @@ export function registerScheduledTasks(
     },
   });
 
-  // Morning briefing with weather
+  // Narrative memory consolidation (every 6h) — weaves episodic memories into storylines
+  scheduler.register({
+    id: 'narrative_consolidation',
+    cron: 'every_6h',
+    lastRun: null,
+    handler: async () => {
+      const userIds = getAllUserIds();
+      const messages: string[] = [];
+
+      for (const userId of userIds) {
+        try {
+          const ctx: ConsolidationContext = { userId, provider: 'qwen', model: 'qwen-plus' };
+          const result = await consolidateNarrative(
+            ctx, 7, 6,
+            getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+          );
+          if (result) {
+            const title = result.content.match(/^\[(.+?)\]/)?.[1] || '叙事记忆';
+            messages.push(`[${userId}] 记忆叙事已生成: "${title}"`);
+          }
+        } catch (err: any) {
+          console.warn(`[NarrativeConsolidation] Failed for ${userId}:`, err.message);
+        }
+      }
+
+      return messages.length > 0
+        ? `叙事记忆更新 — ${messages.join('\n')}`
+        : null;
+    },
+  });
+
+  // Morning briefing with weather — LLM-generated for natural warmth
   scheduler.register({
     id: 'daily_summary',
     cron: 'daily_9am',
     lastRun: null,
     handler: async () => {
-      const greeting = getTimeGreeting();
-      const weather = await getWeatherBrief();
-      const pending = getDueReminders();
-      const recentMemories = queryMemories({ limit: 5 });
+      const userIds = getAllUserIds();
+      const messages: string[] = [];
 
-      const parts: string[] = [`${greeting}!`];
-      if (weather) parts.push(weather);
-      if (pending.length > 0) parts.push(`${pending.length} reminder${pending.length > 1 ? 's' : ''} pending: ${pending.map(r => r.content).join(' | ')}`);
-      if (recentMemories.length > 0) {
-        const tiers = [...new Set(recentMemories.map(m => m.tier))];
-        parts.push(`${recentMemories.length} memories across ${tiers.length} tiers`);
+      for (const userId of userIds) {
+        try {
+          const greeting = getTimeGreeting();
+          const weather = await getWeatherBrief();
+          const pending = getDueReminders();
+          const recentMemories = queryMemories({ userId, limit: 3, minConfidence: 0.4 });
+
+          const contextParts: string[] = [];
+          if (weather) contextParts.push(`天气: ${weather}`);
+          if (pending.length > 0) contextParts.push(`${pending.length} 条待办: ${pending.map(r => r.content).join('; ')}`);
+          if (recentMemories.length > 0) {
+            contextParts.push(`近期记忆: ${recentMemories.map(m => m.content.slice(0, 80)).join('; ')}`);
+          }
+
+          const morningPrompt = `You are Lumi. Generate a warm, natural morning greeting in Chinese (under 80 characters). Reference the context naturally — don't list facts, weave them in like a thoughtful companion.
+
+Time greeting base: ${greeting}
+Context: ${contextParts.join(' | ') || 'No special context'}
+
+Output ONLY the greeting — no preamble, no labels.`;
+
+          try {
+            const result = await makeLLMCall(
+              [{ role: 'user', content: morningPrompt }],
+              [],
+              { provider: 'qwen', model: 'qwen-turbo', maxTokens: 120 },
+              getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+            );
+            const llmGreeting = result.text?.trim();
+            if (llmGreeting && llmGreeting.length > 3) {
+              messages.push(`[${userId}] ${llmGreeting}`);
+            } else {
+              // Fallback to template
+              const parts: string[] = [`${greeting}!`];
+              if (weather) parts.push(weather);
+              if (pending.length > 0) parts.push(`${pending.length} 条待办`);
+              messages.push(`[${userId}] ${parts.join(' - ')}`);
+            }
+          } catch {
+            const parts: string[] = [`${greeting}!`];
+            if (weather) parts.push(weather);
+            messages.push(`[${userId}] ${parts.join(' - ')}`);
+          }
+        } catch (err: any) {
+          console.warn(`[DailySummary] Failed for ${userId}:`, err.message);
+        }
       }
-      return parts.join(' - ');
+
+      return messages.length > 0 ? messages.join('\n') : null;
     },
   });
 
-  // Evening wrap-up
+  // Evening wrap-up — LLM-generated with reflection
   scheduler.register({
     id: 'evening_wrapup',
     cron: 'evening_8pm',
     lastRun: null,
     handler: async () => {
-      const pending = getDueReminders();
-      const recentMemories = queryMemories({ limit: 5 });
-      const parts: string[] = [];
+      const userIds = getAllUserIds();
+      const messages: string[] = [];
 
-      if (pending.length > 0) {
-        parts.push(`${pending.length} reminder${pending.length > 1 ? 's' : ''} still pending`);
+      for (const userId of userIds) {
+        try {
+          const pending = getDueReminders();
+          const recentMemories = queryMemories({ userId, limit: 3, minConfidence: 0.4 });
+
+          const contextParts: string[] = [];
+          if (pending.length > 0) contextParts.push(`${pending.length} 条待办仍然未完成`);
+          if (recentMemories.length > 0) {
+            const habits = recentMemories.filter(m => m.type === 'habit');
+            if (habits.length > 0) contextParts.push(`今天注意到: ${habits[0].content.slice(0, 100)}`);
+          }
+
+          if (contextParts.length === 0) continue;
+
+          const eveningPrompt = `You are Lumi. Generate a brief, gentle evening reflection in Chinese (under 60 characters). Be warm and thoughtful, not report-like.
+
+Context: ${contextParts.join(' | ')}
+
+Output ONLY the reflection — no preamble, no labels.`;
+
+          try {
+            const result = await makeLLMCall(
+              [{ role: 'user', content: eveningPrompt }],
+              [],
+              { provider: 'qwen', model: 'qwen-turbo', maxTokens: 100 },
+              getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+            );
+            const llmReflection = result.text?.trim();
+            if (llmReflection && llmReflection.length > 3) {
+              messages.push(`[${userId}] ${llmReflection}`);
+            }
+          } catch {
+            // Simple fallback
+            messages.push(`[${userId}] 晚间回顾 — ${contextParts.join(' - ')}`);
+          }
+        } catch (err: any) {
+          console.warn(`[EveningWrapup] Failed for ${userId}:`, err.message);
+        }
       }
-      if (recentMemories.length > 0) {
-        const habits = recentMemories.filter(m => m.type === 'habit');
-        if (habits.length > 0) parts.push(`Today I noticed: ${habits[0].content.slice(0, 100)}`);
-      }
-      if (parts.length === 0) return null;
-      return `Evening check-in - ${parts.join(' - ')}`;
+
+      return messages.length > 0 ? messages.join('\n') : null;
     },
   });
 
@@ -853,6 +955,104 @@ Output ONLY the check-in message — no preamble, no labels.`;
               // LLM check-in failed — use a simple template
               messages.push(`[${userId}] 注意到一些变化 — ${anomalySignals.join('；')}`);
             }
+          }
+
+          // 4. Predictive assistant — anticipate what the user might do next based on time-of-day + history
+          try {
+            const currentHour = now.getHours();
+            const currentDay = now.getDay(); // 0=Sun, 6=Sat
+            const isWeekday = currentDay >= 1 && currentDay <= 5;
+
+            // Check behavioral patterns for active hour prediction
+            const behaviorMemories = queryMemories({
+              userId,
+              type: 'habit',
+              limit: 10,
+              minConfidence: 0.3,
+            });
+            const activeHourPattern = behaviorMemories.find(
+              m => m.type === 'habit' && m.content.includes('most active during hours'),
+            );
+            const toolPattern = behaviorMemories.find(
+              m => m.type === 'habit' && m.content.includes('Most used tools'),
+            );
+
+            // Check recent activity for window context
+            const recentActivity = getRecentActivity(userId, 20);
+            const recentWindows = recentActivity
+              .filter(e => e.type === 'window_changed' && e.data?.process_name)
+              .slice(0, 5);
+            const appNames = [...new Set(recentWindows.map(e => e.data!.process_name as string))];
+
+            // Check if current time aligns with known active hours
+            let hourContext = '';
+            if (activeHourPattern) {
+              const hourMatch = activeHourPattern.content.match(/hours (\d+):00 and (\d+):00/);
+              if (hourMatch) {
+                const h1 = parseInt(hourMatch[1]);
+                const h2 = parseInt(hourMatch[2]);
+                const nearPeak = Math.abs(currentHour - h1) <= 1 || Math.abs(currentHour - h2) <= 1;
+                if (nearPeak) {
+                  hourContext = `当前时间接近用户历史活跃时段(${h1}:00-${h2}:00)`;
+                } else if (isWeekday && currentHour >= 8 && currentHour <= 10) {
+                  hourContext = '工作日上午，用户可能准备开始一天的工作';
+                } else if (isWeekday && currentHour >= 13 && currentHour <= 14) {
+                  hourContext = '午后时段，用户可能刚用完午餐回到工位';
+                } else if (currentHour >= 21 && currentHour <= 23) {
+                  hourContext = '晚间时段，用户可能在放松或个人学习';
+                }
+              }
+            }
+
+            // Build prediction context
+            const predictionHints: string[] = [];
+            if (hourContext) predictionHints.push(hourContext);
+            if (appNames.length > 0) {
+              const appList = appNames.map(a => a.replace(/\.exe$/i, '')).join('、');
+              predictionHints.push(`用户最近在使用：${appList}`);
+            }
+            if (toolPattern) {
+              predictionHints.push(toolPattern.content);
+            }
+
+            if (predictionHints.length >= 1) {
+              const predictionPrompt = `You are Lumi, a proactive AI companion. Based on the user's patterns, generate a brief, natural predictive suggestion in Chinese (under 60 characters). Don't be pushy — be helpful and observant.
+
+Context hints:
+${predictionHints.join('\n')}
+
+Examples of good predictions:
+- "早上好，需要我帮你打开今天的项目吗？"
+- "这个时间你通常会检查代码，需要我帮忙吗？"
+- "你刚才打开了VS Code，需要我帮你回顾昨天的进度吗？"
+
+Output ONLY the prediction message — no preamble, no labels.`;
+
+              const predictionResult = await makeLLMCall(
+                [{ role: 'user', content: predictionPrompt }],
+                [],
+                { provider: 'qwen', model: 'qwen-plus', maxTokens: 100 },
+                getDeepSeek, getGemini, getOpenAI, getAnthropic, getQwen,
+              );
+              const prediction = predictionResult.text?.trim();
+              if (prediction && prediction.length > 5) {
+                messages.push(`[${userId}] 🔮 ${prediction}`);
+
+                const { addMemory } = await import('./memory');
+                addMemory({
+                  userId,
+                  type: 'fact',
+                  content: `[Predictive] ${prediction} (context: ${predictionHints.join('; ')})`,
+                  keywords: ['predictive_assistant', 'prediction', 'proactive'],
+                  confidence: 0.5,
+                  sourceInteractionId: 'predictive_lumi_scan_scheduler',
+                  agentId: undefined,
+                } as any, { tier: 'episodic', perspective: 'lumi_self', importance: 0.3 });
+              }
+            }
+          } catch (predErr: any) {
+            // Predictive assistant failure is non-critical
+            console.warn(`[PredictiveAssistant] Failed for ${userId}:`, predErr.message);
           }
         } catch (err: any) {
           console.warn(`[ProactiveScan] Failed for ${userId}:`, err.message);

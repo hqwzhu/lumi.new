@@ -3,8 +3,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 interface UseWakeWordOptions {
   /** Porcupine access key (free at https://picovoice.ai) */
   accessKey?: string;
-  /** Built-in keyword to detect. Default: "Porcupine" */
-  keyword?: 'Porcupine' | 'Computer' | 'Hey Google' | 'Alexa' | 'Jarvis';
+  /** Keyword to detect — built-in or custom (requires .ppn file at /porcupine/<keyword_lowercase>.ppn). Falls back to "Jarvis" if custom model missing. */
+  keyword?: string;
   /** Ref to the startCall function from useVoiceCall */
   startCallRef: React.MutableRefObject<((voiceId?: string, personalityId?: string, agentId?: string) => Promise<void>)>;
   /** Enable/disable wake word */
@@ -19,6 +19,10 @@ interface UseWakeWordOptions {
   agentId?: string;
   /** Called when wake word is detected (before startCall) */
   onDetection?: () => void;
+  /** If provided and returns true, skip starting a new call (e.g. already in a call) */
+  isCallActive?: () => boolean;
+  /** Called to interrupt an active call when wake word fires during one */
+  onInterrupt?: () => void;
 }
 
 interface UseWakeWordReturn {
@@ -42,6 +46,8 @@ export function useWakeWord({
   personalityId,
   agentId,
   onDetection,
+  isCallActive,
+  onInterrupt,
 }: UseWakeWordOptions): UseWakeWordReturn {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
@@ -97,24 +103,47 @@ export function useWakeWord({
         'Jarvis': BuiltInKeyword.Jarvis,
       };
 
-      const builtinKeyword = keywordMap[keyword];
-      if (builtinKeyword === undefined) {
-        setError(`Unknown keyword: ${keyword}`);
-        return;
-      }
+      const detectionCallback = (_detection: any) => {
+        setLastDetection(new Date().toISOString());
+        onDetection?.();
+        if (isCallActive?.()) {
+          onInterrupt?.();
+          return;
+        }
+        startCallRef.current?.(voiceId, personalityId, agentId);
+      };
 
-      // Use model from /public/porcupine_params.pv served by Vite
-      const engine = await Porcupine.create(
-        accessKey,
-        { builtin: builtinKeyword, sensitivity },
-        (_detection) => {
-          // Wake word detected!
-          setLastDetection(new Date().toISOString());
-          onDetection?.();
-          startCallRef.current?.(voiceId, personalityId, agentId);
-        },
-        { publicPath: '/porcupine_params.pv' },
-      );
+      let engine: any;
+      const builtinKeyword = keywordMap[keyword];
+
+      if (builtinKeyword) {
+        engine = await Porcupine.create(
+          accessKey,
+          { builtin: builtinKeyword, sensitivity },
+          detectionCallback,
+          { publicPath: '/porcupine_params.pv' },
+        );
+      } else {
+        // Custom keyword — try loading .ppn file, fall back to Jarvis
+        const safeName = keyword.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const customPath = `/porcupine/${safeName}.ppn`;
+        try {
+          engine = await Porcupine.create(
+            accessKey,
+            { publicPath: customPath, label: keyword, sensitivity },
+            detectionCallback,
+            { publicPath: '/porcupine_params.pv' },
+          );
+        } catch {
+          console.warn(`[WakeWord] Custom keyword "${keyword}" (${customPath}) not found, falling back to "Jarvis". Place a .ppn file at public/porcupine/${safeName}.ppn`);
+          engine = await Porcupine.create(
+            accessKey,
+            { builtin: BuiltInKeyword.Jarvis, sensitivity },
+            detectionCallback,
+            { publicPath: '/porcupine_params.pv' },
+          );
+        }
+      }
 
       engineRef.current = engine;
       setIsSupported(true);

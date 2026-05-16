@@ -15,6 +15,14 @@ export interface ToolContext {
   toolPolicy?: import('../personality/types').ToolPolicy;
   /** Returns true if the task has been cancelled — checked between tool iterations */
   isCancelled?: () => boolean;
+  /** LLM provider getters for tools that need to call vision/text models internally */
+  llmGetters?: {
+    getDeepSeek: () => any;
+    getGemini: () => any;
+    getOpenAI?: () => any;
+    getAnthropic?: () => any;
+    getQwen?: () => any;
+  };
 }
 
 export interface ToolDefinition {

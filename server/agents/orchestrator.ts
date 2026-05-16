@@ -59,6 +59,7 @@ export interface OrchestrationContext {
   userId: string;
   personalityId?: string;
   availableAgentIds?: string[];
+  desktopRelay?: (toolName: string, args: Record<string, any>) => Promise<string>;
 }
 
 // ── Complexity classification ──
@@ -102,6 +103,30 @@ const DEEP_VERBS = [
   'build a', 'set up a', 'architect', 'refactor', 'migrate', 'bootstrap',
   '从零', 'from scratch', '整套', '完整的', '完整的',
   'end-to-end', 'full stack', 'pipeline', 'workflow',
+];
+
+// Team/orchestration triggers — user explicitly wants multi-agent work
+const TEAM_TRIGGERS = [
+  '组个团队', '组建团队', '创建团队', '组个队', '找几个', '组队',
+  'assemble a team', 'create a team', 'form a team', 'team up',
+  '多个agent', '多个智能体', 'multi-agent', 'crew',
+];
+
+// Tool-requiring action verbs: user wants Lumi to DO something with tools.
+// These imply at least moderate complexity — dispatch to worker for execution.
+const ACTION_VERBS = [
+  '做', '帮我做', '制作', '创建', '生成', '写', '编写', '画', '绘制',
+  '打开', '启动', '运行', '执行', '关闭', '停止',
+  '搜索', '查', '查找', '找', '下载', '安装', '部署',
+  '删除', '移除', '清理', '整理',
+  '发送', '发', '推送', '上传', '分享',
+  '翻译', '转换', '导出', '导入', '提取',
+  'create', 'make', 'generate', 'build', 'write', 'draw', 'design',
+  'open', 'start', 'launch', 'run', 'execute', 'close', 'stop',
+  'search', 'find', 'look up', 'download', 'install', 'deploy',
+  'delete', 'remove', 'clean', 'organize',
+  'send', 'push', 'upload', 'share',
+  'translate', 'convert', 'export', 'import', 'extract',
 ];
 
 // Pure Q&A / single-step verbs — these stay with Lumi directly
@@ -160,7 +185,15 @@ export function classifyComplexity(
   const deepHits = DEEP_VERBS.filter(s => lower.includes(s));
   if (deepHits.length >= 1) return 'complex';
 
-  // 6. Pure Q&A — single question, single domain → simple
+  // 6. Team/orchestration triggers → explicit multi-agent intent
+  const teamHits = TEAM_TRIGGERS.filter(s => lower.includes(s));
+  if (teamHits.length >= 1) return 'complex';
+
+  // 7. Action verbs: user wants something DONE with tools → at least moderate, dispatch to worker
+  const actionHits = ACTION_VERBS.filter(s => lower.includes(s));
+  if (actionHits.length >= 1) return 'moderate';
+
+  // 8. Pure Q&A — single question, single domain → simple
   const simpleHits = SIMPLE_VERBS.filter(s => lower.includes(s));
   const clauseCount = trimmed.split(/[.。!！?？\n]+/).filter(s => s.trim().length > 0).length;
   if (simpleHits.length >= 1 && clauseCount <= 1) return 'simple';
@@ -528,17 +561,26 @@ async function executeWorkerTask(
 
     try {
       const messages: NormalizedMessage[] = [{ role: 'user', content: workerPrompt }];
+      // Worker context: auto-approve confirm-level tools, desktop relay + LLM getters for vision tools
+      const workerContext = {
+        userId: context.userId,
+        requestConfirmation: async () => true,
+        desktopRelay: context.desktopRelay,
+        llmGetters,
+      };
       const result = await runWithTools(
         messages,
         toolRegistry,
-        { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 2000, userId: context.userId },
+        { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 4000, userId: context.userId },
         undefined,
-        isRetry ? 3 : 2, // More iterations on retry
+        isRetry ? 12 : 8,
         llmGetters.getDeepSeek,
         llmGetters.getGemini,
         llmGetters.getOpenAI,
         llmGetters.getAnthropic,
         llmGetters.getQwen,
+        undefined,
+        workerContext,
       );
 
       if (isRetry) {
@@ -683,7 +725,7 @@ export async function aggregateWithLLM(
     const result = await makeLLMCall(
       messages,
       [],
-      { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 2000 },
+      { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 4000 },
       llmGetters.getDeepSeek,
       llmGetters.getGemini,
       llmGetters.getOpenAI,
@@ -790,6 +832,57 @@ export function buildSkillDescription(
     subTaskDescriptions,
     `\nThis skill automates the full workflow. Input: task description. Output: aggregated result.`,
   ].join('\n');
+}
+
+// ── Shared orchestration pipeline (used by both chat.ts and voice.ts) ──
+
+export interface OrchestratedResult {
+  responseText: string;
+  workflowResult: WorkflowResult;
+}
+
+/**
+ * Run the full orchestrator pipeline: classify → decompose → match → execute → aggregate.
+ * Returns null if the task is too simple or no agents are available (caller should fall
+ * back to normal LLM path).
+ */
+export async function runOrchestratedTask(
+  text: string,
+  context: OrchestrationContext,
+  llmConfig: { provider: LLMProvider; model: string },
+  llmGetters: LlmGetters,
+  onProgress?: (message: string) => void,
+): Promise<OrchestratedResult | null> {
+  const complexity = classifyComplexity(text, context);
+  if (complexity !== 'complex' && complexity !== 'moderate') return null;
+
+  const db = readDB();
+  const availableAgents = (db.agents || []).filter((a: any) => a.status !== 'offline');
+  if (availableAgents.length < 1) return null;
+
+  const subTasks = await decomposeTask(text, llmConfig, context, llmGetters);
+  const capped = complexity === 'moderate'
+    ? subTasks.slice(0, Math.min(2, subTasks.length))
+    : subTasks;
+
+  onProgress?.(`[Orchestrator] Decomposed into ${capped.length} sub-tasks\n`);
+
+  const assignments = matchWorkers(capped, availableAgents);
+  onProgress?.(`[Orchestrator] Assigned to ${assignments.length} worker(s)\n`);
+
+  const workflowResult = await executeWorkflow(assignments, context, llmConfig, llmGetters, availableAgents);
+
+  const aggregated = complexity === 'moderate' && capped.length <= 2
+    ? workflowResult.aggregatedOutput
+    : await aggregateWithLLM(workflowResult, text, llmConfig, llmGetters);
+
+  // Record workflow pattern for future skill distillation
+  const skillTags = capped.map(s => s.requiredSkill);
+  recordWorkflowPattern(text, capped.length, skillTags, context.userId);
+
+  onProgress?.(`\n[Orchestrator] Workflow complete — ${workflowResult.totalAgentsUsed} agent(s) used\n`);
+
+  return { responseText: aggregated, workflowResult };
 }
 
 /** Clean up ephemeral agents older than the TTL (default 6 hours) */

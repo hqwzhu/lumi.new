@@ -23,7 +23,7 @@ export function LocalAgentSphere({
   t: any;
   onMessage?: (text: string) => void;
   sentiment?: 'default' | 'excited' | 'focused' | 'zen';
-  callState?: 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'queued';
+  callState?: 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'queued' | 'passive';
   audioLevel?: number;
   isMuted?: boolean;
   elapsedSeconds?: number;
@@ -362,7 +362,7 @@ export function LocalAgentSphere({
 
           <div className="flex flex-col">
             <span className="text-xs font-bold uppercase tracking-widest text-white/40">
-              {callState === 'listening' ? t.listening : callState === 'thinking' ? t.processing : callState === 'speaking' ? t.speaking : callState === 'idle' ? t.voiceInteract : callState.toUpperCase()}
+              {callState === 'listening' ? t.listening : callState === 'thinking' ? t.processing : callState === 'speaking' ? t.speaking : callState === 'idle' ? t.voiceInteract : callState === 'passive' ? 'Passive' : callState.toUpperCase()}
             </span>
             <span className="text-sm font-medium text-white/80">
               {callState === 'idle' ? (t.clickToStartSession || "Click to start voice session") : (t.sessionActiveClickToEnd || "Session active - Click to end")}

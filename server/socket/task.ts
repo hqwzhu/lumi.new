@@ -52,6 +52,7 @@ export function registerTaskHandler(
       {
         memories: relevantMemories.length > 0 ? relevantMemories : undefined,
         emotionalState,
+        userId: uid,
       },
     );
 
@@ -125,6 +126,22 @@ export function registerTaskHandler(
         return;
       }
 
+      // ── Desktop relay: must be defined before orchestrator path so OCR tools work ──
+      const desktopRelay = async (toolName: string, args: Record<string, any>): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const cid = crypto.randomUUID();
+          const timeout = setTimeout(() => {
+            reject(new Error(`Desktop tool "${toolName}" timed out (30s)`));
+          }, 30000);
+          socket.once(`tool:desktop_result:${cid}`, (data: { output?: string; error?: string }) => {
+            clearTimeout(timeout);
+            if (data.error) reject(new Error(data.error));
+            else resolve(data.output || '');
+          });
+          socket.emit('tool:desktop_exec', { correlationId: cid, name: toolName, arguments: args });
+        });
+      };
+
       // ── Orchestrator: decompose complex tasks into sub-tasks for worker agents ──
       let orchestratedText = '';
       if (cognition.intent.category === 'command' || cognition.intent.category === 'code' || cognition.intent.category === 'question') {
@@ -141,7 +158,7 @@ export function registerTaskHandler(
               const assignments = matchWorkers(subTasks, availableAgents);
               socket.emit("task:chunk", { text: `[Orchestrator] Assigned to ${assignments.length} worker(s)\n`, agentName: "Lumi" });
 
-              const workflowResult = await executeWorkflow(assignments, { userId: uid, personalityId: data.personalityId || 'lumi' }, { provider: activeProvider, model: activeModel }, llmGetters);
+              const workflowResult = await executeWorkflow(assignments, { userId: uid, personalityId: data.personalityId || 'lumi', desktopRelay }, { provider: activeProvider, model: activeModel }, llmGetters);
               const aggregated = await aggregateWithLLM(workflowResult, data.text, { provider: activeProvider, model: activeModel }, llmGetters);
               orchestratedText = aggregated;
 
@@ -190,21 +207,6 @@ export function registerTaskHandler(
         saveEmotionalState(uid, updatedState);
         return;
       }
-
-      const desktopRelay = async (toolName: string, args: Record<string, any>): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          const cid = crypto.randomUUID();
-          const timeout = setTimeout(() => {
-            reject(new Error(`Desktop tool "${toolName}" timed out (30s)`));
-          }, 30000);
-          socket.once(`tool:desktop_result:${cid}`, (data: { output?: string; error?: string }) => {
-            clearTimeout(timeout);
-            if (data.error) reject(new Error(data.error));
-            else resolve(data.output || '');
-          });
-          socket.emit('tool:desktop_exec', { correlationId: cid, name: toolName, arguments: args });
-        });
-      };
 
       const requestConfirmation = async (toolName: string, args: Record<string, any>): Promise<boolean> => {
         return new Promise((resolve) => {

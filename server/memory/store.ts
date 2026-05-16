@@ -281,7 +281,7 @@ function tokenize(text: string): string[] {
   return [...new Set(tokens)];
 }
 
-/** Score query against memory using language-aware token overlap */
+/** Score query against memory using language-aware token overlap, with recency bonus */
 function relevanceScore(query: string, memory: Memory): number {
   const qTokens = tokenize(query);
   if (qTokens.length === 0) return memory.confidence;
@@ -296,7 +296,15 @@ function relevanceScore(query: string, memory: Memory): number {
     }
     if (kwHit) hits += 1;
   }
-  return (hits / (qTokens.length * 2)) * memory.confidence;
+  let score = (hits / (qTokens.length * 2)) * memory.confidence;
+
+  // Temporal recency boost: recent memories get higher scores for cross-session continuity
+  const hoursAgo = (Date.now() - new Date(memory.updatedAt).getTime()) / (1000 * 60 * 60);
+  if (hoursAgo < 1) score *= 1.3;        // Last hour: strong boost
+  else if (hoursAgo < 24) score *= 1.15;  // Today: moderate boost
+  else if (hoursAgo < 72) score *= 1.05;  // Last 3 days: slight boost
+
+  return score;
 }
 
 export function queryMemories(q: MemoryQuery): Memory[] {

@@ -298,7 +298,7 @@ async function createPptHandler(args: Record<string, any>): Promise<string> {
   psLines.push(
     '',
     `$desktop = [Environment]::GetFolderPath('Desktop')`,
-    `$out = Join-Path $desktop '${safeName}.pptx'`,
+    `$out = Join-Path $desktop '${esc(safeName)}.pptx'`,
     `$pres.SaveAs($out)`,
     `$pres.Close()`,
     `$ppt.Quit()`,
@@ -309,13 +309,13 @@ async function createPptHandler(args: Record<string, any>): Promise<string> {
   fs.writeFileSync(tmpFile, '﻿' + psLines.join('\n'), 'utf-8');
 
   const { execSync } = await import('child_process');
+  // Use -File to avoid cmd.exe encoding corruption of UTF-8 content
   const result = execSync(
-    `powershell -NoProfile -ExecutionPolicy Bypass -Command "$o = & '${tmpFile}'; $o[-1]"`,
+    `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`,
     { timeout: 60000, encoding: 'utf-8' },
   );
-  fs.unlinkSync(tmpFile);
-  const outLines = result.trim().split(/\r?\n/);
-  const savedPath = outLines[outLines.length - 1].trim();
+  try { fs.unlinkSync(tmpFile); } catch {}
+  const savedPath = result.trim().split(/\r?\n/).pop()?.trim() || '';
 
   // Cleanup temp images (keep for a bit so PowerPoint can embed them)
   setTimeout(() => {

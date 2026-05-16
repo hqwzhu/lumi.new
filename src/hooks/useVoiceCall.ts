@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-export type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'queued';
+export type CallState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'queued' | 'passive';
 
 interface UseVoiceCallOptions {
   socket: any;
@@ -25,10 +25,15 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
   const pendingAudio = useRef<ArrayBuffer[]>([]);
   const isPlaying = useRef(false);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
+  const proactiveSource = useRef<AudioBufferSourceNode | null>(null);
+  const proactiveContext = useRef<AudioContext | null>(null);
   const audioQueueContext = useRef<AudioContext | null>(null);
   const callStartTime = useRef<number>(0);
   const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const passiveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevCallState = useRef<CallState>('idle');
 
   const updateAudioLevel = useCallback(() => {
     if (!analyser.current) return;
@@ -102,6 +107,24 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
   const isTtsPlaying = useRef(false);
   const isCallActive = useRef(false);
   const playbackStartTime = useRef(0);
+  // Streaming TTS: pre-buffer and cross-fade to eliminate gaps between chunks
+  const ttsContext = useRef<AudioContext | null>(null);
+  const ttsGainNode = useRef<GainNode | null>(null);
+  const nextStartTime = useRef(0);  // When the next chunk should start playing
+  const pendingDecodes = useRef(0);
+
+  const ensureTtsContext = useCallback(() => {
+    if (!ttsContext.current) {
+      ttsContext.current = new AudioContext();
+      ttsGainNode.current = ttsContext.current.createGain();
+      ttsGainNode.current.connect(ttsContext.current.destination);
+      if (ttsContext.current.state === 'suspended') {
+        ttsContext.current.resume();
+      }
+      nextStartTime.current = 0;
+    }
+    return ttsContext.current;
+  }, []);
 
   const stopAllPlayback = useCallback(() => {
     // Stop queue-based playback
@@ -122,10 +145,26 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
       } catch {}
       audioElementRef.current = null;
     }
+    // Stop proactive speech (greetings, check-ins) — now interruptible
+    if (proactiveSource.current) {
+      try { proactiveSource.current.stop(); } catch {}
+      proactiveSource.current = null;
+    }
+    if (proactiveContext.current) {
+      try { proactiveContext.current.close(); } catch {}
+      proactiveContext.current = null;
+    }
+    // Reset streaming TTS context
+    if (ttsContext.current) {
+      nextStartTime.current = 0;
+      if (ttsGainNode.current) {
+        ttsGainNode.current.gain.value = 1.0;
+      }
+    }
     isTtsPlaying.current = false;
   }, []);
 
-  const audioQueue = useRef<ArrayBuffer[]>([]);
+  const audioQueue = useRef<Array<ArrayBuffer | { buffer: ArrayBuffer; volumeGain?: number }>>([]);
 
   useEffect(() => {
     if (!socket) return;
@@ -137,53 +176,107 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
         speaking: 'speaking',
         queued: 'queued',
         idle: 'idle',
+        passive: 'passive',
       };
-      setCallState(map[data.status] || 'idle');
+      const next = map[data.status] || 'idle';
+      setCallState(prev => {
+        // Start passive timer when transitioning to listening (server waiting for speech)
+        if (next === 'listening' && prev !== 'listening') {
+          if (passiveTimer.current) { clearTimeout(passiveTimer.current); passiveTimer.current = null; }
+          if (disconnectTimer.current) { clearTimeout(disconnectTimer.current); disconnectTimer.current = null; }
+          const alwaysOn = localStorage.getItem('lumi_always_on_voice') === 'true';
+          const passiveDelay = alwaysOn ? 5 * 60 * 1000 : 15 * 1000;   // 5min in always-on, 15s default
+          passiveTimer.current = setTimeout(() => {
+            setCallState('passive');
+            if (!alwaysOn) {
+              disconnectTimer.current = setTimeout(() => {
+                endCall();
+              }, 5 * 60 * 1000);
+            }
+            // In always-on mode, never auto-disconnect — stay passive until user speaks or manually ends
+          }, passiveDelay);
+        }
+        prevCallState.current = next;
+        return next;
+      });
     });
 
-    const playAudioChunk = (buffer: ArrayBuffer) => {
+    /**
+     * Play a TTS audio chunk using Web Audio API with cross-fade scheduling.
+     * Pre-buffers: starts decoding while the previous chunk is still playing.
+     * Cross-fade: overlaps the last 50ms of previous audio with the first 50ms of next.
+     * VolumeGain: applies server-computed volume adaptation.
+     */
+    const playAudioChunk = (buffer: ArrayBuffer, volumeGain?: number) => {
       if (!isCallActive.current) return;
-      try {
-        isTtsPlaying.current = true;
-        // Keep mic enabled so user can barge-in while Lumi is speaking
+      const ctx = ensureTtsContext();
+      isTtsPlaying.current = true;
 
-        const blob = new Blob([buffer], { type: 'audio/mp3' });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+      ctx.decodeAudioData(buffer.slice(0), (decoded) => {
+        if (!isCallActive.current) return;
+        const now = ctx.currentTime;
 
-        const onDone = () => {
-          isTtsPlaying.current = false;
-          URL.revokeObjectURL(url);
-          audioElementRef.current = null;
-          // Play next queued chunk
+        // When to start this chunk: right after the previous one, minus cross-fade overlap
+        const crossFadeSec = 0.05; // 50ms cross-fade
+        const effectiveStart = nextStartTime.current > 0
+          ? Math.max(now, nextStartTime.current - crossFadeSec)
+          : now;
+        nextStartTime.current = effectiveStart + decoded.duration;
+
+        const source = ctx.createBufferSource();
+        source.buffer = decoded;
+
+        // Volume: apply server-computed gain, default 1.0
+        const gain = typeof volumeGain === 'number' ? Math.max(0.3, Math.min(1.5, volumeGain)) : 1.0;
+        if (ttsGainNode.current) {
+          ttsGainNode.current.gain.setValueAtTime(gain, effectiveStart);
+        }
+
+        source.connect(ttsGainNode.current!);
+
+        source.onended = () => {
+          // Check if more chunks are queued
           if (audioQueue.current.length > 0) {
             const next = audioQueue.current.shift()!;
-            playAudioChunk(next);
+            const nextGain = typeof next === 'object' ? (next as any).volumeGain : undefined;
+            const nextBuffer = typeof next === 'object' ? (next as any).buffer : next;
+            playAudioChunk(nextBuffer, nextGain);
+          } else {
+            isTtsPlaying.current = false;
           }
         };
 
-        audio.onended = () => onDone();
-        audio.onerror = () => onDone();
-
-        audioElementRef.current = audio;
-        audio.play();
-      } catch (err) {
-        console.error('[VoiceCall] Audio play failed:', err);
+        source.start(effectiveStart);
+      }, (err) => {
+        console.error('[VoiceCall] Decode failed:', err);
         isTtsPlaying.current = false;
-      }
+        if (audioQueue.current.length > 0) {
+          const next = audioQueue.current.shift()!;
+          const nextBuffer = typeof next === 'object' ? (next as any).buffer : next;
+          playAudioChunk(nextBuffer);
+        }
+      });
     };
 
-    socket.on('audio:response', (buffer: ArrayBuffer) => {
+    // Handle both old format (raw ArrayBuffer) and new format ({ buffer, volumeGain })
+    socket.on('audio:response', (data: ArrayBuffer | { buffer: ArrayBuffer; volumeGain?: number }) => {
       if (!isCallActive.current) { console.log('[VoiceCall] Ignoring audio:response, call ended'); return; }
-      if (audioElementRef.current && !audioElementRef.current.paused) {
+      const actualBuffer = data instanceof ArrayBuffer ? data : data.buffer;
+      const actualGain = data instanceof ArrayBuffer ? undefined : data.volumeGain;
+
+      if (isTtsPlaying.current) {
         // Currently playing — queue this chunk
-        audioQueue.current.push(buffer);
+        audioQueue.current.push(data instanceof ArrayBuffer ? data : { buffer: actualBuffer, volumeGain: actualGain });
         return;
       }
-      playAudioChunk(buffer);
+      playAudioChunk(actualBuffer, actualGain);
     });
 
     socket.on('audio:transcript', (data: { text: string; isFinal: boolean }) => {
+      // Reset passive timer — user is speaking
+      if (passiveTimer.current) { clearTimeout(passiveTimer.current); passiveTimer.current = null; }
+      if (disconnectTimer.current) { clearTimeout(disconnectTimer.current); disconnectTimer.current = null; }
+      if (prevCallState.current === 'passive') setCallState('listening');
       setTranscript(data.text);
       onTranscript?.(data.text, data.isFinal);
       if (data.isFinal) {
@@ -207,6 +300,45 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
       setCallState('listening');
     });
 
+    socket.on('audio:proactive_speak', (data: { audioBuffer: ArrayBuffer; text: string; timestamp: string }) => {
+      try {
+        // Stop any currently-playing proactive speech before starting new one
+        if (proactiveSource.current) {
+          try { proactiveSource.current.stop(); } catch {}
+          proactiveSource.current = null;
+        }
+        if (proactiveContext.current) {
+          try { proactiveContext.current.close(); } catch {}
+          proactiveContext.current = null;
+        }
+        const ctx = new AudioContext();
+        proactiveContext.current = ctx;
+        ctx.decodeAudioData(data.audioBuffer.slice(0), (decoded) => {
+          const source = ctx.createBufferSource();
+          proactiveSource.current = source;
+          source.buffer = decoded;
+          source.connect(ctx.destination);
+          source.onended = () => {
+            proactiveSource.current = null;
+            proactiveContext.current = null;
+            ctx.close();
+          };
+          source.start(0);
+        }, () => {
+          proactiveSource.current = null;
+          proactiveContext.current = null;
+          ctx.close();
+        });
+        // Briefly show speaking state for visual feedback
+        const prev = prevCallState.current;
+        setCallState('speaking');
+        const duration = Math.max(2, (data.audioBuffer.byteLength / 16000) * 1000 + 500);
+        setTimeout(() => { setCallState(prev); }, duration);
+      } catch (err) {
+        console.error('[ProactiveVoice] Playback failed:', err);
+      }
+    });
+
     return () => {
       socket.off('audio:status');
       socket.off('audio:response');
@@ -214,6 +346,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
       socket.off('agent:response');
       socket.off('audio:error');
       socket.off('audio:interrupt-ack');
+      socket.off('audio:proactive_speak');
     };
   }, [socket, onTranscript, onResponse, stopAllPlayback]);
 
@@ -312,8 +445,14 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     });
   }, []);
 
+  const clearPassiveTimers = useCallback(() => {
+    if (passiveTimer.current) { clearTimeout(passiveTimer.current); passiveTimer.current = null; }
+    if (disconnectTimer.current) { clearTimeout(disconnectTimer.current); disconnectTimer.current = null; }
+  }, []);
+
   const endCall = useCallback(() => {
     isCallActive.current = false;
+    clearPassiveTimers();
     socket?.emit('audio:stop');
     stopAllPlayback();
 
@@ -343,7 +482,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     cancelAnimationFrame(animationFrame.current);
     setCallState('idle');
     setAudioLevel(0);
-  }, [socket, stopAllPlayback]);
+  }, [socket, stopAllPlayback, clearPassiveTimers]);
 
   // Barge-in: detect user speaking over TTS via audio level
   useEffect(() => {
@@ -379,6 +518,20 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     }, 5000);
     return () => clearInterval(interval);
   }, [socket, callState]);
+
+  // Report ambient noise level to server every 5s for environment-aware behavior
+  useEffect(() => {
+    if (!socket || callState === 'idle') return;
+    const interval = setInterval(() => {
+      socket.emit('ambient:noise_level', {
+        rms: audioLevel,
+        isSpeaking: isTtsPlaying.current,
+        callState,
+        timestamp: new Date().toISOString(),
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [socket, callState, audioLevel]);
 
   return {
     callState,

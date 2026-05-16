@@ -13,7 +13,8 @@ interface VoiceCallButtonProps {
 }
 
 export function VoiceCallButton({ callState, audioLevel, onStart, onEnd, hasVoice = false, className = '' }: VoiceCallButtonProps) {
-  const isActive = callState !== 'idle';
+  const isActive = callState !== 'idle' && callState !== 'passive';
+  const isOn = callState !== 'idle';
 
   const stateConfig: Record<CallState, { icon: React.ReactNode; color: string; label: string }> = {
     idle: { icon: <Mic size={20} />, color: 'bg-white/5 text-white/40 border-white/10', label: 'Start' },
@@ -22,6 +23,7 @@ export function VoiceCallButton({ callState, audioLevel, onStart, onEnd, hasVoic
     thinking: { icon: <Loader2 size={20} className="animate-spin" />, color: 'bg-celestial-mars/10 text-celestial-mars border-celestial-mars/30', label: 'Thinking' },
     speaking: { icon: <Volume2 size={20} />, color: 'bg-celestial-glow/10 text-celestial-glow border-celestial-glow/30', label: 'Speaking' },
     queued: { icon: <Loader2 size={20} className="animate-spin" />, color: 'bg-purple-500/10 text-purple-400 border-purple-500/30', label: 'Queued' },
+    passive: { icon: <motion.div animate={{ opacity: [0.15, 0.35, 0.15] }} transition={{ duration: 3, repeat: Infinity }}><Mic size={20} /></motion.div>, color: 'bg-white/5 text-white/20 border-white/5', label: 'Passive' },
   };
 
   const config = stateConfig[callState];
@@ -50,19 +52,19 @@ export function VoiceCallButton({ callState, audioLevel, onStart, onEnd, hasVoic
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        onClick={isActive ? onEnd : onStart}
+        onClick={isOn ? onEnd : onStart}
         className={`relative w-12 h-12 rounded-2xl border flex items-center justify-center transition-all ${config.color} ${
-          isActive ? '' : (!hasVoice ? 'opacity-40 hover:opacity-100' : '')
+          isOn ? '' : (!hasVoice ? 'opacity-40 hover:opacity-100' : '')
         }`}
-        disabled={isActive && callState === 'connecting'}
-        title={isActive ? 'End call' : 'Start voice call'}
+        disabled={isOn && callState === 'connecting'}
+        title={isOn ? 'End call' : 'Start voice call'}
       >
         {config.icon}
       </motion.button>
 
       {/* State label */}
       <AnimatePresence>
-        {isActive && (
+        {isOn && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}

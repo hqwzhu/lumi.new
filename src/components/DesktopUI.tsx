@@ -904,9 +904,36 @@ export function DesktopUI({
   const wakeWord = useWakeWord({
     startCallRef,
     enabled: true,
-    keyword: 'Computer',
+    keyword: 'Hey Lumi',
     onDetection: () => sounds.playWakeChime(),
+    isCallActive: () => callState !== 'idle',
+    onInterrupt: () => interrupt(),
   });
+
+  // Idle→active return greeting — listens for ambient idle reports and fires on return
+  const lastIdleRef = useRef<number>(0);
+  const greetedRef = useRef(false);
+  const IDLE_AWAY_S = 5 * 60; // 5 min considered "away"
+  const RETURN_S = 30;        // < 30s considered "back"
+  useEffect(() => {
+    if (!socket) return;
+    const onIdleReport = (data: { idle_ms: number; idle_seconds: number }) => {
+      const idleS = data.idle_seconds ?? (data.idle_ms / 1000);
+      const wasAway = lastIdleRef.current > IDLE_AWAY_S;
+      const isBack = idleS < RETURN_S;
+      if (wasAway && isBack && !greetedRef.current) {
+        greetedRef.current = true;
+        // LLM-generated personalized greeting — server generates, TTS speaks
+        socket.emit('greeting:generate', { scene: 'return' });
+      }
+      if (idleS >= IDLE_AWAY_S) {
+        greetedRef.current = false;
+      }
+      lastIdleRef.current = idleS;
+    };
+    socket.on('ambient:idle_echo', onIdleReport);
+    return () => { socket.off('ambient:idle_echo', onIdleReport); };
+  }, [socket]);
 
   useEffect(() => {
     if (callError) toast.error(callError);
@@ -1725,6 +1752,7 @@ export function DesktopUI({
                 </button>
               </div>
             ) : (
+              <>
               <LocalAgentSphere
                 t={t}
                 sentiment={sphereSentiment}
@@ -1739,6 +1767,12 @@ export function DesktopUI({
                 onToggleMute={toggleMute}
                 onMessage={() => {}}
               />
+              {wakeWord.isListening && callState === 'idle' && (
+                <div className="mt-2 text-[10px] text-white/20 uppercase tracking-[0.25em] font-mono">
+                  Listening for &ldquo;Hey Lumi&rdquo;
+                </div>
+              )}
+              </>
             )}
 
             <div className={`flex flex-col items-center gap-4 mt-8 transition-all duration-1000 ${isWallpaperMode ? 'opacity-0 blur-sm pointer-events-none' : 'opacity-100'}`}>

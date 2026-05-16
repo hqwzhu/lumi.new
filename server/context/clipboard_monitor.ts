@@ -59,3 +59,47 @@ export function isURL(text: string): boolean {
 export function isErrorText(text: string): boolean {
   return /(error|exception|failed|refused|denied|timed?\s*out|cannot|unable|fail|错误|异常|失败)/i.test(text) && text.length > 30;
 }
+
+/** Check if text looks like a code snippet */
+export function isCodeSnippet(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 20 || t.length > 2000) return false;
+  const codeIndicators = [
+    /\b(function|const|let|var|class|import|export|return|async|await)\b/,
+    /\b(if|else|for|while|switch|case|try|catch|throw)\b/,
+    /\b(def|fn|mod|use|impl|struct|enum|pub|match)\b/,
+    /[{};]\s*$/m,
+    /^\s*(public|private|protected)\s/,
+    /=>\s*[{(\w]/,
+    /^\s*#include|^\s*package\s|^\s*import\s/,
+  ];
+  const hits = codeIndicators.filter(r => r.test(t)).length;
+  return hits >= 2;
+}
+
+/** Check if text looks like a file path */
+export function isFilePath(text: string): boolean {
+  const t = text.trim();
+  return /^([A-Za-z]:\\|\\\\(?:[^\\]+\\)|~\/|\/[a-z]+\/)/.test(t) && !/\n/.test(t) && t.length > 5 && t.length < 300;
+}
+
+/** Check if text looks like a stack trace */
+export function isStackTrace(text: string): boolean {
+  const t = text.trim();
+  return /\n\s+at\s+\S+\.\S+\s*\(.+\.(ts|tsx|js|jsx|py|rs|go|java):\d+:\d+\)/i.test(t)
+    || /\nTraceback\s/i.test(t)
+    || /^\s*File\s+"[^"]+",\s*line\s+\d+/im.test(t);
+}
+
+/** Classify clipboard content into categories */
+export function classifyClipboard(text: string): { type: 'url' | 'error' | 'code' | 'file_path' | 'stack_trace' | 'log' | 'none'; label: string } {
+  const t = text.trim();
+  if (!t) return { type: 'none', label: '' };
+  if (isURL(t)) return { type: 'url', label: 'copied a URL' };
+  if (isStackTrace(t)) return { type: 'stack_trace', label: 'copied a stack trace' };
+  if (isErrorText(t)) return { type: 'error', label: 'copied an error message' };
+  if (isCodeSnippet(t)) return { type: 'code', label: 'copied code' };
+  if (isFilePath(t)) return { type: 'file_path', label: 'copied a file path' };
+  if (t.length > 50 && /\d{4}-\d{2}-\d{2}.*(ERROR|WARN|INFO|DEBUG)/.test(t)) return { type: 'log', label: 'copied a log entry' };
+  return { type: 'none', label: '' };
+}

@@ -45,7 +45,7 @@ import { getMarketplaceSkills, getSkillById, searchSkills, getCategories, record
 import { scheduler, registerScheduledTasks } from "./server/scheduler";
 import { deviceRegistry } from "./server/devices";
 import { fuseContext, formatContextForPrompt, type RawModalityInput } from "./server/context/fusion";
-import { pushActivityEvent, setIdleState, getLastEvent } from "./server/context/activity_stream";
+import { pushActivityEvent, setIdleState, getIdleState, getLastEvent } from "./server/context/activity_stream";
 import { detectClipboardChange } from "./server/context/clipboard_monitor";
 import { processActivityEvent } from "./server/context/proactive_triggers";
 import { canOutputHolographic, textToHolographicOutput } from "./server/output/holographic";
@@ -2035,6 +2035,31 @@ io.on("connection", (socket) => {
     perceptionEvents.set(uid, events);
   });
 
+  // ── Idle background processing ──
+  async function triggerIdleProcessing(userId: string, io: any) {
+    // 1. Auto-summarize active conversation while user is away
+    try {
+      const db = readDB();
+      const activeConv = (db.conversations || []).find(
+        (c: any) => c.userId === userId && c.status === 'active'
+      );
+      if (activeConv && activeConv.messageCount >= 10 && !activeConv.summary) {
+        const { checkAutoSummary } = await import('./server/conversation/manager');
+        checkAutoSummary(activeConv.id);
+        console.log(`[IdleProcessing] Triggered auto-summary for conversation ${activeConv.id}`);
+      }
+    } catch (err: any) {
+      console.warn(`[IdleProcessing] Summarize failed: ${err.message}`);
+    }
+
+    // 2. Clean up ephemeral worker agents older than 6 hours
+    try {
+      const { cleanupEphemeralAgents } = await import('./server/agents/orchestrator');
+      const cleaned = cleanupEphemeralAgents(6);
+      if (cleaned > 0) console.log(`[IdleProcessing] Cleaned up ${cleaned} ephemeral agents`);
+    } catch {}
+  }
+
   // ── Ambient awareness handlers ──
   socket.on("ambient:window_update", (data: { title: string; process_name: string; pid: number }) => {
     const uid = getUserIdFromSocket(socket);
@@ -2058,13 +2083,35 @@ io.on("connection", (socket) => {
     const uid = getUserIdFromSocket(socket);
     if (!uid) return;
     const isIdle = data.idle_seconds > 60; // idle threshold: 1 minute
+    const wasIdle = getIdleState(uid).isIdle;
     setIdleState(uid, isIdle);
-    // Suppress/enable notifications based on idle state
-    if (isIdle) {
-      // User is away — don't send proactive notifications
-      // (proactive triggers handle the idle_greeting when user returns)
+    // Echo back to client so it can detect idle→active transitions for greetings
+    socket.emit("ambient:idle_echo", data);
+    if (isIdle && !wasIdle) {
+      // User just went idle — trigger background processing
+      // Fire-and-forget: don't block the socket handler
+      triggerIdleProcessing(uid, io).catch(err =>
+        console.warn(`[IdleProcessing] Background task failed for ${uid}:`, err.message)
+      );
     }
   });
+
+  // Track ambient noise level per-user for environment-aware proactive voice
+  const ambientNoise = new Map<string, { rms: number; lastUpdate: string }>();
+
+  socket.on("ambient:noise_level", (data: { rms: number; isSpeaking: boolean; callState: string; timestamp: string }) => {
+    const uid = getUserIdFromSocket(socket);
+    if (!uid) return;
+    ambientNoise.set(uid, { rms: data.rms, lastUpdate: data.timestamp });
+  });
+
+  // Expose for proactive voice gating
+  function getAmbientNoise(userId: string): number | null {
+    const info = ambientNoise.get(userId);
+    if (!info) return null;
+    if (Date.now() - new Date(info.lastUpdate).getTime() > 15000) return null; // stale
+    return info.rms;
+  }
 
   socket.on("ambient:clipboard_report", (data: { text: string }) => {
     const uid = getUserIdFromSocket(socket);

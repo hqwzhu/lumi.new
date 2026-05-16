@@ -31,6 +31,7 @@ export function createStream(
     smart_format: 'true',
     endpointing: '300',
     utterance_end_ms: '1000',
+    sentiment: 'true',
   });
 
   const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
@@ -59,10 +60,20 @@ export function createStream(
       if (type === 'Results') {
         const alternatives = channel?.alternatives || msg?.channel?.alternatives;
         const is_final = msg.is_final ?? true;
+        const speech_final = msg.speech_final ?? false;
         logger.info(`[Deepgram] Result: is_final=${msg.is_final} speech_final=${msg.speech_final} text="${alternatives?.[0]?.transcript || ''}"`);
         if (alternatives && alternatives.length > 0) {
           const text = alternatives[0].transcript || '';
-          const result: STTResult = { text, isFinal: Boolean(is_final) };
+          const rawSentiment = alternatives[0].sentiment;
+          const result: STTResult = {
+            text,
+            isFinal: Boolean(is_final),
+            speechFinal: Boolean(speech_final),
+            sentiment: rawSentiment ? {
+              sentiment: rawSentiment.sentiment || 'neutral',
+              sentiment_score: rawSentiment.sentiment_score ?? 0,
+            } : undefined,
+          };
           resultCallbacks.forEach(cb => cb(result));
         }
       }

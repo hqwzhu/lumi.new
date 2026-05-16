@@ -64,3 +64,93 @@ export function setIdleState(userId: string, isIdle: boolean): void {
     });
   }
 }
+
+/**
+ * Parse an IDE window title to extract file name and project name.
+ * Handles VS Code, Cursor, JetBrains, Notepad++, and more.
+ */
+function parseIDEWindow(title: string, processName: string): { fileName?: string; projectName?: string } | null {
+  const idePatterns: Array<{ proc: RegExp; titleRegex: RegExp }> = [
+    // VS Code / Cursor: "file.ts - ProjectName - Visual Studio Code"
+    { proc: /^(code|cursor)$/i, titleRegex: /^(.+?)\s*[-—]\s*(.+?)\s*[-—]\s*(Visual Studio Code|Cursor|VSCodium|Code - Insiders)$/ },
+    // JetBrains: "file.ts - ProjectName - IntelliJ IDEA"
+    { proc: /^(idea64|idea|webstorm64|webstorm|pycharm64|pycharm|goland64|goland|rustrover64|rustrover|clion64|clion)$/i, titleRegex: /^(.+?)\s*[-—]\s*(.+?)\s*[-—]\s*(.+)$/ },
+    // Notepad++: "file.ts - Notepad++"
+    { proc: /^notepad\+\+$/i, titleRegex: /^(.+?)\s*[-—]\s*Notepad\+\+$/ },
+    // Sublime: "file.ts - Sublime Text"
+    { proc: /^sublime_text$/i, titleRegex: /^(.+?)\s*[-—]\s*(Sublime Text|Sublime Merge)$/ },
+    // Windows Terminal / CMD / PowerShell: extract working dir from title
+    { proc: /^(windowsTerminal|cmd|powershell)$/i, titleRegex: /^(Administrator\s*:\s*)?(.+?)$/ },
+  ];
+
+  for (const { proc, titleRegex } of idePatterns) {
+    if (proc.test(processName)) {
+      const match = title.match(titleRegex);
+      if (match) {
+        if (proc.source.includes('code|cursor') || proc.source.includes('idea|webstorm')) {
+          return { fileName: match[1]?.trim(), projectName: match[2]?.trim() };
+        }
+        if (proc.source.includes('notepad|sublime')) {
+          return { fileName: match[1]?.trim() };
+        }
+        if (proc.source.includes('windowsTerminal|cmd')) {
+          return { projectName: match[2]?.trim() };
+        }
+      }
+    }
+  }
+
+  // Generic: check if title looks like a file path
+  const fileMatch = title.match(/^(.+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|h|css|html|json|yaml|yml|toml|sql|md|txt))\s/i);
+  if (fileMatch) {
+    return { fileName: fileMatch[1] };
+  }
+
+  return null;
+}
+
+/** Build a desktop context block for the LLM system prompt — what app the user is in right now */
+export function getDesktopContext(userId: string): string | null {
+  const lastWindow = getLastEvent(userId, 'window_changed');
+  if (!lastWindow || !lastWindow.data) return null;
+
+  const { title, process_name } = lastWindow.data;
+  const age = (Date.now() - new Date(lastWindow.timestamp).getTime()) / 1000;
+
+  // Stale window info (> 30 seconds) — don't inject, might be misleading
+  if (age > 30) return null;
+
+  const appName = process_name?.replace(/\.exe$/i, '') || 'Unknown';
+  const ide = parseIDEWindow(title || '', process_name || '');
+
+  const lines: string[] = [];
+  lines.push('\n## Desktop Context');
+  lines.push(`The user is currently in **${appName}** — active window: "${title || 'Unknown'}".`);
+
+  if (ide?.fileName) {
+    lines.push(`- Current file: **${ide.fileName}**`);
+  }
+  if (ide?.projectName) {
+    lines.push(`- Project: **${ide.projectName}**`);
+  }
+
+  // IDE-specific guidance
+  const isTerminal = /^(cmd|powershell|windowsTerminal|terminal|alacritty|wezterm)$/i.test(process_name || '');
+  const isIDE = /^(code|cursor|idea64|idea|webstorm|pycharm|goland|rustrover|clion|notepad\+\+|sublime_text)$/i.test(process_name || '');
+  const isBrowser = /^(chrome|msedge|firefox|brave|opera|msedgewebview2)$/i.test(process_name || '');
+
+  if (isIDE) {
+    lines.push('- The user is writing code. When they say "this" or "here", they mean the current file. Use `read_file` or `grep_files` to understand context.');
+  }
+  if (isTerminal) {
+    lines.push('- The user is in a terminal. They may want to run commands. Prefer `run_command` for CLI operations.');
+  }
+  if (isBrowser) {
+    lines.push('- The user is browsing the web. They may want to search, open URLs, or analyze page content. Use `web_search` or `url_fetch`.');
+  }
+
+  lines.push('- If the user references "this", "here", or "my screen", they are likely looking at this app.');
+  lines.push('- Adjust your responses based on what they\'re working on. Be context-aware and proactive.');
+
+  return lines.join('\n');
+}

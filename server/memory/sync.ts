@@ -12,6 +12,10 @@ export function registerUserSocket(userId: string, socketId: string): void {
   userSockets.get(userId)!.add(socketId);
 }
 
+export function getUserSockets(userId: string): Set<string> {
+  return userSockets.get(userId) || new Set();
+}
+
 export function unregisterUserSocket(socketId: string): void {
   for (const [uid, sockets] of userSockets) {
     sockets.delete(socketId);

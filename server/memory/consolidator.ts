@@ -1,6 +1,7 @@
 import { makeLLMCall, NormalizedMessage } from '../llm/providers';
 import { getUnconsolidatedEpisodic, markConsolidated, addMemory, queryMemories } from './store';
 import { Memory, MemoryPerspective } from './types';
+import { readDB } from '../../db_layer';
 
 interface ConsolidateResult {
   content: string;
@@ -38,6 +39,28 @@ Importance guidelines:
 
 Recent experiences:
 {experiences}
+
+JSON output:`;
+
+const NARRATIVE_CONSOLIDATION_PROMPT = `You are Lumi. Below are memories from the past few days, listed chronologically.
+Weave them into a warm, first-person storyline in Chinese — like a journal entry that connects the dots.
+
+The narrative should:
+- Be 4-8 sentences, warm and introspective
+- Connect discrete events into a coherent story arc ("This week you've been...")
+- Mention patterns, progress, or shifts you've noticed
+- Sound like a companion who pays attention, not a report
+
+Output ONLY a JSON object:
+{
+  "narrative": "your storyline narrative in Chinese, first person",
+  "title": "short title summarizing the storyline (3-8 Chinese characters)",
+  "keywords": ["3-5", "descriptive", "terms"],
+  "importance": 0.4-0.8
+}
+
+Memories:
+{memories}
 
 JSON output:`;
 
@@ -223,6 +246,98 @@ export async function selfReflect(
     return reflection;
   } catch (err) {
     console.error('[SelfReflect] Reflection failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Narrative consolidation: weave episodic memories from a time window into a storyline.
+ * Creates a "This week you've been learning Rust..." style journal entry.
+ * Different from consolidateEpisodic which merges raw experiences into a growth fact —
+ * this creates a human-readable story arc across multiple days.
+ */
+export async function consolidateNarrative(
+  ctx: ConsolidationContext,
+  windowDays: number = 7,
+  minMemories: number = 6,
+  getDeepSeek: () => any,
+  getGemini: () => any,
+  getOpenAI?: () => any,
+  getAnthropic?: () => any,
+  getQwen?: () => any,
+): Promise<Memory | null> {
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const memories = queryMemories({
+    userId: ctx.userId,
+    after: cutoff,
+    limit: 50,
+    minConfidence: 0.3,
+  });
+
+  if (memories.length < minMemories) return null;
+
+  // Sort chronologically and deduplicate by content similarity
+  const sorted = memories.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // Take a representative sample: max 20, evenly distributed
+  const sample = sorted.length <= 20
+    ? sorted
+    : sorted.filter((_, i) => i % Math.ceil(sorted.length / 20) === 0).slice(0, 20);
+
+  const memoryList = sample
+    .map(m => `[${m.createdAt.slice(0, 10)}] [${m.type}] ${m.content.slice(0, 150)}`)
+    .join('\n');
+
+  const prompt = NARRATIVE_CONSOLIDATION_PROMPT.replace('{memories}', memoryList);
+
+  const messages: NormalizedMessage[] = [
+    { role: 'user', content: prompt },
+  ];
+
+  try {
+    const response = await makeLLMCall(
+      messages,
+      [],
+      { provider: ctx.provider, model: ctx.model, maxTokens: 512, userId: ctx.userId },
+      getDeepSeek,
+      getGemini,
+      getOpenAI,
+      getAnthropic,
+      getQwen,
+    );
+
+    const text = response.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed: { narrative: string; title: string; keywords: string[]; importance: number } = JSON.parse(jsonMatch[0]);
+
+    if (!parsed.narrative || typeof parsed.narrative !== 'string') return null;
+
+    const title = parsed.title || `叙事记忆 ${new Date().toISOString().slice(0, 10)}`;
+    const content = `[${title}] ${parsed.narrative.trim().slice(0, 500)}`;
+
+    const narrative = addMemory(
+      {
+        userId: ctx.userId,
+        type: 'knowledge',
+        content,
+        keywords: [...(parsed.keywords || []).map((k: string) => k.toLowerCase().trim()).slice(0, 5), 'narrative', 'storyline'],
+        confidence: 0.8,
+        sourceInteractionId: `narrative_consolidation_${Date.now()}`,
+      },
+      {
+        tier: 'growth',
+        perspective: 'shared_memory',
+        importance: Math.min(0.9, Math.max(0.4, Number(parsed.importance) || 0.6)),
+        parentId: null,
+      },
+    );
+
+    console.log(`[NarrativeConsolidator] Created storyline "${title}" (${sample.length} memories, ${windowDays}d window)`);
+    return narrative;
+  } catch (err) {
+    console.error('[NarrativeConsolidator] Failed:', err);
     return null;
   }
 }

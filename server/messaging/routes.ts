@@ -191,6 +191,7 @@ async function processWithPersonality(
         {
           memories: memories.length > 0 ? memories : undefined,
           emotionalState,
+          userId: msg.userId,
         },
       );
       personality = result.config;

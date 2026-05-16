@@ -7,23 +7,26 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import { ActivityEvent } from './activity_stream';
-import { isURL, isErrorText } from './clipboard_monitor';
+import { isURL, isErrorText, isCodeSnippet, isFilePath, isStackTrace, classifyClipboard } from './clipboard_monitor';
 
 export interface ProactiveSuggestion {
   id: string;
   userId: string;
-  type: 'clipboard_url' | 'clipboard_error' | 'idle_greeting' | 'window_context';
+  type: 'clipboard_url' | 'clipboard_error' | 'clipboard_code' | 'clipboard_path' | 'clipboard_trace' | 'idle_greeting' | 'window_context';
   message: string;
-  action?: string; // Suggested action
+  action?: string;
   timestamp: string;
 }
 
-const cooldowns = new Map<string, number>(); // key -> last fire timestamp
+const cooldowns = new Map<string, number>();
 const COOLDOWN_MS: Record<string, number> = {
-  clipboard_url: 60_000,    // 1 min between URL suggestions
-  clipboard_error: 120_000, // 2 min between error suggestions
-  idle_greeting: 300_000,   // 5 min between idle greetings
-  window_context: 120_000,  // 2 min between window context suggestions
+  clipboard_url: 60_000,
+  clipboard_error: 120_000,
+  clipboard_code: 120_000,
+  clipboard_path: 90_000,
+  clipboard_trace: 180_000,
+  idle_greeting: 300_000,
+  window_context: 120_000,
 };
 
 function isOnCooldown(userId: string, type: string): boolean {
@@ -63,6 +66,42 @@ export function processActivityEvent(
         type: 'clipboard_error',
         message: '看起来你遇到了一个错误，需要我帮你分析一下吗？',
         action: 'debug_error',
+        timestamp: new Date().toISOString(),
+      };
+      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      return suggestion;
+    }
+    if (isCodeSnippet(text) && !isOnCooldown(userId, 'clipboard_code')) {
+      const suggestion: ProactiveSuggestion = {
+        id: `proactive_${Date.now()}`,
+        userId,
+        type: 'clipboard_code',
+        message: '我注意到你复制了一段代码，需要我帮你分析、优化或解释吗？',
+        action: 'analyze_code',
+        timestamp: new Date().toISOString(),
+      };
+      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      return suggestion;
+    }
+    if (isFilePath(text) && !isOnCooldown(userId, 'clipboard_path')) {
+      const suggestion: ProactiveSuggestion = {
+        id: `proactive_${Date.now()}`,
+        userId,
+        type: 'clipboard_path',
+        message: '你复制了一个文件路径，需要我打开或查看这个文件吗？',
+        action: 'open_path',
+        timestamp: new Date().toISOString(),
+      };
+      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      return suggestion;
+    }
+    if (isStackTrace(text) && !isOnCooldown(userId, 'clipboard_trace')) {
+      const suggestion: ProactiveSuggestion = {
+        id: `proactive_${Date.now()}`,
+        userId,
+        type: 'clipboard_trace',
+        message: '你复制了一个堆栈追踪，需要我帮你定位问题吗？',
+        action: 'debug_trace',
         timestamp: new Date().toISOString(),
       };
       io.to(`user:${userId}`).emit('lumi:proactive', suggestion);

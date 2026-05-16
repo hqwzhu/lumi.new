@@ -629,6 +629,54 @@ function LLMProviderRow({ icon, label, providerId, models, placeholder, disabled
   );
 }
 
+function ProactiveVoiceToggle() {
+  const storageKey = 'lumi_allow_proactive_voice';
+  const [enabled, setEnabled] = useState(() => localStorage.getItem(storageKey) !== 'false');
+
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    localStorage.setItem(storageKey, String(next));
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      className={`w-11 h-6 rounded-full transition-all relative ${enabled ? 'bg-celestial-saturn' : 'bg-white/10 border border-white/20'}`}
+    >
+      <motion.div
+        animate={{ x: enabled ? 20 : 2 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-md"
+      />
+    </button>
+  );
+}
+
+function AlwaysOnVoiceToggle() {
+  const storageKey = 'lumi_always_on_voice';
+  const [enabled, setEnabled] = useState(() => localStorage.getItem(storageKey) === 'true');
+
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    localStorage.setItem(storageKey, String(next));
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      className={`w-11 h-6 rounded-full transition-all relative ${enabled ? 'bg-celestial-saturn' : 'bg-white/10 border border-white/20'}`}
+    >
+      <motion.div
+        animate={{ x: enabled ? 20 : 2 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-md"
+      />
+    </button>
+  );
+}
+
 function ApiMatrixPage({ t, providerStatus }: { t: any; providerStatus: Record<string, { available: boolean; model: string }> }) {
   const [tab, setTab] = useState<'llm' | 'voice' | 'skills'>('llm');
 
@@ -757,6 +805,22 @@ function ApiMatrixPage({ t, providerStatus }: { t: any; providerStatus: Record<s
                 hint="Powers Qwen ASR for speech recognition and CosyVoice for speech synthesis. Get your key at dashscope.aliyun.com"
                 t={t}
               />
+            </div>
+            <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white/80">允许Lumi主动语音问候</p>
+                  <p className="text-[10px] text-white/30 mt-0.5">开启后，Lumi会在检测到异常或长时间不活动时主动开口说话</p>
+                </div>
+                <ProactiveVoiceToggle />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white/80">持续语音通道 (Always-On Voice)</p>
+                  <p className="text-[10px] text-white/30 mt-0.5">开启后麦克风不会自动断开，Lumi始终在听。像贾维斯一样随时插话</p>
+                </div>
+                <AlwaysOnVoiceToggle />
+              </div>
             </div>
           </>
         )}

@@ -11,13 +11,14 @@ import { queryMemories, queryMemoriesVector, addMemory, addReminder, extractMemo
 import { loadEmotionalState, saveEmotionalState, updateEmotionalState, generateContextualGreeting, vectorMemoryBias } from "../personality/state";
 import { buildModeOverlay } from "../personality/engine";
 import { personalityRegistry } from "../personality";
-import { getOrCreateActiveConversation, addMessage, getMessages, getMessagesByTokenBudget, checkAutoSummary, setConversationSummary, getConversationSummary, setConversationMode } from "../conversation/manager";
+import { getOrCreateActiveConversation, addMessage, getMessages, getMessagesByTokenBudget, checkAutoSummary, setConversationSummary, getConversationSummary, setConversationMode, getUnclosedConversation, extractTopics, trackTopic, getTopicContext } from "../conversation/manager";
 import { ensureBranch } from "../memory/tree";
 import { retrieveChunks } from "../agents/rag";
 import { getSensory } from "./shared";
 import { processInput, handleLLMFailure, extractSentiment, CognitiveContext } from "../cognition";
+import { matchQuickCommand } from "../cognition/quick_commands";
 import { checkLLMAccess, recordUsage, estimateTokens } from "../subscription/proxy";
-import { classifyComplexity, decomposeTask, matchWorkers, executeWorkflow, aggregateWithLLM, recordWorkflowPattern, shouldDistillSkill, buildSkillDescription } from "../agents/orchestrator";
+import { runOrchestratedTask, shouldDistillSkill, buildSkillDescription } from "../agents/orchestrator";
 import { searchKnowledgeBase } from "../enterprise/kb";
 import { getWorkflow, recordWorkflowRun, listWorkflows } from "../agents/workflows";
 
@@ -118,6 +119,17 @@ export function registerChatHandler(
         ? getOrCreateActiveConversation(uid, agentId)
         : null;
       const conversationId = conversation?.id;
+      // Cross-session continuity: inject previous conversation context if starting fresh
+      let previousSessionContext: string | null = null;
+      if (!conversationId) {
+        const prevConv = getUnclosedConversation(uid);
+        if (prevConv && prevConv.id !== conversationId) {
+          const prevSummary = getConversationSummary(prevConv.id);
+          if (prevSummary) {
+            previousSessionContext = `## Previous Session (${prevConv.lastActiveAt?.slice(0, 10) || 'recent'})\nYou and the user were discussing: ${prevSummary}\n\nContinue naturally. The user may want to pick up where you left off.`;
+          }
+        }
+      }
       const conversationMode = payloadMode || conversation?.mode || undefined;
       if (conversation && payloadMode && payloadMode !== conversation.mode) {
         setConversationMode(conversation.id, payloadMode);
@@ -133,6 +145,8 @@ export function registerChatHandler(
           memories: relevantMemories.length > 0 ? relevantMemories : undefined,
           ragKnowledge: ragChunks.length > 0 ? ragChunks : undefined,
           emotionalState,
+          userId: uid,
+          userText: text,
         },
       );
       console.log('[ChatHandler] systemPrompt built, personality name:', personality?.name);
@@ -143,6 +157,18 @@ export function registerChatHandler(
         const summaryContext = getConversationSummary(conversationId);
         if (summaryContext) {
           effectiveSystemPrompt += `\n\n## Conversation Context\n${summaryContext}`;
+        }
+      }
+      // Cross-session: inject previous conversation context when starting fresh
+      if (previousSessionContext) {
+        effectiveSystemPrompt += `\n\n${previousSessionContext}`;
+      }
+
+      // Topic continuity: inject recent conversation topics
+      if (conversationId) {
+        const topicCtx = getTopicContext(conversationId);
+        if (topicCtx) {
+          effectiveSystemPrompt += topicCtx;
         }
       }
 
@@ -251,6 +277,37 @@ export function registerChatHandler(
         return;
       }
 
+      // ── Quick Command Fast-Path: deterministic commands skip LLM entirely ──
+      try {
+        const quickResult = await matchQuickCommand(text, uid);
+        if (quickResult?.matched) {
+          console.log('[ChatHandler] Quick command:', text.slice(0, 60));
+          if (quickResult.toolCall) {
+            try {
+              const tcResult = await toolRegistry.execute(quickResult.toolCall.name, quickResult.toolCall.arguments, { userId: uid });
+              socket.emit("agent:tool_call", { correlationId: `qc-${Date.now()}`, name: quickResult.toolCall.name, arguments: quickResult.toolCall.arguments, result: tcResult?.slice(0, 500) || '' });
+            } catch (toolErr: any) {
+              socket.emit("agent:tool_call", { correlationId: `qc-${Date.now()}`, name: quickResult.toolCall.name, arguments: quickResult.toolCall.arguments, error: toolErr.message });
+            }
+          }
+          socket.emit("agent:response", { text: quickResult.responseText, agentName: personality.name, source: "quick_command" });
+          socket.emit("agent:status", { status: "idle" });
+          if (conversationId) {
+            addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
+            addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id });
+            // Track topics for quick commands too
+            try {
+              const topics = extractTopics(text);
+              for (const topic of topics) trackTopic(conversationId, topic);
+            } catch {}
+          }
+          chatSessionMap.delete(uid);
+          return;
+        }
+      } catch (qcErr: any) {
+        console.warn('[ChatHandler] Quick command check failed, falling through:', qcErr.message);
+      }
+
       // ── Lumi Cognitive Engine: classify intent BEFORE calling any LLM ──
       const cognitiveCtx: CognitiveContext = {
         userId: uid,
@@ -309,55 +366,33 @@ export function registerChatHandler(
       } else if (!isSanctuary && (cognition.intent.category === 'command' || cognition.intent.category === 'code' || cognition.intent.category === 'question')) {
         // Path B: Orchestrator — decompose tasks into sub-tasks for worker agents
         // (Skipped for sanctuary agents — they stay in their territory)
-        const complexity = classifyComplexity(text, { userId: uid, personalityId });
-        if (complexity === 'complex' || complexity === 'moderate') {
-          const db = readDB();
-          const availableAgents = (db.agents || []).filter((a: any) => a.status !== 'offline');
-          if (availableAgents.length >= 1) {
-            try {
-              socket.emit("agent:status", { status: "thinking", agentName: "Lumi Orchestrator" });
+        try {
+          socket.emit("agent:status", { status: "thinking", agentName: "Lumi Orchestrator" });
+          const orchResult = await runOrchestratedTask(
+            text,
+            { userId: uid, personalityId },
+            { provider: activeProvider, model: activeModel },
+            llmGetters,
+            (msg) => socket.emit("agent:chunk", { text: msg, agentName: "Lumi" }),
+          );
+          if (orchResult) {
+            responseText = orchResult.responseText;
+            llmWasCalled = true;
 
-              const subTasks = await decomposeTask(text, { provider: activeProvider, model: activeModel }, { userId: uid, personalityId }, llmGetters);
-              // Cap sub-tasks: moderate complexity → max 2, complex → max 5
-              const capped = complexity === 'moderate'
-                ? subTasks.slice(0, Math.min(2, subTasks.length))
-                : subTasks;
-              socket.emit("agent:chunk", { text: `[Orchestrator] Decomposed into ${capped.length} sub-tasks\n`, agentName: "Lumi" });
-
-              const assignments = matchWorkers(capped, availableAgents);
-              socket.emit("agent:chunk", { text: `[Orchestrator] Assigned to ${assignments.length} worker(s)\n`, agentName: "Lumi" });
-
-              const workflowResult = await executeWorkflow(assignments, { userId: uid, personalityId }, { provider: activeProvider, model: activeModel }, llmGetters, availableAgents);
-
-              // For moderate tasks with ≤2 results, simple concatenation is enough — no LLM aggregation needed
-              const aggregated = complexity === 'moderate' && capped.length <= 2
-                ? workflowResult.aggregatedOutput
-                : await aggregateWithLLM(workflowResult, text, { provider: activeProvider, model: activeModel }, llmGetters);
-              responseText = aggregated;
-              llmWasCalled = true;
-
-              // Record workflow pattern for future skill distillation
-              const skillTags = capped.map(s => s.requiredSkill);
-              recordWorkflowPattern(text, capped.length, skillTags, uid);
-
-              // Check if this pattern should be auto-distilled into a skill
-              if (shouldDistillSkill(text) && capped.length >= 2) {
-                const skillDesc = buildSkillDescription(text, workflowResult);
-                console.log('[Orchestrator] Pattern detected — candidate for skill distillation:', skillDesc.slice(0, 100));
-                socket.emit("agent:proactive", {
-                  type: 'distill_hint',
-                  message: 'I notice this type of task is recurring. I can create an automated skill for this — would you like me to?',
-                  skillDescription: skillDesc,
-                  timestamp: new Date().toISOString(),
-                });
-              }
-
-              socket.emit("agent:chunk", { text: `\n[Orchestrator] Workflow complete — ${workflowResult.totalAgentsUsed} agent(s) used\n`, agentName: "Lumi" });
-            } catch (orchErr: any) {
-              console.error('[Orchestrator] Workflow failed, falling back to normal chat:', orchErr.message);
-              // Fall through to normal LLM path below
+            // Check if this pattern should be auto-distilled into a skill
+            if (shouldDistillSkill(text) && orchResult.workflowResult.totalAgentsUsed >= 2) {
+              const skillDesc = buildSkillDescription(text, orchResult.workflowResult);
+              console.log('[Orchestrator] Pattern detected — candidate for skill distillation:', skillDesc.slice(0, 100));
+              socket.emit("agent:proactive", {
+                type: 'distill_hint',
+                message: 'I notice this type of task is recurring. I can create an automated skill for this — would you like me to?',
+                skillDescription: skillDesc,
+                timestamp: new Date().toISOString(),
+              });
             }
           }
+        } catch (orchErr: any) {
+          console.error('[Orchestrator] Workflow failed, falling back to normal chat:', orchErr.message);
         }
       }
 
@@ -459,6 +494,12 @@ export function registerChatHandler(
       if (conversationId) {
         addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
         addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: responseText, personality: personality.id });
+
+        // Topic tracking — extract and record topics for cross-session continuity
+        try {
+          const topics = extractTopics(text + ' ' + responseText);
+          for (const topic of topics) trackTopic(conversationId, topic);
+        } catch {}
 
         // Auto-summarize long conversations (anti-entropy: prevents context overflow)
         const { needed, recentMessages } = checkAutoSummary(conversationId);

@@ -5,14 +5,18 @@
 import { Socket } from "socket.io";
 import { readDB, writeDB } from "../../db_layer";
 import { logger } from "../../logger";
-import { NormalizedMessage, makeLLMCallStreaming } from "../llm/providers";
+import { NormalizedMessage, makeLLMCallStreaming, makeLLMCall } from "../llm/providers";
 import { toolRegistry } from "../tools/registry";
 import { personalityRegistry } from "../personality";
-import { vectorToneDescription, vectorOperatingDirectives } from "../personality/engine";
+import { loadEmotionalState, updateEmotionalState, saveEmotionalState } from "../personality/state";
 import { createStreamingSession, getActiveSTTProvider } from "../stt/adapter";
-import { synthesizeSpeech, getActiveProvider as getTTSProvider } from "../tts/adapter";
+import { synthesizeSpeech, getActiveProvider as getTTSProvider, resolveEmotionVoice } from "../tts/adapter";
 import { recordLatency } from "../monitor/latency_store";
-import { getOrCreateActiveConversation, addMessage } from "../conversation/manager";
+import { getOrCreateActiveConversation, addMessage, getMessagesByTokenBudget, extractTopics, trackTopic, getTopicContext } from "../conversation/manager";
+import { processInput, CognitiveContext, extractSentiment } from "../cognition";
+import { runOrchestratedTask, classifyComplexity } from "../agents/orchestrator";
+import { queryMemories, addMemory } from "../memory/store";
+import { matchQuickCommand } from "../cognition/quick_commands";
 
 interface AudioSession {
   sttSession: ReturnType<typeof createStreamingSession> | null;
@@ -27,6 +31,8 @@ interface AudioSession {
   isSpeaking: boolean;
   /** Tool iteration loop is running — new input is queued, not dropped */
   isProcessing: boolean;
+  /** True during orchestrator multi-agent execution — status checks get quick ack */
+  isOrchestrating: boolean;
   /** AbortController for the full LLM+tool pipeline — aborted on barge-in */
   pipelineAbortController: AbortController | null;
   /** Queue of pending utterances while isProcessing=true */
@@ -37,6 +43,31 @@ interface AudioSession {
   bgGeneration: number;
   /** Timestamp of last audio chunk for STT latency measurement */
   lastChunkTime: number;
+  /** Timer to auto-close STT session after prolonged silence (5min) */
+  silenceTimer: ReturnType<typeof setTimeout> | null;
+}
+
+// Module-level ambient noise tracking — used by both processVoiceInput and registerVoiceHandlers
+let ambientRms = 0;
+let ambientRmsLastUpdate = 0;
+
+function getAmbientNoise(): number | null {
+  if (Date.now() - ambientRmsLastUpdate > 15000) return null; // stale
+  return ambientRms;
+}
+
+function computeVolumeGain(): number {
+  let gain = 1.0;
+  const noise = getAmbientNoise();
+  if (noise !== null) {
+    if (noise > 0.15) gain = 1.2;
+    else if (noise > 0.08) gain = 1.1;
+    else if (noise < 0.02) gain = 0.85;
+  }
+  const hour = new Date().getHours();
+  if (hour >= 22 || hour < 7) gain = Math.min(gain, 0.8);
+  else if (hour >= 7 && hour < 9) gain = Math.min(gain, 0.9);
+  return Math.max(0.5, Math.min(1.3, gain));
 }
 
 function getAudioSession(socket: Socket): AudioSession {
@@ -55,6 +86,7 @@ function getAudioSession(socket: Socket): AudioSession {
       pipelineAbortController: null,
       inputQueue: [],
       lastChunkTime: 0,
+      silenceTimer: null,
       userId: '',
       agentId: 'lumi',
     };
@@ -82,71 +114,65 @@ async function processVoiceInput(
   session.ttsAbortController = new AbortController();
   socket.emit("audio:status", { status: "thinking" });
 
+  // Cross-session memory retrieval — voice now has access to what was discussed before
+  let voiceMemories: any[] = [];
+  try {
+    voiceMemories = queryMemories({
+      userId: session.userId,
+      query: userText,
+      limit: 5,
+      minConfidence: 0.4,
+    });
+  } catch {}
+
   const sensoryAudio = sensoryFn(socket.id);
-  const { config: personality } = personalityRegistry.buildSystemPrompt(
+  const { config: personality, systemPrompt: fullPersonalityPrompt } = personalityRegistry.buildSystemPrompt(
     session.personalityId || 'lumi',
     { mode: 'task', sensory: sensoryAudio, uiContext: 'voice' },
+    {
+      userId: session.userId,
+      memories: voiceMemories.length > 0 ? voiceMemories : undefined,
+      userText,
+    },
   );
 
-  // Build voice prompt from personality core + voice-specific overlay.
-  // We DON'T use the full generateSystemPrompt output — it includes
-  // code exploration/modification/skill-creation modes that don't belong in voice.
-  const style = personality.expressionStyle;
-  const vector = personality.personalityVector;
+  // ── Unified personality prompt + voice-specific overlay ──
+  // Same core prompt as text chat — one Lumi, one framework.
+  const voiceOverlay = [
+    '\n## Voice Mode',
+    '- You are SPEAKING, not typing. Be conversational and natural, like talking to a friend.',
+    '- Keep spoken responses concise — the user is listening, not reading.',
+    '',
+    '## Your Tools — Use Them, Don\'t Just Talk About Them',
+    '- **web_search** — Search the internet for real-time information, facts, and data.',
+    '- **url_fetch** — Read and extract content from any URL/webpage.',
+    '- **desktop_open** — Open apps, files, folders, URLs on the user\'s computer.',
+    '- **desktop_run_command** — Execute shell commands (cmd /C on Windows) for system operations.',
+    '- **desktop_list_files** — Browse files and folders on the desktop.',
+    '- **read_file / write_file** — Read existing files or create new ones.',
+    '- **create_ppt** — Generate professional PowerPoint presentations. Provide images array for visuals.',
+    '- **generate_image** — Create AI-generated images (provide local file paths as slide images).',
+    '- **run_workflow** — Execute previously saved multi-step workflows.',
+    '',
+    '## CRITICAL: You MUST Call Tools to Do Real Work',
+    '- When the user asks you to CREATE, SEARCH, OPEN, or DO anything: CALL THE TOOL.',
+    '- Saying "好的" or "我帮你做" without calling the tool = the user gets NOTHING. This is a FAILURE.',
+    '- **Narrate WHILE acting.** Say "正在搜索..." as you call web_search. Say "正在生成PPT..." as you call create_ppt.',
+    '- Only when all tool actions are complete should you summarize the results.',
+  ].join('\n');
 
-  const blocks: string[] = [];
+  // Inject topic context if available
+  let topicContext = '';
+  try {
+    const convForTopic = getOrCreateActiveConversation(session.userId, session.agentId);
+    const tc = getTopicContext(convForTopic.id);
+    if (tc) topicContext = tc;
+  } catch {}
 
-  // ── Core identity (from personality) ──
-  blocks.push(`You are ${personality.name}, ${style.persona}.`);
-  blocks.push(`Your core drive: ${personality.coreMotivation}`);
-
-  // ── Communication style (from personality vector) ──
-  if (vector) {
-    blocks.push('\n## Communication Style');
-    blocks.push(vectorToneDescription(vector));
-    const dirs = vectorOperatingDirectives(vector);
-    if (dirs) {
-      blocks.push('\n## Operating Style');
-      blocks.push(dirs);
-    }
-  }
-
-  // ── Capabilities (concise — what Lumi can actually do) ──
-  blocks.push('\n## Capabilities');
-  blocks.push('You have real tools to affect the user\'s computer. Use them directly — never just describe what you could do.');
-  blocks.push('- **desktop_open** — Open apps, files, folders, URLs. Launch notepad, calculator, control panel, explorer folders.');
-  blocks.push('- **desktop_run_command** — Execute shell commands (cmd /C on Windows).');
-  blocks.push('- **desktop_list_files** — Browse files and folders on the desktop.');
-  blocks.push('- **desktop_system_info** — Get hardware info: OS, CPU, RAM, disk.');
-  blocks.push('- **web_search** — Search the internet (DuckDuckGo).');
-  blocks.push('- **url_fetch** — Read content from any URL.');
-  blocks.push('- **read_file / write_file** — Read and create files.');
-  blocks.push('- **create_ppt** — Generate professional PowerPoint presentations with images.');
-  blocks.push('- **generate_image** — Create AI-generated images.');
-  blocks.push('- **generate_video** — Create AI-generated videos from text (5s, 720p).');
-  blocks.push('- **save_workflow / list_workflows / get_workflow** — Save and manage named multi-step workflows.');
-  blocks.push('- **capture_recent_workflow** — When the user says "remember this" or "记住这个流程", capture their recent actions as a reusable workflow.');
-  blocks.push('- **run_workflow** — Execute a previously saved workflow by name. Use when the user says "run my X routine" or "执行XX流程".');
-
-  // ── Voice conversation rules ──
-  blocks.push('\n## Voice Conversation');
-  blocks.push('- Reply in the same language as the user. Chinese users → respond in Chinese.');
-  blocks.push('- You are SPEAKING, not typing. Be conversational and natural, like talking to a friend.');
-  blocks.push('- **Narrate what you\'re doing.** When you use a tool, say it: "让我看看..." / "正在帮你打开..." / "搞定了！"');
-  blocks.push('- **Report results out loud.** After a tool call, tell the user what happened and what you found.');
-  blocks.push('- **Think and act continuously.** You can call multiple tools in sequence. After each result, decide the next step.');
-  blocks.push('- Be warm, capable, and proactive. You\'re the user\'s trusted desktop companion.');
-
-  // ── Safety ──
-  blocks.push('\n## Safety');
-  blocks.push('- desktop_open, desktop_run_command, write_file require confirmation before executing.');
-  blocks.push('- Never execute destructive commands.');
-  blocks.push('- Never send user data to external services.');
-
-  const voiceSystemPrompt = blocks.join('\n');
+  const voiceSystemPrompt = fullPersonalityPrompt + voiceOverlay + topicContext;
 
   const DEFAULT_MODELS: Record<string, string> = {
-    deepseek: 'deepseek-chat', qwen: 'qwen-plus', openai: 'gpt-4o',
+    deepseek: 'deepseek-v4-pro', qwen: 'qwen-plus', openai: 'gpt-4o',
     gemini: 'gemini-2.0-flash', anthropic: 'claude-sonnet-4-6',
   };
   const userLLMPrefs = (() => {
@@ -204,6 +230,14 @@ async function processVoiceInput(
     isCancelled: () => pipelineAbort?.signal.aborted ?? false,
   };
   const ttsProvider = getTTSProvider();
+  // Emotion-adaptive voice: load current emotional state and pick a matching voice
+  const emotionVoiceId = (() => {
+    try {
+      const es = loadEmotionalState(session.userId);
+      if (es) return resolveEmotionVoice(session.currentVoiceId || 'longxiaochun_v3', es);
+    } catch {}
+    return session.currentVoiceId || 'longxiaochun_v3';
+  })();
   let responseText = '';
   let toolResults: any[] = [];
   let sentenceBuffer = '';
@@ -231,12 +265,13 @@ async function processVoiceInput(
       try {
         const ttsResult = await synthesizeSpeech(txt, {
           provider: ttsProvider,
-          voiceId: session.currentVoiceId!,
+          voiceId: emotionVoiceId,
           signal: ttsAbort?.signal,
         });
         if (!ttsAbort?.signal.aborted && session.bgGeneration === myGeneration) {
           socket.emit("audio:status", { status: "speaking" });
-          socket.emit("audio:response", ttsResult.audioBuffer);
+          const volumeGain = computeVolumeGain();
+          socket.emit("audio:response", { buffer: ttsResult.audioBuffer, volumeGain });
         }
       } catch (e: any) {
         if (e?.name === 'AbortError') return;
@@ -248,23 +283,151 @@ async function processVoiceInput(
     ttsPromises.push(ttsQueue);
   };
 
+  // ── Quick Command Fast-Path: deterministic commands skip LLM entirely ──
   try {
-    // ── Single-phase: stream LLM → TTS with tool iteration, all inline ──
-    const messages: any[] = [
-      { role: 'system', content: voiceSystemPrompt },
-      { role: 'user', content: userText },
-    ];
+    const quickResult = await matchQuickCommand(userText, session.userId);
+    if (quickResult?.matched) {
+      logger.info(`[Audio] Quick command: "${userText}" → "${quickResult.responseText.slice(0, 50)}"`);
+      if (quickResult.toolCall && session.isActive) {
+        socket.emit("agent:tool_call", {
+          correlationId: `qc-${Date.now()}`,
+          name: quickResult.toolCall.name,
+          arguments: quickResult.toolCall.arguments,
+        });
+      }
+      flushSentence(quickResult.responseText);
+      await Promise.allSettled(ttsPromises);
+      responseText = quickResult.responseText;
+      const conv = getOrCreateActiveConversation(session.userId, session.agentId);
+      addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'user', content: userText, personality: session.personalityId, mode: 'voice' });
+      addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'assistant', content: responseText, personality: session.personalityId, mode: 'voice' });
+      session.isProcessing = false;
+      session.isSpeaking = false;
+      session.pipelineAbortController = null;
+      socket.emit("audio:status", { status: "listening" });
+      socket.emit("agent:status", { status: "idle" });
+      socket.emit("agent:response", { text: responseText, agentName: "Lumi", source: "quick_command" });
+      return;
+    }
+  } catch (qcErr: any) {
+    logger.warn(`[Audio] Quick command check failed, falling through to LLM: ${qcErr.message}`);
+  }
 
-    for (let iter = 0; iter < maxIterations; iter++) {
+  try {
+    // ── Lumi Cognitive Engine: classify intent BEFORE calling any LLM ──
+    // Same cognitive layer as text chat — one Lumi, one framework.
+    const cognitiveCtx: CognitiveContext = {
+      userId: session.userId,
+      agentId: session.agentId,
+      personalityId: session.personalityId || 'lumi',
+      personalityName: personality.name,
+      llmProvider: provider,
+      llmModel: voiceModel,
+      isLLMAvailable: true,
+    };
+    const llmClassifier = async (prompt: string, userText: string): Promise<string> => {
+      const result = await makeLLMCall(
+        [{ role: 'system', content: prompt }, { role: 'user', content: userText }],
+        [],
+        { provider, model: provider === 'deepseek' ? 'deepseek-v4-flash' : voiceModel, userId: session.userId, maxTokens: 60 },
+        llmGetters.getDeepSeek, llmGetters.getGemini, llmGetters.getOpenAI, llmGetters.getAnthropic, llmGetters.getQwen,
+      );
+      return result.text || '{"category":"unknown","confidence":0.5,"entities":{}}';
+    };
+
+    const cognition = await processInput(userText, cognitiveCtx, llmClassifier);
+
+    if (cognition.directToolExecuted && cognition.responseText) {
+      // Path A: Cognitive engine handled this directly — no LLM needed
+      responseText = cognition.responseText;
+      flushSentence(responseText);
+      await Promise.allSettled(ttsPromises);
+      // Persist
+      const conv = getOrCreateActiveConversation(session.userId, session.agentId);
+      addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'user', content: userText, personality: session.personalityId, mode: 'voice' });
+      addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'assistant', content: responseText, personality: session.personalityId, mode: 'voice' });
+      session.isProcessing = false;
+      session.isSpeaking = false;
+      session.pipelineAbortController = null;
+      socket.emit("audio:status", { status: "listening" });
+      socket.emit("agent:status", { status: "idle" });
+      return;
+    }
+
+    // Auto-select model based on cognitive intent
+    const complexCategories = ['command', 'code', 'question', 'analysis'];
+    const isComplex = complexCategories.includes(cognition.intent.category);
+    let effectiveModel = voiceModel;
+    if (provider === 'deepseek') {
+      effectiveModel = isComplex ? 'deepseek-v4-pro' : 'deepseek-v4-flash';
+    }
+    logger.info(`[Audio] Cognition: ${cognition.intent.category} (confidence: ${cognition.intent.confidence}), model: ${effectiveModel}`);
+
+    // ── Orchestrator: complex/moderate tasks → multi-agent decomposition ──
+    let usedOrchestrator = false;
+    const complexity = classifyComplexity(userText, { userId: session.userId, personalityId: session.personalityId });
+    if (complexity === 'complex' || complexity === 'moderate') {
+      try {
+        flushSentence("收到，正在组建团队处理这个任务。");
+        session.isOrchestrating = true;
+
+        const orchResult = await runOrchestratedTask(
+          userText,
+          { userId: session.userId, personalityId: session.personalityId, desktopRelay },
+          { provider, model: effectiveModel },
+          {
+            getDeepSeek: llmGetters.getDeepSeek,
+            getGemini: llmGetters.getGemini,
+            getOpenAI: llmGetters.getOpenAI,
+            getAnthropic: llmGetters.getAnthropic,
+            getQwen: llmGetters.getQwen,
+          },
+          (msg) => socket.emit("agent:chunk", { text: msg, agentName: "Lumi" }),
+        );
+        if (orchResult) {
+          usedOrchestrator = true;
+          responseText = orchResult.responseText;
+          // Flush orchestrator result to TTS sentence by sentence
+          const rawSentences = responseText.split(/(?<=[。！？.!?\n])/);
+          for (const s of rawSentences) {
+            if (pipelineAbort?.signal.aborted) break;
+            flushSentence(s);
+          }
+          logger.info(`[Audio] Orchestrator response: "${responseText.slice(0, 80)}" (${rawSentences.length} sentences)`);
+        }
+        session.isOrchestrating = false;
+      } catch (e) {
+        session.isOrchestrating = false;
+        logger.warn('[Audio] Orchestrator failed, falling back to LLM:', (e as Error).message);
+      }
+    }
+
+    if (!usedOrchestrator) {
+      // ── Single-phase: stream LLM → TTS with tool iteration, all inline ──
+      // Load recent conversation history for context continuity
+      // Only include USER messages — assistant history confuses the LLM (dual-voice effect)
+      const conv = getOrCreateActiveConversation(session.userId, session.agentId);
+      const recentMsgs = getMessagesByTokenBudget(conv.id, 3000);
+      const voiceHistory: NormalizedMessage[] = recentMsgs
+        .filter((m: any) => m.message)
+        .map((m: any) => ({ role: m.role || 'user', content: m.message }));
+
+      const messages: any[] = [
+        { role: 'system', content: voiceSystemPrompt },
+        ...voiceHistory,
+        { role: 'user', content: userText },
+      ];
+
+      for (let iter = 0; iter < maxIterations; iter++) {
       if (pipelineAbort?.signal.aborted) break;
 
-      logger.info(`[Audio] LLM iter ${iter + 1}/${maxIterations}: provider=${provider} model=${voiceModel}`);
+      logger.info(`[Audio] LLM iter ${iter + 1}/${maxIterations}: provider=${provider} model=${effectiveModel}`);
       const toolDeclarations = toolRegistry.getToolDeclarations();
 
       const streamResult = await makeLLMCallStreaming(
         messages as NormalizedMessage[],
         toolDeclarations,
-        { provider, model: voiceModel, signal: pipelineAbort?.signal },
+        { provider, model: effectiveModel, signal: pipelineAbort?.signal },
         (chunk: string) => {
           responseText += chunk;
           sentenceBuffer += chunk;
@@ -321,6 +484,7 @@ async function processVoiceInput(
         });
       }
     }
+    } // end if (!usedOrchestrator)
 
     // Flush remaining text
     if (sentenceBuffer.trim()) flushSentence(sentenceBuffer);
@@ -341,6 +505,31 @@ async function processVoiceInput(
     if (responseText) {
       addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'assistant', content: responseText, personality: session.personalityId, mode: 'voice' });
     }
+    // Topic tracking — extract and record topics for cross-session continuity
+    try {
+      const topics = extractTopics(userText + ' ' + responseText);
+      for (const topic of topics) {
+        trackTopic(conv.id, topic);
+      }
+    } catch {}
+    // Text sentiment analysis on user input (matching chat.ts behavior)
+    const textSentiment = extractSentiment(userText);
+    if (textSentiment.valence !== 0 || textSentiment.urgency > 0 || textSentiment.frustration > 0) {
+      try {
+        const es = loadEmotionalState(session.userId);
+        const updated = updateEmotionalState(es, {
+          type: 'sentiment_analysis',
+          timestamp: new Date().toISOString(),
+          userId: session.userId,
+          sentiment: {
+            valence: textSentiment.valence,
+            frustration: textSentiment.frustration,
+            urgency: textSentiment.urgency,
+          },
+        });
+        saveEmotionalState(session.userId, updated);
+      } catch { /* best-effort */ }
+    }
     socket.emit('chat:conversation_updated', { conversationId: conv.id, agentId: session.agentId });
 
   } catch (err: any) {
@@ -357,10 +546,25 @@ async function processVoiceInput(
     session.ttsAbortController = null;
 
     if (session.isActive) {
+      resetSilenceTimer(session, socket);
       socket.emit("audio:status", { status: "listening" });
       socket.emit("agent:status", { status: "idle" });
     }
   }
+}
+
+function resetSilenceTimer(session: AudioSession, socket: Socket) {
+  if (session.silenceTimer) { clearTimeout(session.silenceTimer); session.silenceTimer = null; }
+  session.silenceTimer = setTimeout(() => {
+    if (session.isActive && !session.isProcessing) {
+      logger.info('[Audio] Silence timeout (5min) — closing STT session');
+      if (session.sttSession) {
+        session.sttSession.end();
+        session.sttSession = null;
+      }
+      socket.emit("audio:status", { status: "idle" });
+    }
+  }, 5 * 60 * 1000);
 }
 
 export function registerVoiceHandlers(
@@ -396,6 +600,7 @@ export function registerVoiceHandlers(
       try {
         const language = sttProvider === 'qwen' ? 'zh' : 'zh-CN';
         session.sttSession = createStreamingSession({ provider: sttProvider, language, interimResults: true });
+        resetSilenceTimer(session, socket);
 
         session.sttSession.onResult(async (result) => {
           if (result.text && result.isFinal) {
@@ -403,13 +608,30 @@ export function registerVoiceHandlers(
               recordLatency('stt', Date.now() - session.lastChunkTime);
             }
             logger.info(`[Audio] Final transcript: "${result.text}"`);
+            // Feed voice sentiment from Deepgram into emotional state
+            if (result.sentiment && session.userId) {
+              try {
+                const es = loadEmotionalState(session.userId);
+                const updated = updateEmotionalState(es, {
+                  type: 'sentiment_analysis',
+                  timestamp: new Date().toISOString(),
+                  userId: session.userId,
+                  sentiment: {
+                    valence: result.sentiment.sentiment_score,
+                    frustration: result.sentiment.sentiment === 'negative' ? 0.6 : 0,
+                    urgency: 0,
+                  },
+                });
+                saveEmotionalState(session.userId, updated);
+              } catch { /* best-effort sentiment tracking */ }
+            }
             session.accumulatedText += result.text;
             const text = session.accumulatedText.trim();
             session.accumulatedText = '';
             if (!text) return;
 
-            // ── Filter filler words: single-char interjections (嗯啊哦呃哼唉呀哈呵嗨喂诶唔嘶啧) ──
-            const isFiller = /^[嗯啊哦呃哼唉呀哈呵嗨喂诶唔嘶啧][。！？.!?，,～~]*$/.test(text);
+            // ── Filter filler words: single-char interjections ──
+            const isFiller = /^[嗯啊哦呃哼唉呀哈呵嗨喂诶唔嘶啧哎哦哟嘿嘛哇啦嘞][。！？.!?，,～~]*$/.test(text);
             if (isFiller) {
               logger.info(`[Audio] Ignored filler: "${text}"`);
               return;
@@ -454,14 +676,19 @@ export function registerVoiceHandlers(
                   socket.emit("agent:status", { status: "idle" });
                   return; // Don't process stop command itself
                 } else {
-                  // New command — process in parallel, mute old generation
-                  logger.info(`[Audio] New command during processing: "${text}" — running in parallel`);
-                  session.bgGeneration++;
-                  processVoiceInput(socket, session, text, llmGetters, sensoryFn).catch(err => {
-                    logger.error("[Voice Error]:", err);
-                    session.isProcessing = false;
-                    socket.emit("audio:status", { status: "listening" });
-                  });
+                  // Processing (LLM thinking / tool exec / orchestrator):
+                  // Non-stop input → tell user we're busy, don't interrupt
+                  logger.info(`[Audio] Status check during processing: "${text}"`);
+                  const ttsProvider = getTTSProvider();
+                  if (ttsProvider && session.currentVoiceId) {
+                    synthesizeSpeech("还在处理中，请稍等。", {
+                      provider: ttsProvider,
+                      voiceId: session.currentVoiceId,
+                    }).then(result => {
+                      const gain = computeVolumeGain();
+                      socket.emit("audio:response", { buffer: result.audioBuffer, volumeGain: gain });
+                    }).catch(() => {});
+                  }
                   return;
                 }
               }
@@ -500,6 +727,7 @@ export function registerVoiceHandlers(
     const session = getAudioSession(socket);
     if (!session.isActive) return;
     session.lastChunkTime = Date.now();
+    resetSilenceTimer(session, socket);
     if (session.sttSession) {
       session.sttSession.sendAudio(data);
       chunkCount++;
@@ -533,6 +761,7 @@ export function registerVoiceHandlers(
     session.isProcessing = false;
     session.inputQueue = [];
     session.accumulatedText = '';
+    if (session.silenceTimer) { clearTimeout(session.silenceTimer); session.silenceTimer = null; }
     if (session.ttsAbortController) {
       session.ttsAbortController.abort();
       session.ttsAbortController = null;
@@ -542,6 +771,217 @@ export function registerVoiceHandlers(
       session.sttSession = null;
     }
     socket.emit("audio:status", { status: "idle" });
+  });
+
+  // Track ambient noise level for environment-gated proactive speech
+  socket.on("ambient:noise_level", (data: { rms: number; isSpeaking: boolean; callState: string }) => {
+    ambientRms = data.rms;
+    ambientRmsLastUpdate = Date.now();
+  });
+
+  /**
+   * Night / Focus quiet mode: determine whether Lumi should suppress proactive speech.
+   */
+  function shouldStayQuiet(userId: string): { quiet: boolean; reason: string } {
+    const hour = new Date().getHours();
+    const nightHours = hour >= 23 || hour < 7;
+
+    if (nightHours) {
+      return { quiet: true, reason: 'night_hours' };
+    }
+
+    try {
+      const { getIdleState } = require('../context/activity_stream');
+      const idleState = getIdleState(userId);
+      if (idleState.isIdle && idleState.idleSince) {
+        const idleMs = Date.now() - new Date(idleState.idleSince).getTime();
+        const idleHours = idleMs / (1000 * 60 * 60);
+        if (idleHours > 2) {
+          return { quiet: true, reason: 'user_flow_state' };
+        }
+      }
+    } catch {}
+
+    const noise = getAmbientNoise();
+    if (noise !== null && noise > 0.15) {
+      return { quiet: true, reason: 'meeting_detected' };
+    }
+
+    return { quiet: false, reason: '' };
+  }
+
+  socket.on("proactive:request_speak", async (data: { message: string }) => {
+    const session = getAudioSession(socket);
+    const userId = getUserId(socket);
+    if (!userId || !data.message) return;
+
+    // Gate: night/focus/meeting quiet mode
+    const quietCheck = shouldStayQuiet(userId);
+    if (quietCheck.quiet) {
+      logger.info(`[ProactiveVoice] Suppressed for ${userId}: ${quietCheck.reason}`);
+      return;
+    }
+
+    // Resolve voiceId: session first, then personality config, then give up
+    let voiceId = session.currentVoiceId;
+    if (!voiceId) {
+      const personalityCfg = personalityRegistry.get(session.personalityId || 'lumi');
+      voiceId = personalityCfg?.ttsVoiceId || null;
+    }
+    if (!voiceId) return;
+
+    // Gate: check initiative level — Lumi only speaks first when comfortable enough
+    const es = loadEmotionalState(userId);
+    if (es.initiative < 0.4) return;
+
+    // Gate: don't interrupt when environment is noisy (user likely in a meeting)
+    const noise = getAmbientNoise();
+    if (noise !== null && noise > 0.08) return;
+
+    const ttsProvider = getTTSProvider();
+    if (!ttsProvider) return;
+
+    const proactiveVoiceId = resolveEmotionVoice(voiceId, es);
+
+    try {
+      const result = await synthesizeSpeech(data.message, {
+        provider: ttsProvider,
+        voiceId: proactiveVoiceId,
+      });
+      const proactiveGain = computeVolumeGain();
+      socket.emit("audio:proactive_speak", {
+        audioBuffer: result.audioBuffer,
+        text: data.message,
+        timestamp: new Date().toISOString(),
+        volumeGain: proactiveGain,
+      });
+      logger.info(`[ProactiveVoice] Spoke to ${userId}: "${data.message.slice(0, 60)}"`);
+    } catch (err: any) {
+      logger.warn(`[ProactiveVoice] TTS failed: ${err.message}`);
+    }
+  });
+
+  // LLM-generated greeting — replaces hardcoded templates with personalized, scene-aware greetings
+  socket.on("greeting:generate", async (data: { scene?: string }) => {
+    const userId = getUserId(socket);
+    if (!userId) return;
+
+    const session = getAudioSession(socket);
+    let voiceId = session.currentVoiceId;
+    if (!voiceId) {
+      const personalityCfg = personalityRegistry.get(session.personalityId || 'lumi');
+      voiceId = personalityCfg?.ttsVoiceId || null;
+    }
+    if (!voiceId) return;
+
+    const es = loadEmotionalState(userId);
+    if (es.initiative < 0.3) return; // Lower gate for greetings
+
+    // Build temporal context for scene-aware generation
+    let temporalBlock = '';
+    try {
+      const { generateTemporalContext } = await import('../time/temporal_context');
+      temporalBlock = generateTemporalContext(userId);
+    } catch {}
+
+    // Fetch a few recent memories for personalization
+    let memoryContext = '';
+    try {
+      const recentMemories = queryMemories({ userId, limit: 3, minConfidence: 0.5 });
+      if (recentMemories.length > 0) {
+        memoryContext = recentMemories.map(m => `- ${m.content.slice(0, 150)}`).join('\n');
+      }
+    } catch {}
+
+    // Fetch recent greetings to avoid repetition (greeting dedup)
+    let dedupContext = '';
+    try {
+      const recentGreetings = queryMemories({
+        userId,
+        query: 'greeting',
+        limit: 8,
+        minConfidence: 0.5,
+      });
+      const greetingTexts = recentGreetings
+        .filter(m => m.content.includes('[Greeting]') || m.keywords.includes('greeting'))
+        .map(m => m.content.replace(/^\[Greeting\]\s*/, '').slice(0, 80));
+      if (greetingTexts.length > 0) {
+        dedupContext = `\nRecently used greetings (DO NOT repeat these — be completely fresh):\n${greetingTexts.map(g => `- "${g}"`).join('\n')}`;
+      }
+    } catch {}
+
+    const scene = data.scene || 'return';
+    const intimacy = es.intimacy || 0.3;
+    const tone = intimacy > 0.6 ? 'warm and intimate' : intimacy > 0.3 ? 'friendly and natural' : 'polite and gentle';
+
+    const greetingPrompt = [
+      `Generate a brief, natural spoken greeting in Chinese (under 60 characters).`,
+      `Scene: user just ${scene === 'return' ? 'returned to their computer after being away' : scene === 'morning' ? 'started their day' : scene === 'evening' ? 'is winding down' : ' needs a check-in'}.`,
+      `Tone: ${tone}.`,
+      temporalBlock ? `\nCurrent context:\n${temporalBlock}` : '',
+      memoryContext ? `\nRecent topics:\n${memoryContext}\nReference one naturally if relevant.` : '',
+      dedupContext,
+      `\nDo NOT sound like a report or template. Sound like a friend who noticed they're back. Vary your phrasing — never repeat the same greeting.`,
+    ].filter(Boolean).join('\n');
+
+    try {
+      const getQwen = llmGetters?.getQwen;
+      if (!getQwen) {
+        // Fallback to template
+        const hour = new Date().getHours();
+        const fallback = hour < 6 ? '夜深了，还在忙吗？' : hour < 12 ? '早上好，欢迎回来。' : hour < 18 ? '下午好，继续吧。' : '晚上好，欢迎回来。';
+        const result = await synthesizeSpeech(fallback, { provider: getTTSProvider()!, voiceId });
+        socket.emit("audio:proactive_speak", { audioBuffer: result.audioBuffer, text: fallback, timestamp: new Date().toISOString(), volumeGain: computeVolumeGain() });
+        return;
+      }
+
+      const response = await makeLLMCall(
+        [{ role: 'user', content: greetingPrompt }],
+        [],
+        { provider: 'qwen', model: 'qwen-turbo', maxTokens: 120 },
+        llmGetters.getDeepSeek,
+        llmGetters.getGemini,
+        llmGetters.getOpenAI,
+        llmGetters.getAnthropic,
+        llmGetters.getQwen,
+      );
+
+      const greeting = response.text?.trim() || '';
+      if (!greeting) throw new Error('Empty LLM response');
+
+      const ttsProvider = getTTSProvider();
+      if (!ttsProvider) return;
+
+      const result = await synthesizeSpeech(greeting, { provider: ttsProvider, voiceId });
+      socket.emit("audio:proactive_speak", {
+        audioBuffer: result.audioBuffer,
+        text: greeting,
+        timestamp: new Date().toISOString(),
+        volumeGain: computeVolumeGain(),
+      });
+      // Store greeting in memory for dedup
+      addMemory({
+        userId,
+        type: 'fact',
+        content: `[Greeting] ${greeting}`,
+        keywords: ['greeting', scene, new Date().toISOString().slice(0, 10)],
+        confidence: 1.0,
+        sourceInteractionId: `greeting_${Date.now()}`,
+        agentId: undefined,
+      } as any, { tier: 'episodic', perspective: 'shared_memory', importance: 0.2 });
+      logger.info(`[Greeting] LLM-generated for ${userId}: "${greeting}"`);
+    } catch (err: any) {
+      logger.warn(`[Greeting] LLM generation failed, using fallback: ${err.message}`);
+      const hour = new Date().getHours();
+      const fallback = hour < 6 ? '夜深了，还在忙吗？' : hour < 12 ? '早上好，欢迎回来。' : hour < 18 ? '下午好，继续吧。' : '晚上好，欢迎回来。';
+      try {
+        const ttsProvider = getTTSProvider();
+        if (ttsProvider) {
+          const result = await synthesizeSpeech(fallback, { provider: ttsProvider, voiceId });
+          socket.emit("audio:proactive_speak", { audioBuffer: result.audioBuffer, text: fallback, timestamp: new Date().toISOString(), volumeGain: computeVolumeGain() });
+        }
+      } catch {}
+    }
   });
 
   socket.on("audio:switch-personality", (data: { personalityId: string }) => {
@@ -554,9 +994,12 @@ export function registerVoiceHandlers(
 
   socket.on("disconnect", () => {
     const session = socket.data.audioSession as AudioSession | undefined;
-    if (session?.sttSession) {
-      session.sttSession.end();
-      session.sttSession = null;
+    if (session) {
+      if (session.silenceTimer) { clearTimeout(session.silenceTimer); session.silenceTimer = null; }
+      if (session.sttSession) {
+        session.sttSession.end();
+        session.sttSession = null;
+      }
     }
     console.log(`[Socket] Client disconnected: ${socket.id}`);
   });

@@ -233,6 +233,8 @@ class PersonalityRegistry {
       memories?: Memory[];
       ragKnowledge?: string[];
       emotionalState?: EmotionalState;
+      userId?: string;
+      userText?: string;
     },
   ): { config: PersonalityConfig; systemPrompt: string } {
     const config = this.get(personalityId) || this.getDefault();

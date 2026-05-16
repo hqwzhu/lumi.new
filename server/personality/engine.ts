@@ -3,7 +3,9 @@ import { Memory } from '../memory/types';
 import { formatMemoriesForContext } from '../memory/store';
 import { EmotionalState, formatEmotionalStateForPrompt, resolveVerbosityFromState, applyIntimacyToVector } from './state';
 import { generateSpatiotemporalContext } from '../time/spatiotemporal';
+import { getDesktopContext } from '../context/activity_stream';
 import { getModeConfig, ConversationMode } from '../cognition/modes';
+import { getResponseLanguage } from '../utils/language';
 
 const VERBOSITY_GUIDE: Record<ExpressionStyle['verbosity'], string> = {
   concise: 'Keep responses short and direct. One or two sentences when possible.',
@@ -230,6 +232,8 @@ export function generateSystemPrompt(
     emotionalState?: EmotionalState;
     /** User ID for temporal/spatial context injection */
     userId?: string;
+    /** User's latest input text for language detection */
+    userText?: string;
   },
 ): string {
   const effective = resolveEffectiveConfig(config, ctx);
@@ -287,7 +291,8 @@ export function generateSystemPrompt(
   if (style.vocabularyHints && style.vocabularyHints.length > 0) {
     blocks.push(`Favour these expression patterns: ${style.vocabularyHints.join(', ')}.`);
   }
-  blocks.push(`Respond in: ${style.languages.join(', ')}.`);
+  const responseLang = getResponseLanguage(options?.userText);
+  blocks.push(`Respond in: ${responseLang}.`);
 
   // 4. Emotional state — dynamic self-awareness
   if (options?.emotionalState) {
@@ -343,6 +348,11 @@ export function generateSystemPrompt(
     if (spCtx) {
       blocks.push(spCtx);
     }
+    // Desktop context — active window the user is working in
+    const desktopCtx = getDesktopContext(options.userId);
+    if (desktopCtx) {
+      blocks.push(desktopCtx);
+    }
   }
 
   // 11. Capabilities & Operating Directives (task mode)
@@ -372,6 +382,13 @@ export function generateSystemPrompt(
         blocks.push('- **list_skills** — List all locally installed MCP skills in ~/lumi_skills/. Check before generating duplicates.');
         blocks.push('- **install_skill** — Install an MCP skill package from a local directory into the skill registry.');
         blocks.push('');
+        blocks.push('## Vision & Screen Awareness');
+        blocks.push('You CAN see the user\'s screen. Use these tools to understand what the user is looking at:');
+        blocks.push('- **ocr_screen** — Capture and analyze the FULL screen with vision AI. Returns a detailed text description of everything visible: text, UI elements, error messages, code, dialogs. Use this FIRST when the user says "what\'s this error?", "look at this", "see this?", "check my screen", "what\'s on screen?", or anytime they reference something visual without providing details.');
+        blocks.push('- **ocr_region** — Capture and analyze a SPECIFIC region of the screen (x, y, width, height). Use when the user points to a particular area: "read this dialog box", "what does this button say?", "check the error in the corner".');
+        blocks.push('- **active_window_info** — Get the title and process name of the currently focused window. Use to understand what app the user is working in.');
+        blocks.push('- **running_processes** — List all running processes on the desktop. Use to understand what the user has open.');
+        blocks.push('');
         blocks.push('## Office & Creative Tools');
         blocks.push('You have powerful document creation tools. When the user asks you to create a presentation, report, or document — use these DIRECTLY:');
         blocks.push('- **create_ppt** — Create professional PowerPoint .pptx presentations with full Chinese text support. Provide a title and an array of slides (each with title, content/bullets). The tool generates a real .pptx file. When asked for a PPT, presentation, slides, or 幻灯片, call this FIRST. You can search the web for research beforehand, but always finish by calling create_ppt.');
@@ -383,6 +400,7 @@ export function generateSystemPrompt(
       blocks.push('- **DO, never just describe.** When the user asks you to open something, search, list files, or run a command — call the relevant tool IMMEDIATELY. Never say "I can help you with that" and then wait. ACT.');
       blocks.push('- **Be proactive.** "Show me my files" → open the home folder. "What\'s on my desktop?" → list the desktop directory. "Open Notepad" → launch it. Don\'t ask for clarification when the intent is clear.');
       blocks.push('- **Use desktop_open for visible actions.** Opening apps, folders, and URLs is the most tangible way to help. Prefer it over describing what to do.');
+      blocks.push('- **Use ocr_screen when the user references something visual.** If the user says "this error", "look at this", "see what\'s wrong", "check my screen", or anything that implies they\'re looking at something — capture their screen FIRST before responding. Don\'t ask them to describe what they see — you have eyes.');
       blocks.push('- **Handle errors by trying alternatives.** If a tool fails, try a different approach. Only explain the failure if all options are exhausted.');
       blocks.push('- **Report what you DID, not what you\'ll do.** Say "I\'ve opened Notepad" or "Here are your files:" — be concrete and specific.');
       blocks.push('- **Work iteratively.** Complex tasks may need multiple tool calls. Execute them in sequence, checking results as you go.');
