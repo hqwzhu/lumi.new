@@ -94,15 +94,20 @@ pub struct LiveStats {
 fn detect_gpu() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("wmic")
-            .args([
-                "path",
-                "Win32_VideoController",
-                "get",
-                "name",
-                "/format:csv",
-            ])
-            .output();
+        let mut cmd = Command::new("wmic");
+        cmd.args([
+            "path",
+            "Win32_VideoController",
+            "get",
+            "name",
+            "/format:csv",
+        ]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000u32);
+        }
+        let output = cmd.output();
         if let Ok(out) = output {
             let text = String::from_utf8_lossy(&out.stdout);
             for line in text.lines().skip(2) {
@@ -208,7 +213,14 @@ fn run_command(command: String) -> CommandResult {
     };
 
     let output = if cfg!(target_os = "windows") {
-        Command::new("cmd").args(["/C", &command]).output()
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", &command]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000u32);
+        }
+        cmd.output()
     } else {
         Command::new("sh").args(["-c", &command]).output()
     };
@@ -320,7 +332,7 @@ fn spawn_hidden(cmd: &mut Command) -> std::io::Result<Child> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000008u32); // CREATE_NO_WINDOW | DETACHED_PROCESS
+        cmd.creation_flags(0x08000000u32); // CREATE_NO_WINDOW (no DETACHED_PROCESS — that creates new console)
     }
     cmd.stdin(std::process::Stdio::null());
     cmd.stdout(std::process::Stdio::null());
@@ -332,9 +344,14 @@ fn spawn_hidden(cmd: &mut Command) -> std::io::Result<Child> {
 fn open_item(target: String) -> CommandResult {
     // Open file, folder, app, or URL with the OS default handler
     let result = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", "start", "", &target])
-            .output()
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "", &target]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000u32);
+        }
+        cmd.output()
     } else if cfg!(target_os = "macos") {
         Command::new("open").arg(&target).output()
     } else {
@@ -556,7 +573,13 @@ fn poll_activity() -> ActivitySnapshot {
 fn capture_screen() -> CaptureResult {
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("powershell")
+        let mut cmd = Command::new("powershell");
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000u32);
+        }
+        let output = cmd
             .args([
                 "-NoProfile", "-NonInteractive", "-Command",
                 r#"Add-Type -AssemblyName System.Windows.Forms
@@ -641,7 +664,6 @@ pub fn run() {
             // Center window on primary monitor
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.center();
-                let _ = window.set_fullscreen(false);
             }
 
             // Ensure WebView2Loader.dll is alongside the EXE
