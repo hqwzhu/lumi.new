@@ -387,6 +387,26 @@ fn set_wallpaper_mode(
     Ok(())
 }
 
+#[tauri::command]
+fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    let is_max = window.is_maximized().map_err(|e| e.to_string())?;
+    if is_max {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn close_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
 // ── Screen Monitoring Commands ──
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -935,6 +955,9 @@ pub fn run() {
             run_command,
             open_item,
             set_wallpaper_mode,
+            minimize_window,
+            toggle_maximize_window,
+            close_window,
             get_active_window_info,
             get_running_processes,
             capture_screen,

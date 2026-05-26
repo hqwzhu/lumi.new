@@ -23,6 +23,9 @@ import {
   Moon,
   Sun,
   Maximize2,
+  Minimize2,
+  Minus,
+  Square,
   ChevronRight,
   ArrowLeft,
   Clock,
@@ -884,6 +887,25 @@ export function DesktopUI({
     reader.readAsDataURL(file);
   };
 
+  const handleWindowMinimize = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('minimize_window');
+    } catch {}
+  };
+  const handleWindowMaximize = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('toggle_maximize_window');
+    } catch {}
+  };
+  const handleWindowClose = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('close_window');
+    } catch {}
+  };
+
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return localStorage.getItem('lumi_onboarding_seen') !== 'true';
@@ -1612,6 +1634,31 @@ export function DesktopUI({
               </div>
               <Activity size={14} className="text-celestial-saturn group-hover:rotate-180 transition-transform duration-500" />
             </button>
+
+            {/* Window Controls */}
+            <div className="flex items-center gap-1 ml-2">
+              <button
+                onClick={handleWindowMinimize}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-colors"
+                title="最小化"
+              >
+                <Minus size={14} />
+              </button>
+              <button
+                onClick={handleWindowMaximize}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-colors"
+                title="最大化"
+              >
+                <Square size={12} />
+              </button>
+              <button
+                onClick={handleWindowClose}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white/30 hover:text-white hover:bg-red-500/80 transition-colors"
+                title="关闭"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
         </div>
 
