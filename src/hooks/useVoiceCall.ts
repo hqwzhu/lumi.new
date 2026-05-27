@@ -110,6 +110,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
   // Streaming TTS: pre-buffer and cross-fade to eliminate gaps between chunks
   const ttsContext = useRef<AudioContext | null>(null);
   const ttsGainNode = useRef<GainNode | null>(null);
+  const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const nextStartTime = useRef(0);  // When the next chunk should start playing
   const pendingDecodes = useRef(0);
 
@@ -153,6 +154,11 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     if (proactiveContext.current) {
       try { proactiveContext.current.close(); } catch {}
       proactiveContext.current = null;
+    }
+    // Stop currently playing TTS source
+    if (ttsSourceRef.current) {
+      try { ttsSourceRef.current.stop(); } catch {}
+      ttsSourceRef.current = null;
     }
     // Reset streaming TTS context
     if (ttsContext.current) {
@@ -233,8 +239,10 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
         }
 
         source.connect(ttsGainNode.current!);
+        ttsSourceRef.current = source;
 
         source.onended = () => {
+          ttsSourceRef.current = null;
           // Check if more chunks are queued
           if (audioQueue.current.length > 0) {
             const next = audioQueue.current.shift()!;
