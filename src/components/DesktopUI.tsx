@@ -80,7 +80,6 @@ const NexusGlobe = lazy(() => import('./NexusGlobe/NexusGlobe').then(m => ({ def
 import WorkflowPanel, { type WorkflowStep } from './WorkflowPanel';
 import { useWakeWord } from '../hooks/useWakeWord';
 import { useGestureDetector } from '../hooks/useGestureDetector';
-import { VoiceSubtitle } from './VoiceSubtitle';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ToolConfirmDialog } from './ToolConfirmDialog';
 
@@ -2091,16 +2090,6 @@ export function DesktopUI({
         steps={workflowSteps}
         t={t}
       />
-
-      {/* Voice Subtitle Overlay — shows real-time transcript & AI response */}
-      <VoiceSubtitle
-        transcript={transcript}
-        responseText={responseText}
-        callState={callState}
-        audioLevel={audioLevel}
-        t={t}
-      />
-
       <div className="absolute inset-0 z-[20] pointer-events-none">
         <DesktopOnboarding 
           isOpen={showOnboarding} 
