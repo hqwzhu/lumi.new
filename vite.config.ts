@@ -27,6 +27,10 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
+        input: {
+          web: path.resolve(__dirname, 'index.html'),
+          enterprise: path.resolve(__dirname, 'index.enterprise.html'),
+        },
         output: {
           manualChunks(id: string) {
             if (id.includes('node_modules/three') || id.includes('@react-three')) return 'vendor-three';
