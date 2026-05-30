@@ -359,24 +359,36 @@ export function parseAnthropicResponse(rawResponse: any): NormalizedLLMResponse 
 export async function makeLLMCall(
   messages: NormalizedMessage[],
   toolDeclarations: ToolDeclaration[],
-  config: { provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen'; model: string; maxTokens?: number; userId?: string },
+  config: { provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'auto'; model: string; maxTokens?: number; userId?: string },
   getDeepSeek: () => any,
   getGemini: () => any,
   getOpenAI?: () => any,
   getAnthropic?: () => any,
   getQwen?: () => any,
+  getOllama?: () => any,
 ): Promise<NormalizedLLMResponse> {
-  if (config.provider === 'deepseek' || config.provider === 'qwen') {
-    const client = config.provider === 'deepseek' ? getDeepSeek() : getQwen?.();
-    if (!client) throw new Error(`${config.provider} not configured (API key missing)`);
+  // ── Auto/hybrid dispatch: local Ollama → cloud DeepSeek fallback ──
+  if (config.provider === 'auto' && getOllama) {
+    const { dispatchLLMCall } = await import('./dispatch');
+    const getters = { getDeepSeek, getGemini, getOpenAI: getOpenAI || (() => null), getAnthropic: getAnthropic || (() => null), getQwen: getQwen || (() => null), getOllama, isOllamaAvailable: () => !!getOllama?.() };
+    const result = await dispatchLLMCall(messages, toolDeclarations, { provider: 'deepseek', model: 'deepseek-chat', maxTokens: config.maxTokens, userId: config.userId }, getters);
+    return { text: result.text, toolCalls: result.toolCalls, usage: result.usage };
+  }
 
-    const formatFn = config.provider === 'qwen' ? formatQwenRequest : formatDeepSeekRequest;
-    const params = formatFn({
+  // OpenAI-compatible path: DeepSeek, Qwen, Ollama
+  if (config.provider === 'deepseek' || config.provider === 'qwen' || config.provider === 'ollama') {
+    const client = config.provider === 'deepseek' ? getDeepSeek()
+      : config.provider === 'ollama' ? getOllama?.()
+      : getQwen?.();
+    if (!client) throw new Error(`${config.provider} not configured`);
+
+    const fmt = config.provider === 'qwen' ? formatQwenRequest : formatDeepSeekRequest;
+    const params = fmt({
       model: config.model,
       messages,
       toolDeclarations,
       maxTokens: config.maxTokens,
-      userId: config.userId,
+      ...(config.provider !== 'ollama' ? { userId: config.userId } : {}),
     });
 
     const response = await client.chat.completions.create(params);
@@ -440,28 +452,38 @@ export type StreamCallback = (chunk: string) => void;
 export async function makeLLMCallStreaming(
   messages: NormalizedMessage[],
   toolDeclarations: ToolDeclaration[],
-  config: { provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen'; model: string; maxTokens?: number; userId?: string; signal?: AbortSignal },
+  config: { provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'auto'; model: string; maxTokens?: number; userId?: string; signal?: AbortSignal },
   onChunk: StreamCallback,
   getDeepSeek: () => any,
   getGemini: () => any,
   getOpenAI?: () => any,
   getAnthropic?: () => any,
   getQwen?: () => any,
+  getOllama?: () => any,
 ): Promise<NormalizedLLMResponse> {
-  // ── DeepSeek / OpenAI / Qwen (OpenAI-compatible streaming) ──
-  if (config.provider === 'deepseek' || config.provider === 'openai' || config.provider === 'qwen') {
+  // ── Auto/hybrid dispatch: local Ollama → cloud DeepSeek fallback ──
+  if (config.provider === 'auto' && getOllama) {
+    const { dispatchLLMCallStreaming } = await import('./dispatch');
+    const getters = { getDeepSeek, getGemini, getOpenAI: getOpenAI || (() => null), getAnthropic: getAnthropic || (() => null), getQwen: getQwen || (() => null), getOllama, isOllamaAvailable: () => !!getOllama?.() };
+    const result = await dispatchLLMCallStreaming(messages, toolDeclarations, { provider: 'deepseek', model: 'deepseek-chat', maxTokens: config.maxTokens, userId: config.userId, signal: config.signal }, onChunk, getters);
+    return { text: result.text, toolCalls: result.toolCalls, usage: result.usage };
+  }
+
+  // ── DeepSeek / OpenAI / Qwen / Ollama (OpenAI-compatible streaming) ──
+  if (config.provider === 'deepseek' || config.provider === 'openai' || config.provider === 'qwen' || config.provider === 'ollama') {
     const client = config.provider === 'deepseek' ? getDeepSeek()
       : config.provider === 'openai' ? getOpenAI?.()
+      : config.provider === 'ollama' ? getOllama?.()
       : getQwen?.();
     if (!client) throw new Error(`${config.provider} not configured`);
 
-    const formatFn = config.provider === 'qwen' ? formatQwenRequest : formatDeepSeekRequest;
-    const params: any = formatFn({
+    const fmt = config.provider === 'qwen' ? formatQwenRequest : formatDeepSeekRequest;
+    const params: any = fmt({
       model: config.model,
       messages,
       toolDeclarations,
       maxTokens: config.maxTokens,
-      userId: config.userId,
+      ...(config.provider !== 'ollama' ? { userId: config.userId } : {}),
     });
     params.stream = true;
 

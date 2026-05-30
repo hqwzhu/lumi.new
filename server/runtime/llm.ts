@@ -8,6 +8,8 @@ let anthropic: Anthropic | null = null;
 let gemini: GoogleGenerativeAI | null = null;
 let deepseek: OpenAI | null = null;
 let qwen: OpenAI | null = null;
+let ollama: OpenAI | null = null;
+let ollamaDetected = false;
 
 export interface LLMClients {
   getOpenAI: () => OpenAI | null;
@@ -15,6 +17,8 @@ export interface LLMClients {
   getGemini: () => GoogleGenerativeAI | null;
   getDeepSeek: () => OpenAI | null;
   getQwen: () => OpenAI | null;
+  getOllama: () => OpenAI | null;
+  isOllamaAvailable: () => boolean;
 }
 
 function getOpenAI() {
@@ -64,6 +68,44 @@ function getQwen() {
   return qwen;
 }
 
+function getOllama() {
+  if (!ollama && ollamaDetected) {
+    ollama = new OpenAI({
+      apiKey: 'ollama', // Ollama doesn't require an API key but the SDK requires non-empty
+      baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
+    });
+  }
+  return ollama;
+}
+
+function isOllamaAvailable() {
+  return ollamaDetected;
+}
+
+async function detectOllama(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (resp.ok) {
+      const data = await resp.json() as any;
+      const models = data.models || [];
+      const hasLLM = models.some((m: any) =>
+        !m.name.includes('embed') && !m.name.includes('whisper')
+      );
+      ollamaDetected = hasLLM;
+      console.log(`[LLM] Ollama detected — ${models.length} models (${hasLLM ? 'LLM available' : 'no LLM models found'})`);
+      return hasLLM;
+    }
+  } catch {
+    // Ollama not running — expected on most machines
+  }
+  ollamaDetected = false;
+  return false;
+}
+
 export function createLLMRuntime(): LLMClients {
-  return { getOpenAI, getAnthropic, getGemini, getDeepSeek, getQwen };
+  // Fire-and-forget: detect local Ollama in background
+  detectOllama();
+  return { getOpenAI, getAnthropic, getGemini, getDeepSeek, getQwen, getOllama, isOllamaAvailable };
 }

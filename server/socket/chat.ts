@@ -31,6 +31,8 @@ export function registerChatHandler(
     getOpenAI: () => any;
     getAnthropic: () => any;
     getQwen: () => any;
+    getOllama: () => any;
+    isOllamaAvailable: () => boolean;
   },
   sensoryFn: (uid: string) => any,
   userIdFn: (s: Socket) => string,
@@ -213,6 +215,13 @@ export function registerChatHandler(
 
       let activeProvider = userLLMPrefs.provider || 'deepseek';
       let activeModel = (userLLMPrefs.models || {})[activeProvider] || DEFAULT_MODELS[activeProvider] || 'deepseek-chat';
+
+      // ── Hybrid dispatch: if Ollama is available and no explicit cloud provider, use auto ──
+      if (llmGetters.isOllamaAvailable() && (!userLLMPrefs.provider || userLLMPrefs.provider === 'auto')) {
+        activeProvider = 'auto';
+        activeModel = 'qwen2.5:7b';
+        console.log('[Chat] Hybrid mode enabled — local Ollama → cloud DeepSeek');
+      }
 
       // ── Subscription enforcement (with fallback) ──
       const access = checkLLMAccess({ userId: uid, provider: activeProvider, model: activeModel });

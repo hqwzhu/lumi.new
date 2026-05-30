@@ -5,7 +5,7 @@ import { recordWorkflow, WorkflowStep } from '../skills/worklog';
 import { recordLatency } from '../monitor/latency_store';
 
 export interface LLMConfig {
-  provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen';
+  provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen' | 'ollama' | 'auto';
   model: string;
   maxTokens?: number;
   userId?: string;
@@ -38,10 +38,16 @@ export async function runWithTools(
   getQwen?: () => any,
   onStreamChunk?: StreamCallback,
   context?: ToolContext,
+  getOllama?: () => any,
 ): Promise<LLMResult> {
   const executionLog: ToolExecutionRecord[] = [];
   const usageRecords: LLMUsageRecord[] = [];
   const conversationHistory: NormalizedMessage[] = [...messages];
+
+  // Auto-detect hybrid mode: if provider is 'auto' and Ollama is available, use local→cloud dispatch
+  const effectiveProvider = config.provider === 'auto' && getOllama?.()
+    ? 'auto'  // Keep as 'auto' for the dispatch logic below
+    : config.provider;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     // Check for cancellation between iterations
@@ -66,6 +72,7 @@ export async function runWithTools(
           getOpenAI || (() => null),
           getAnthropic || (() => null),
           getQwen || (() => null),
+          getOllama || (() => null),
         )
       : await makeLLMCall(
           conversationHistory,
@@ -76,6 +83,7 @@ export async function runWithTools(
           getOpenAI || (() => null),
           getAnthropic || (() => null),
           getQwen || (() => null),
+          getOllama || (() => null),
         );
     recordLatency('llm', Date.now() - llmStart);
 
@@ -197,6 +205,7 @@ export async function analyzeScreen(
   getOpenAI?: () => any,
   getAnthropic?: () => any,
   getQwen?: () => any,
+  getOllama?: () => any,
 ): Promise<string> {
   // Determine which vision model to use based on provider
   let provider = config.provider;
@@ -228,7 +237,7 @@ export async function analyzeScreen(
     messages, [],
     { provider: provider as any, model, maxTokens: 1000 },
     getDeepSeek || (() => null), getGemini || (() => null),
-    getOpenAI, getAnthropic, getQwen,
+    getOpenAI, getAnthropic, getQwen, getOllama,
   );
 
   return result.text || 'Vision analysis returned no text.';
@@ -243,7 +252,8 @@ export async function runWithVision(
   getOpenAI?: () => any,
   getAnthropic?: () => any,
   getQwen?: () => any,
+  getOllama?: () => any,
 ): Promise<string> {
-  const result = await makeLLMCall(messages, [], config, getDeepSeek || (() => null), getGemini || (() => null), getOpenAI, getAnthropic, getQwen);
+  const result = await makeLLMCall(messages, [], config, getDeepSeek || (() => null), getGemini || (() => null), getOpenAI, getAnthropic, getQwen, getOllama);
   return result.text || '';
 }
