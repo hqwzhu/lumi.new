@@ -16,6 +16,7 @@ import { mountSkillRoutes } from "../routes/skill_routes";
 import { mountMarketplaceRoutes } from "../routes/marketplace_routes";
 import { mountMiscRoutes } from "../routes/misc_routes";
 import { mountContactsRoutes } from "../routes/contacts_routes";
+import { mountBranchConnectionRoutes } from "../routes/branch_routes";
 
 interface RouteContext {
   apiRouter: Router;
@@ -61,6 +62,9 @@ export function mountAllRoutes({ apiRouter, jwtSecret, llm, getCookieOptions, io
 
   // Contacts
   mountContactsRoutes(apiRouter, jwtSecret);
+
+  // Branch connection (employee→company)
+  mountBranchConnectionRoutes(apiRouter, jwtSecret);
 
   // Misc (founder vision, feedback, admin config, Org chat)
   mountMiscRoutes(apiRouter, jwtSecret, llmGetters);
