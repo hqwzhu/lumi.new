@@ -20,3 +20,4 @@ docs/
 gen_landing.py
 tools/
 $null
+agent_shutdown_snapshot_*
