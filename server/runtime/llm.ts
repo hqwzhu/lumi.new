@@ -47,9 +47,9 @@ function getGemini() {
 }
 
 function getDeepSeek() {
-  const key = process.env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_BASE_URL
-    ? process.env.DEEPSEEK_API_KEY || getKey('DEEPSEEK_API_KEY')
-    : null;
+  const envKey = process.env.DEEPSEEK_API_KEY;
+  const storedKey = getKey('DEEPSEEK_API_KEY');
+  const key = envKey || storedKey;
   if (!deepseek && key) {
     deepseek = new OpenAI({
       apiKey: key,
