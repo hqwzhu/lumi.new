@@ -1,8 +1,8 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, X, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, Zap, MessageSquare } from 'lucide-react';
+import { Bell, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, Zap, MessageSquare } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useT } from '../lib/useT';
-import { useEffect, useState } from 'react';
+import { useState, useRef } from 'react';
 
 const ICONS: Record<string, React.ReactNode> = {
   info: <Info size={14} className="text-blue-400" />,
@@ -14,37 +14,19 @@ const ICONS: Record<string, React.ReactNode> = {
 export function NotificationCenter({ onChatMessage }: { onChatMessage?: (message: string) => void }) {
   const { notifications, unreadCount, markAllNotificationsRead, clearNotifications } = useApp();
   const t = useT();
-  const [historical, setHistorical] = useState<any[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const sessionStart = useRef(Date.now());
 
-  // Load persisted proactive interactions from server
-  useEffect(() => {
-    fetch('/api/interactions?mode=proactive', { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setHistorical(data.reverse().slice(0, 30));
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const handleClick = (item: any) => {
+    setDismissedIds(prev => new Set([...prev, item.id]));
+    onChatMessage?.(item.message);
+  };
 
-  // Merge in-memory notifications with historical proactive interactions
-  const allItems = [
-    ...notifications,
-    ...historical
-      .filter((h: any) => {
-        const histMsg = (h.message || h.content || '').replace(/^\[.*?\]\s*/, '');
-        return !notifications.some(n => n.message === histMsg);
-      })
-      .map((h: any) => ({
-        id: h.id,
-        type: h.mode === 'proactive' ? 'system' : 'info',
-        title: h.personality || 'Lumi',
-        message: (h.message || h.content || '').replace(/^\[.*?\]\s*/, ''),
-        timestamp: h.timestamp ? new Date(h.timestamp).getTime() : Date.now(),
-        read: true,
-      })),
-  ].sort((a, b) => b.timestamp - a.timestamp);
+  // Filter: only show in-memory notifications from this session, excluding dismissed
+  const visibleItems = notifications
+    .filter(n => n.timestamp > sessionStart.current)
+    .filter(n => !dismissedIds.has(n.id))
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   return (
     <div className="h-full flex flex-col bg-zinc-950/60 backdrop-blur-xl text-white overflow-y-auto">
@@ -64,7 +46,7 @@ export function NotificationCenter({ onChatMessage }: { onChatMessage?: (message
           </p>
         </div>
         <div className="flex-1" />
-        {allItems.length > 0 && (
+        {visibleItems.length > 0 && (
           <div className="flex gap-2">
             <button
               onClick={markAllNotificationsRead}
@@ -83,7 +65,7 @@ export function NotificationCenter({ onChatMessage }: { onChatMessage?: (message
       </div>
 
       <div className="flex-1 p-4">
-        {allItems.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-white/15">
             <Bell size={48} className="mb-4 opacity-20" />
             <span className="text-xs font-bold uppercase tracking-widest">{t.ncEmpty || 'No notifications'}</span>
@@ -92,15 +74,16 @@ export function NotificationCenter({ onChatMessage }: { onChatMessage?: (message
         ) : (
           <div className="space-y-1">
             <AnimatePresence>
-              {allItems.map(n => (
+              {visibleItems.map(n => (
                 <motion.div
                   key={n.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, x: 20 }}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={e => { if (e.key === 'Enter') onChatMessage?.(n.message); }}
-                  onClick={() => onChatMessage?.(n.message)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleClick(n); }}
+                  onClick={() => handleClick(n)}
                   className={`flex items-start gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer hover:bg-white/[0.08] ${
                     n.read ? 'bg-white/[0.02]' : 'bg-white/5 border border-white/5'
                   }`}
