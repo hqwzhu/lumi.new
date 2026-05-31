@@ -355,6 +355,7 @@ async function processVoiceInput(
       session.isProcessing = false;
       session.isSpeaking = false;
       session.pipelineAbortController = null;
+      socket.emit('chat:conversation_updated', { conversationId: conv.id, agentId: session.agentId });
       socket.emit("audio:status", { status: "listening" });
       socket.emit("agent:status", { status: "idle" });
       socket.emit("agent:response", { text: responseText, agentName: "Lumi", source: "quick_command" });
@@ -402,6 +403,7 @@ async function processVoiceInput(
       session.isProcessing = false;
       session.isSpeaking = false;
       session.pipelineAbortController = null;
+      socket.emit('chat:conversation_updated', { conversationId: conv.id, agentId: session.agentId });
       socket.emit("audio:status", { status: "listening" });
       socket.emit("agent:status", { status: "idle" });
       return;

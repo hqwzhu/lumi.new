@@ -316,6 +316,7 @@ export function registerChatHandler(
           if (conversationId) {
             addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
             addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id });
+            socket.emit('chat:conversation_updated', { conversationId, agentId: agentId || '' });
             // Track topics for quick commands too
             try {
               const topics = extractTopics(text);
@@ -534,6 +535,7 @@ export function registerChatHandler(
       if (conversationId) {
         addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
         addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: responseText, personality: personality.id });
+        socket.emit('chat:conversation_updated', { conversationId, agentId: agentId || '' });
 
         // Topic tracking — extract and record topics for cross-session continuity
         try {

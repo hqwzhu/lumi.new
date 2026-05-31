@@ -354,13 +354,22 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     socket.on("agent:status", (data: { status: string }) => {
       setIsTyping(data.status === "thinking");
       if (data.status === "idle" || data.status === "error") {
-        streamingMsgId.current = null;
+        // Drop partial streaming chunks that were never finalized
+        if (streamingMsgId.current) {
+          const sid = streamingMsgId.current;
+          setMessages(prev => prev.filter(m => m.id !== sid));
+          streamingMsgId.current = null;
+        }
       }
     });
 
     socket.on("agent:error", (data: { message: string; code?: string }) => {
       setIsTyping(false);
-      streamingMsgId.current = null;
+      if (streamingMsgId.current) {
+        const sid = streamingMsgId.current;
+        setMessages(prev => prev.filter(m => m.id !== sid));
+        streamingMsgId.current = null;
+      }
       toast.error(data.message);
     });
 
