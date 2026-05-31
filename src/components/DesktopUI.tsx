@@ -763,7 +763,7 @@ export function DesktopUI({
   const personalScale = useTransform(cameraZ, [0, -1000], [1, 0.4]);
   const personalOpacity = useTransform(cameraZ, [0, -400], [1, 0]);
   const { isTauri } = usePlatform();
-  const { selectedVoiceId, unreadCount, notifications, orgConnection, workDomain, switchDomain } = useApp();
+  const { selectedVoiceId, unreadCount, notifications, addNotification, orgConnection, workDomain, switchDomain } = useApp();
 
   const [openWindows, setOpenWindows] = useState<string[]>(activeTab !== 'home' && activeTab !== 'knowledge' ? [activeTab] : []);
   const [minimizedWindows, setMinimizedWindows] = useState<string[]>([]);
@@ -1189,10 +1189,13 @@ export function DesktopUI({
       }
     });
     socket.on('agent:notification', (data: { type: string; level: string; message: string }) => {
+      addNotification({ type: data.level === 'critical' ? 'warning' : data.level === 'warning' ? 'warning' : 'info', title: data.type || 'Lumi', message: data.message });
       if (data.level === 'critical') {
         toast.error(data.message, { duration: 10000 });
       } else if (data.level === 'warning') {
         toast.warning(data.message, { duration: 5000 });
+      } else {
+        toast(data.message, { duration: 5000 });
       }
     });
     return () => {
