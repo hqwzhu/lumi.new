@@ -283,6 +283,20 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
   useEffect(() => {
     if (isFounder || !socket) return;
 
+    socket.on("agent:proactive", (data: { message: string; timestamp: string }) => {
+      setMessages(prev => {
+        if (prev.some(m => m.text === data.message && m.type === 'agent')) return prev;
+        return [...prev, {
+          id: `proactive-${Date.now()}`,
+          text: data.message,
+          userName: agentName,
+          timestamp: data.timestamp || new Date().toISOString(),
+          type: 'agent',
+          source: 'proactive',
+        }];
+      });
+    });
+
     socket.on("agent:chunk", (data: { text: string; agentName: string }) => {
       if (streamingMsgId.current) {
         setMessages(prev => prev.map(m =>
@@ -377,6 +391,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     });
 
     return () => {
+      socket.off("agent:proactive");
       socket.off("agent:chunk");
       socket.off("agent:tool");
       socket.off("agent:response");
@@ -459,17 +474,25 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     }
   };
 
-  // When prefillMessage comes from notification center, auto-send it
-  const sendTextRef = useRef(sendText);
-  sendTextRef.current = sendText;
-  const hasPrefilled = useRef(false);
+  // When prefillMessage comes from notification center, show it as a Lumi message
+  const sentRef = useRef<string>('');
   useEffect(() => {
-    if (prefillMessage && !hasPrefilled.current && isOpen && messages.length === 0) {
-      hasPrefilled.current = true;
-      setTimeout(() => { sendTextRef.current(prefillMessage); }, 300);
+    if (prefillMessage && prefillMessage !== sentRef.current) {
+      sentRef.current = prefillMessage;
+      setMessages(prev => {
+        if (prev.some(m => m.text === prefillMessage && m.type === 'agent')) return prev;
+        return [...prev, {
+          id: `proactive-${Date.now()}`,
+          text: prefillMessage,
+          userName: agentName,
+          timestamp: new Date().toISOString(),
+          type: 'agent',
+          source: 'proactive',
+        }];
+      });
       onPrefillConsumed?.();
     }
-  }, [prefillMessage, isOpen, messages.length, onPrefillConsumed]);
+  }, [prefillMessage, onPrefillConsumed]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
