@@ -43,7 +43,15 @@ export function mountAgentRoutes(
       if (!isDefault && !db.agents.find((a: any) => a.id === id && a.ownerUid === req.user!.uid)) return res.status(404).json({ error: "Agent not found" });
       const conv = getActiveConversation(req.user!.uid, id);
       const msgs = conv ? getMessages(conv.id, 100) : [];
-      res.json(msgs.map((m: any) => ({ role: m.role, content: m.content || m.message || '' })));
+      // Also merge proactive push notifications (Lumi-initiated messages)
+      const proactive = (db.interactions || [])
+        .filter((i: any) => i.userId === req.user!.uid && i.mode === 'proactive')
+        .slice(-50)
+        .map((i: any) => ({ role: 'assistant', content: i.content || i.message || '', createdAt: i.timestamp, mode: 'proactive' }));
+      const merged = [...msgs.map((m: any) => ({ role: m.role, content: m.content || m.message || '', createdAt: m.createdAt })), ...proactive]
+        .sort((a, b) => (new Date(a.createdAt || 0).getTime()) - (new Date(b.createdAt || 0).getTime()))
+        .slice(-150);
+      res.json(merged);
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
