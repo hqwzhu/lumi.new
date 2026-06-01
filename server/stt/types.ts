@@ -1,4 +1,4 @@
-export type STTProvider = 'deepgram' | 'whisper' | 'qwen';
+export type STTProvider = 'deepgram' | 'whisper' | 'qwen' | 'local-whisper';
 
 export interface STTConfig {
   provider: STTProvider;

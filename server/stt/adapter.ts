@@ -2,13 +2,22 @@ import { STTConfig, STTResult, STTProvider } from './types';
 import * as deepgram from './providers/deepgram';
 import * as whisper from './providers/whisper';
 import * as qwen from './providers/qwen';
+import * as localWhisper from './providers/local-whisper';
 import { getKey } from '../config/keys';
 import { recordLatency } from '../monitor/latency_store';
 
 export async function transcribe(audioBuffer: Buffer, config: STTConfig): Promise<STTResult> {
   const start = Date.now();
+  // Local whisper is preferred when available — no API key, no network, no latency
+  const effectiveProvider = config.provider === 'local-whisper'
+    ? (localWhisper.isLocalWhisperAvailable() ? 'local-whisper' : getActiveSTTProvider() || 'whisper')
+    : config.provider;
+
   let result: STTResult;
-  switch (config.provider) {
+  switch (effectiveProvider) {
+    case 'local-whisper':
+      result = await localWhisper.transcribe(audioBuffer, config.language);
+      break;
     case 'whisper':
       result = await whisper.transcribe(audioBuffer, config.language);
       break;
@@ -46,20 +55,29 @@ export async function transcribe(audioBuffer: Buffer, config: STTConfig): Promis
 export function createStreamingSession(
   config: STTConfig,
 ): deepgram.DeepgramStreamSession | qwen.QwenStreamSession {
-  if (config.provider === 'qwen') {
+  // local-whisper is batch-only — auto-fallback to Qwen for streaming
+  const provider = config.provider === 'local-whisper'
+    ? (process.env.DASHSCOPE_API_KEY ? 'qwen' : 'deepgram')
+    : config.provider;
+  if (provider === 'qwen') {
     return qwen.createStream(config.language, config.interimResults);
   }
-  if (config.provider === 'deepgram') {
+  if (provider === 'deepgram' || provider === 'whisper') {
     return deepgram.createStream(config.language, config.interimResults);
   }
-  throw new Error(`Streaming only supports Deepgram and Qwen-ASR (requested: ${config.provider})`);
+  throw new Error(`Streaming not supported for provider: ${provider}`);
 }
 
 export function getActiveSTTProvider(): STTProvider | null {
+  // Prefer local whisper when available (no API key, no network, no cost)
+  try {
+    if (localWhisper.isLocalWhisperAvailable()) return 'local-whisper';
+  } catch {}
   const qwenKey = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY
     || getKey('DASHSCOPE_API_KEY') || getKey('QWEN_API_KEY');
   if (qwenKey) return 'qwen';
   if (process.env.DEEPGRAM_API_KEY || getKey('DEEPGRAM_API_KEY')) return 'deepgram';
   if (process.env.OPENAI_API_KEY || getKey('OPENAI_API_KEY')) return 'whisper';
-  return null;
+  // Fallback: try local even if Python not detected
+  return 'local-whisper';
 }
