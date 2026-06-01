@@ -1619,17 +1619,14 @@ export function DesktopUI({
             </button>
             <div className="h-4 w-px bg-white/10" />
             <div className="flex gap-4">
-               {[
-                 { key: 'File', label: t.file || 'File' },
-                 { key: 'Edit', label: t.edit || 'Edit' },
-                 { key: 'Kernel', label: t.kernel || 'Kernel' },
-                 { key: 'View', label: t.view || 'View' },
-                 { key: 'Matrix', label: t.matrix || 'Matrix' }
-               ].map(item => (
-                 <button key={item.key} className="text-[10px] font-bold text-white/30 hover:text-white uppercase tracking-widest transition-colors">{item.key === 'Matrix' ? (
-                   <span className="flex items-center gap-1">{item.label} <Search size={10} className="text-celestial-saturn" onClick={() => setIsSearchOpen(true)} /></span>
-                 ) : item.label}</button>
-               ))}
+              <TopMenuButton label={t.file || 'File'}>
+                <button onClick={() => { toggleWindow('settings'); }} className="w-full text-left px-4 py-2 text-[11px] text-white/60 hover:text-white hover:bg-white/10 transition-colors">{t.settings || 'Settings'}</button>
+                <button onClick={onExit} className="w-full text-left px-4 py-2 text-[11px] text-red-400/70 hover:text-red-400 hover:bg-white/10 transition-colors">{t.exit || 'Exit'}</button>
+              </TopMenuButton>
+              <TopMenuButton label={t.edit || 'Edit'} onClick={() => toggleWindow('settings')} />
+              <TopMenuButton label={t.kernel || 'Kernel'} onClick={() => toggleWindow('kernel')} />
+              <TopMenuButton label={t.view || 'View'} onClick={() => setViewMode(viewMode === 'personal' ? 'world' : 'personal')} />
+              <TopMenuButton label={t.matrix || 'Matrix'} onClick={() => setIsSearchOpen(true)} />
             </div>
           </div>
 
@@ -2519,6 +2516,39 @@ function BatteryIndicator() {
     <div className="flex items-center gap-1" title={`电池 ${level}%${charging ? ' (充电中)' : ''}`}>
       <Battery size={14} className={level <= 20 ? 'text-red-400' : level <= 50 ? 'text-yellow-400' : ''} />
       <span className="text-[10px] font-bold">{level}%</span>
+    </div>
+  );
+}
+
+function TopMenuButton({ label, onClick, children }: { label: string; onClick?: () => void; children?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useClickAway(ref, () => setOpen(false));
+
+  if (!children) {
+    return (
+      <button onClick={onClick} className="text-[10px] font-bold text-white/30 hover:text-white uppercase tracking-widest transition-colors">
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        onMouseEnter={() => setOpen(true)}
+        className="text-[10px] font-bold text-white/30 hover:text-white uppercase tracking-widest transition-colors"
+      >{label}</button>
+      {open && (
+        <div
+          className="absolute top-5 left-0 z-[110] py-2 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl min-w-[120px]"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }
