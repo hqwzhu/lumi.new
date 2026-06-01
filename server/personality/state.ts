@@ -2,6 +2,7 @@ import { readDB, writeDB } from '../../db_layer';
 import { addMemory } from '../memory/store';
 import { PersonalityVector } from './types';
 import { getSeasonInfo, getNearbyHoliday, isWeekend, getTimeOfDay } from '../time/utils';
+import { himTick, loadHIMState, saveHIMState, getBestPeak, formatPeakForPrompt, type HIMState } from './him';
 
 const emotionWriteQueues = new Map<string, Promise<void>>();
 
@@ -96,6 +97,30 @@ export function saveEmotionalState(userId: string, state: EmotionalState): void 
     }
   }).catch(() => release!());
 }
+
+/**
+ * HIM-powered emotional update: runs the standard rules engine, then applies
+ * comfort-gradient drive to produce dynamic initiative and curiosity.
+ * This is the single entry point all callers should use.
+ */
+export function updateEmotionalStateWithHIM(
+  state: EmotionalState,
+  event: EmotionEvent,
+  him: HIMState,
+  topicHint?: string,
+): { state: EmotionalState; him: HIMState } {
+  const updated = updateEmotionalState(state, event);
+  const { initiative, curiosityBias, him: newHim } = himTick(updated, him, topicHint);
+  updated.initiative = initiative;
+  if (curiosityBias > 0) {
+    updated.curiosity = Math.min(1, updated.curiosity + curiosityBias * 0.15);
+  }
+  return { state: updated, him: newHim };
+}
+
+// ── Re-export for convenience ──
+export { loadHIMState, saveHIMState, getBestPeak, formatPeakForPrompt };
+export type { HIMState };
 
 /** Rules engine — updates emotional state based on events, no LLM required */
 export function updateEmotionalState(state: EmotionalState, event: EmotionEvent): EmotionalState {

@@ -8,7 +8,8 @@ import { logger } from "../../logger";
 import { NormalizedMessage, makeLLMCallStreaming, makeLLMCall } from "../llm/providers";
 import { toolRegistry } from "../tools/registry";
 import { personalityRegistry } from "../personality";
-import { loadEmotionalState, updateEmotionalState, saveEmotionalState } from "../personality/state";
+import { loadEmotionalState, updateEmotionalState, saveEmotionalState, loadHIMState, saveHIMState } from "../personality/state";
+import { himTick } from "../personality/him";
 import { createStreamingSession, getActiveSTTProvider } from "../stt/adapter";
 import { synthesizeSpeech, getActiveProvider as getTTSProvider, resolveEmotionVoice } from "../tts/adapter";
 import { recordLatency } from "../monitor/latency_store";
@@ -602,6 +603,7 @@ async function processVoiceInput(
           },
         });
         saveEmotionalState(session.userId, updated);
+        try { const hm = loadHIMState(session.userId); const { him: nh } = himTick(updated, hm); saveHIMState(session.userId, nh); } catch {}
       } catch { /* best-effort */ }
     }
     socket.emit('chat:conversation_updated', { conversationId: conv.id, agentId: session.agentId });
@@ -697,6 +699,7 @@ export function registerVoiceHandlers(
                   },
                 });
                 saveEmotionalState(session.userId, updated);
+                try { const hm2 = loadHIMState(session.userId); const { him: nh2 } = himTick(updated, hm2); saveHIMState(session.userId, nh2); } catch {}
               } catch { /* best-effort sentiment tracking */ }
             }
             session.accumulatedText += result.text;

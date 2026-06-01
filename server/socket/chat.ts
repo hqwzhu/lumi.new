@@ -8,7 +8,7 @@ import { LLMUsage } from "../tools/types";
 import { toolRegistry } from "../tools/registry";
 import { runWithTools } from "../llm/adapter";
 import { queryMemories, queryMemoriesVector, addMemory, addReminder, extractMemories } from "../memory";
-import { loadEmotionalState, saveEmotionalState, updateEmotionalState, generateContextualGreeting, vectorMemoryBias } from "../personality/state";
+import { loadEmotionalState, saveEmotionalState, updateEmotionalState, updateEmotionalStateWithHIM, loadHIMState, saveHIMState, generateContextualGreeting, vectorMemoryBias } from "../personality/state";
 import { buildModeOverlay } from "../personality/engine";
 import { personalityRegistry } from "../personality";
 import { getOrCreateActiveConversation, addMessage, getMessages, getMessagesByTokenBudget, checkAutoSummary, setConversationSummary, getConversationSummary, setConversationMode, getUnclosedConversation, extractTopics, trackTopic, getTopicContext } from "../conversation/manager";
@@ -114,6 +114,7 @@ export function registerChatHandler(
 
       const emotionKey = agentMemoryFilter ? `${uid}_agent_${agentId}` : uid;
       const emotionalState = loadEmotionalState(emotionKey);
+      const himState = loadHIMState(emotionKey);
       console.log('[ChatHandler] emotionalState loaded');
       const isNovel = relevantMemories.length < 2;
 
@@ -649,7 +650,10 @@ export function registerChatHandler(
       if (isNovel) {
         updatedState = updateEmotionalState(updatedState, { type: 'novel_topic', userId: uid, timestamp: new Date().toISOString() });
       }
-      saveEmotionalState(emotionKey, updatedState);
+      // HIM: comfort-gradient drive → dynamic initiative + curiosity
+      const { state: himUpdated, him: newHim } = updateEmotionalStateWithHIM(updatedState, { type: 'self_reflection', userId: uid }, himState, text.slice(0, 40));
+      saveEmotionalState(emotionKey, himUpdated);
+      saveHIMState(emotionKey, newHim);
 
       // Emit contextual greeting on reconnect (sanctuary agents don't initiate)
       if (!isSanctuary && isReconnect && updatedState.intimacy > 0.2) {
