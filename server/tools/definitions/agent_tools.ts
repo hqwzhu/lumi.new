@@ -88,13 +88,14 @@ async function agentTerminate(args: Record<string, any>, _context?: any): Promis
     if (!db.agents) db.agents = [];
 
     if (terminateAll) {
-      const activeAgents = db.agents.filter((a: any) => a.status === 'active');
+      const BUILTINS = ['lumi', 'lumi_default', 'scholar_default', 'founder_default', 'incubated'];
+      const activeAgents = db.agents.filter((a: any) => a.status === 'active' && !BUILTINS.includes(a.id));
       if (activeAgents.length === 0) {
-        return 'No active agents to terminate.';
+        return 'No active agents to terminate (built-in agents excluded).';
       }
       const count = activeAgents.length;
       for (const agent of db.agents) {
-        if (agent.status === 'active') {
+        if (agent.status === 'active' && !BUILTINS.includes(agent.id)) {
           agent.status = 'terminated';
           agent.terminatedAt = new Date().toISOString();
         }

@@ -324,13 +324,27 @@ export function setOnAgentPromoted(cb: (agent: AgentRecord) => void) { onAgentPr
 
 const PROMOTION_THRESHOLD = 5; // Same skill successfully executed N times → promote
 
+let lastCacheEviction = Date.now();
+
+function evictStaleRoutingCache(now: number): void {
+  if (now - lastCacheEviction < 3600_000) return;
+  lastCacheEviction = now;
+  // Purge entire cache if last-used > 7 days (coarse, but bounded)
+  if (now - routingCacheLastUsed > ROUTING_CACHE_MAX_AGE_MS) {
+    routingCache.clear();
+  }
+}
+let routingCacheLastUsed = Date.now();
+
 function recordRoutingSuccess(skillTag: string, agentId: string): void {
+  evictStaleRoutingCache(Date.now());
   if (!routingCache.has(skillTag)) {
     routingCache.set(skillTag, new Map());
   }
   const agentScores = routingCache.get(skillTag)!;
   const newCount = (agentScores.get(agentId) || 0) + 1;
   agentScores.set(agentId, newCount);
+  routingCacheLastUsed = Date.now();
 
   // Check if this ephemeral agent should be promoted to permanent
   if (agentId.startsWith('ephemeral_') && newCount >= PROMOTION_THRESHOLD) {
@@ -584,20 +598,27 @@ async function executeWorkerTask(
         desktopRelay: context.desktopRelay,
         llmGetters,
       };
-      const result = await runWithTools(
-        messages,
-        toolRegistry,
-        { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 4000, userId: context.userId },
-        undefined,
-        isRetry ? 12 : 8,
-        llmGetters.getDeepSeek,
-        llmGetters.getGemini,
-        llmGetters.getOpenAI,
-        llmGetters.getAnthropic,
-        llmGetters.getQwen,
-        undefined,
-        workerContext,
+      const WORKER_TIMEOUT_MS = 120_000;
+      const timeoutPromise = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('Worker timed out after 2 minutes')), WORKER_TIMEOUT_MS),
       );
+      const result = await Promise.race([
+        runWithTools(
+          messages,
+          toolRegistry,
+          { provider: llmConfig.provider, model: llmConfig.model, maxTokens: 4000, userId: context.userId },
+          undefined,
+          isRetry ? 12 : 8,
+          llmGetters.getDeepSeek,
+          llmGetters.getGemini,
+          llmGetters.getOpenAI,
+          llmGetters.getAnthropic,
+          llmGetters.getQwen,
+          undefined,
+          workerContext,
+        ),
+        timeoutPromise,
+      ]);
 
       // Record token usage for each LLM call within this worker
       for (const u of (result.usageRecords || [])) {
@@ -658,9 +679,13 @@ export async function executeWorkflow(
         return executeWorkerTask(a, context, llmConfig, llmGetters, fallbackAgents);
       }),
     );
-    // Record routing successes for future matching
-    for (const a of group) {
-      recordRoutingSuccess(a.subTask.requiredSkill, a.agent.id);
+    // Only record routing success if worker actually succeeded (not error string)
+    for (let k = 0; k < group.length; k++) {
+      const a = group[k];
+      const result = groupResults[k];
+      if (!result.output || !result.output.startsWith('[Worker failed')) {
+        recordRoutingSuccess(a.subTask.requiredSkill, a.agent.id);
+      }
     }
     allResults.push(...groupResults);
   }
@@ -826,17 +851,25 @@ export function recordWorkflowPattern(
 
 /**
  * Check if the current task pattern has been seen recently.
- * Returns true if the same pattern appeared ≥ 2 times in the last 7 days.
+ * Uses word-level Jaccard similarity (≥ 60% overlap = similar).
+ * Returns true if ≥ 2 similar patterns appeared in the last 7 days.
  */
 export function shouldDistillSkill(task: string): boolean {
-  const prefix = task.slice(0, 80).toLowerCase();
+  const words = new Set(task.toLowerCase().split(/\s+/).filter(w => w.length > 1));
   const sevenDaysAgo = Date.now() - 7 * 86400000;
 
-  const similarPatterns = recentPatterns.filter(
-    p => p.taskPrefix === prefix && new Date(p.timestamp).getTime() > sevenDaysAgo,
-  );
+  let similarCount = 0;
+  for (const p of recentPatterns) {
+    if (new Date(p.timestamp).getTime() < sevenDaysAgo) continue;
+    const pWords = new Set(p.taskPrefix.split(/\s+/).filter(w => w.length > 1));
+    const intersection = [...words].filter(w => pWords.has(w)).length;
+    const union = new Set([...words, ...pWords]).size;
+    if (union > 0 && intersection / union >= 0.6) {
+      similarCount++;
+    }
+  }
 
-  return similarPatterns.length >= 2;
+  return similarCount >= 2;
 }
 
 /**

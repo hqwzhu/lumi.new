@@ -147,7 +147,7 @@ export function registerTaskHandler(
       let orchestratedText = '';
       if (cognition.intent.category === 'command' || cognition.intent.category === 'code' || cognition.intent.category === 'question') {
         const complexity = classifyComplexity(data.text, { userId: uid, personalityId: data.personalityId || 'lumi' });
-        if (complexity === 'complex') {
+        if (complexity === 'complex' || complexity === 'moderate') {
           const db = readDB();
           const availableAgents = (db.agents || []).filter((a: any) => a.status !== 'offline');
           if (availableAgents.length >= 1) {

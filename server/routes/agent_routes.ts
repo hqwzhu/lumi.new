@@ -83,9 +83,16 @@ export function mountAgentRoutes(
   router.delete("/agents/:id", requireAuth, (req, res) => {
     try {
       const { id } = req.params; const db = readDB();
+      const BUILTINS = ['lumi', 'lumi_default', 'scholar_default', 'founder_default', 'incubated'];
+      if (BUILTINS.includes(id)) return res.status(403).json({ error: "Cannot delete built-in agent" });
       const idx = db.agents.findIndex((a: any) => a.id === id && a.ownerUid === req.user!.uid);
       if (idx === -1) return res.status(404).json({ error: "Agent not found or unauthorized" });
-      db.agents.splice(idx, 1); writeDB(db); res.json({ success: true });
+      db.agents.splice(idx, 1);
+      // Cleanup orphaned data
+      if (db.interactions) db.interactions = db.interactions.filter((i: any) => i.agentId !== id);
+      if (db.memories) db.memories = db.memories.filter((m: any) => m.agentId !== id);
+      if (db.conversations) db.conversations = db.conversations.filter((c: any) => c.agentId !== id);
+      writeDB(db); res.json({ success: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
