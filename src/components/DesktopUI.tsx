@@ -2029,7 +2029,7 @@ export function DesktopUI({
       </div>
 
       {/* Desktop Grid & Widgets */}
-      <div className={`relative z-10 w-full h-full p-8 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar pt-20 transition-all duration-1000 ${(isWallpaperMode || callState !== 'idle') ? 'opacity-0 blur-sm pointer-events-none' : 'opacity-100'}`}>
+      <div className={`relative z-10 w-full h-full p-8 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar pt-20 transition-all duration-1000 ${isWallpaperMode ? 'opacity-0 blur-sm pointer-events-none' : 'opacity-100'}`}>
         <div className="flex flex-col xl:flex-row justify-between items-start gap-12">
             <div className="relative flex-1 w-full min-h-[400px]" style={{ margin: 0, padding: 0 }}>
               {desktopIcons.map((def, i) => {
@@ -2197,7 +2197,7 @@ export function DesktopUI({
           onSuccess={() => window.dispatchEvent(new CustomEvent('lumi:voice-updated'))}
         />
         <AnimatePresence>
-          {callState === 'idle' && openWindows.map(windowId => {
+          {openWindows.map(windowId => {
             const size = getWindowSize(windowId);
             const orderIdx = windowOrder.indexOf(windowId);
             return (
