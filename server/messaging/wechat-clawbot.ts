@@ -84,14 +84,10 @@ export class WeChatClawBotAdapter implements MessageAdapter {
     const res = await fetch('https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3');
     const data = await res.json();
     if (!data.qrcode) throw new Error(`QR code fetch failed: ${JSON.stringify(data)}`);
-    // qrcode_img_content is a URL to the QR image; fetch and convert to base64 for the UI
-    let qrcodeB64 = '';
-    try {
-      const imgRes = await fetch(data.qrcode_img_content);
-      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-      qrcodeB64 = imgBuf.toString('base64');
-    } catch { /* fall through */ }
-    return { qrcode: qrcodeB64 || data.qrcode, qrcode_id: data.qrcode, qrcode_img_content: data.qrcode_img_content, ret: data.ret || 0 };
+    // qrcode_img_content is a liteapp.weixin.qq.com URL — the QR image must be fetched through
+    // WeChat's CDN which only works from within the WeChat client. Use the QR code ID string
+    // to generate the QR locally instead.
+    return { qrcode: data.qrcode, qrcode_id: data.qrcode, qrcode_img_content: data.qrcode_img_content, ret: data.ret || 0 };
   }
 
   async checkQRCodeStatus(qrcodeId: string): Promise<QRCodeStatusResponse> {

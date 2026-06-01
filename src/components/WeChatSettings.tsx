@@ -28,11 +28,11 @@ export function WeChatSettings({ t }: { t?: any }) {
       const res = await fetch('/api/wechat/qrcode', { credentials: 'include' });
       const data = await res.json();
       if (data.qrcode) {
-        // qrcode is base64 PNG from the adapter
-        setQrCode(data.qrcode.startsWith('data:') ? data.qrcode : `data:image/png;base64,${data.qrcode}`);
-        // Use qrcode_img_content as the poll ID (it contains the qrcode=xxx query param)
-        const qrId = data.qrcode_id || new URLSearchParams((data.qrcode_img_content || '').split('?')[1] || '').get('qrcode') || '';
+        // qrcode is the QR ID string — generate a real QR PNG using the QR API
+        const qrId = data.qrcode_id || data.qrcode;
         setQrId(qrId);
+        // Use Google Charts API or qrserver to generate the QR image
+        setQrCode(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data.qrcode_img_content || `https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3&qrcode=${qrId}`)}`);
         setStep('show_qr');
         if (qrId) startPolling(qrId);
       } else {
