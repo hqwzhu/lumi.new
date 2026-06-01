@@ -1620,6 +1620,18 @@ export function DesktopUI({
             <div className="h-4 w-px bg-white/10" />
             <div className="flex gap-4">
               <TopMenuButton label={t.file || 'File'}>
+                <button onClick={async () => {
+                  try {
+                    const invoke = (window as any).__TAURI__?.core?.invoke || (window as any).__TAURI_INTERNALS__?.invoke;
+                    if (invoke) {
+                      const files = await invoke('list_home_files');
+                      setNativeFiles(Array.isArray(files) ? files : []);
+                      toggleWindow('github-mcp');
+                    } else {
+                      toast.info(t.desktopOnly || 'File browse requires desktop app');
+                    }
+                  } catch (err: any) { toast.error(err.message || 'Failed to list files'); }
+                }} className="w-full text-left px-4 py-2 text-[11px] text-white/60 hover:text-white hover:bg-white/10 transition-colors">{t.openFiles || 'Open Files'}</button>
                 <button onClick={() => { toggleWindow('settings'); }} className="w-full text-left px-4 py-2 text-[11px] text-white/60 hover:text-white hover:bg-white/10 transition-colors">{t.settings || 'Settings'}</button>
                 <button onClick={onExit} className="w-full text-left px-4 py-2 text-[11px] text-red-400/70 hover:text-red-400 hover:bg-white/10 transition-colors">{t.exit || 'Exit'}</button>
               </TopMenuButton>
