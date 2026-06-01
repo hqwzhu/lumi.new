@@ -943,6 +943,46 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                   animate={{ opacity: 1, y: 0 }}
                   className={`flex flex-col ${msg.type === 'agent' ? 'items-start' : 'items-end'}`}
                 >
+                  {/* Image / File previews — parse tool results and detect in mid-text agent replies */}
+                  {(() => {
+                    let imageUrls: string[] = [];
+                    try {
+                      const parsed = JSON.parse(msg.text || '');
+                      if (parsed.images && Array.isArray(parsed.images)) imageUrls = parsed.images;
+                      if (parsed.image_base64) imageUrls = [`data:image/png;base64,${parsed.image_base64}`];
+                    } catch {}
+                    const fileMatch = msg.text?.match(/(?:Saved|created|generated|written).*?:\s*(.+?\.(?:pdf|pptx|docx|xlsx|txt|ts|js|py|json|png|jpg|gif))(?:\s|$)/i);
+                    const filePath = fileMatch?.[1];
+                    if (imageUrls.length === 0 && !filePath) return null;
+                    return (
+                      <div className="max-w-[85%] mb-1 space-y-2">
+                        {imageUrls.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {imageUrls.map((url, i) => (
+                              <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                                className="block w-36 h-36 rounded-2xl overflow-hidden border-2 border-white/10 hover:border-celestial-saturn/60 transition-all shadow-lg">
+                                <img src={url} alt={`Generated ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {filePath && (
+                          <div className="flex items-center gap-3 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                            <FileText size={16} className="text-emerald-400" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[11px] text-white/70 truncate block">{filePath.split(/[\\/]/).pop()}</span>
+                              <span className="text-[9px] text-white/30">{t.fileReady || 'File ready — click to copy path'}</span>
+                            </div>
+                            <button onClick={() => handleCopyMessage(filePath, msg.id)}
+                              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                              <Copy size={12} className="text-white/40" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <div className={`relative group max-w-[85%] p-5 rounded-3xl text-sm leading-relaxed ${
                     msg.type === 'agent'
                       ? 'bg-celestial-saturn/10 text-celestial-saturn border border-celestial-saturn/20 rounded-tl-none'
