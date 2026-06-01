@@ -845,13 +845,10 @@ export function DesktopUI({
   // Desktop icon layout: absolute positioning, 4 columns, fixed spacing
   const isOrgAdmin = orgConnection?.connected && (orgConnection.orgRole === 'owner' || orgConnection.orgRole === 'admin');
   const desktopIcons = [
-    { id: 'kernel', labelKey: 'osKernel', icon: <Cpu size={24} />, colorClass: 'from-orange-600 to-red-500', windowId: 'kernel' },
     { id: 'workbench', labelKey: 'orgWorkbench', icon: <Briefcase size={24} />, colorClass: 'from-blue-500 to-indigo-600', windowId: 'org' as const },
     { id: 'tools', labelKey: 'tools', icon: <Wrench size={24} />, colorClass: 'from-amber-500 to-orange-600', windowId: 'tools' },
     { id: 'github-mcp', labelKey: 'githubMCP', icon: <Globe size={24} />, colorClass: 'from-purple-500 to-violet-600', windowId: 'github-mcp' },
-    { id: 'devices', labelKey: 'deviceMesh', icon: <Wifi size={24} />, colorClass: 'from-cyan-500 to-blue-600', windowId: 'devices' },
     { id: 'skills', labelKey: 'skills', icon: <Sparkles size={24} />, colorClass: 'from-emerald-500 to-teal-600', windowId: 'skills' },
-    { id: 'subscription', labelKey: 'subscription', icon: <Crown size={24} />, colorClass: 'from-amber-400 to-yellow-600', windowId: 'subscription' },
     { id: 'memory-avatar', labelKey: 'memoryAvatars', icon: <Castle size={24} />, colorClass: 'from-fuchsia-500 to-purple-600', windowId: 'memory-avatar' },
     { id: 'avatar-studio', labelKey: 'avatarStudio', icon: <Brush size={24} />, colorClass: 'from-cyan-400 to-blue-600', windowId: 'avatar-studio' },
     { id: 'sound', labelKey: 'sound', icon: <Volume2 size={24} />, colorClass: 'from-sky-500 to-indigo-600', windowId: 'sound' },
@@ -2011,8 +2008,6 @@ export function DesktopUI({
                     <BatteryWidget t={t} />
                  </GlassCard>
               </div>
-
-              <NeuralSynthesisMonitor t={t} onOpenTokens={() => toggleWindow('tokens')} />
 
               {/* Daily Capability Widget */}
               <DailyCapability t={t} onInstall={(skillId) => toggleWindow('skills')} />
