@@ -1,0 +1,155 @@
+/**
+ * Cloud API Core — Central orchestration for all cloud-dependent operations.
+ *
+ * Provides:
+ * 1. Unified retry + exponential backoff for all cloud calls
+ * 2. Provider fallback chains (primary → secondary → fallback)
+ * 3. Circuit breaker pattern (fail-fast when provider is down)
+ * 4. Health check endpoint for monitoring provider status
+ * 5. Error classification
+ *
+ * Every cloud-dependent module (LLM, STT, TTS, Messaging, Weather)
+ * routes through this core for consistent error handling.
+ */
+
+import { withRetry, isCloudRetryable, withTimeout } from './retry';
+export { withRetry, isCloudRetryable, withTimeout, withFallback, isCircuitClosed, recordSuccess, recordFailure, resetCircuit, getCircuitStatus, setCircuitBreakerConfig, getAvailableLLMProviders, getAvailableSTTProviders, getAvailableTTSProviders, LLM_PRIORITY, STT_PRIORITY, TTS_PRIORITY };
+export type { RetryOptions } from './retry';
+
+import { withFallback, getAvailableLLMProviders, getAvailableSTTProviders, getAvailableTTSProviders, LLM_PRIORITY, STT_PRIORITY, TTS_PRIORITY } from './fallback';
+export type { FallbackResult, FallbackAttempt, FallbackChainOptions } from './fallback';
+
+import { isCircuitClosed, recordSuccess, recordFailure, resetCircuit, getCircuitStatus, setCircuitBreakerConfig } from './circuit_breaker';
+export type { CircuitState } from './circuit_breaker';
+
+// ── Error Classification ──
+
+export type CloudErrorCategory =
+  | 'auth'              // Missing/invalid API key
+  | 'quota'             // Rate limited / quota exceeded
+  | 'timeout'           // Request timed out
+  | 'network'           // Network error (DNS, connection refused, etc.)
+  | 'server_error'      // 5xx server error
+  | 'bad_request'       // 4xx client error (not auth)
+  | 'circuit_open'      // Circuit breaker is open (fail-fast)
+  | 'unknown';          // Unclassified
+
+export interface ClassifiedError {
+  category: CloudErrorCategory;
+  message: string;
+  isRetryable: boolean;
+  provider?: string;
+}
+
+/**
+ * Classify a cloud API error into a category with retry guidance.
+ */
+export function classifyCloudError(error: Error, provider?: string): ClassifiedError {
+  const msg = error.message?.toLowerCase() || '';
+
+  if (msg.includes('circuit') || msg.includes('circuit breaker')) {
+    return { category: 'circuit_open', message: error.message, isRetryable: true, provider };
+  }
+
+  if (
+    msg.includes('not configured') ||
+    msg.includes('invalid api key') ||
+    msg.includes('unauthorized') ||
+    msg.includes('authentication') ||
+    msg.includes('403') ||
+    msg.includes('401')
+  ) {
+    return { category: 'auth', message: error.message, isRetryable: false, provider };
+  }
+
+  if (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    msg.includes('too many requests')
+  ) {
+    return { category: 'quota', message: error.message, isRetryable: true, provider };
+  }
+
+  if (
+    msg.includes('timeout') ||
+    msg.includes('timed out')
+  ) {
+    return { category: 'timeout', message: error.message, isRetryable: true, provider };
+  }
+
+  if (
+    msg.includes('econnrefused') ||
+    msg.includes('enotfound') ||
+    msg.includes('econnreset') ||
+    msg.includes('network') ||
+    msg.includes('fetch failed')
+  ) {
+    return { category: 'network', message: error.message, isRetryable: true, provider };
+  }
+
+  if (
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504') ||
+    msg.includes('internal server error') ||
+    msg.includes('service unavailable')
+  ) {
+    return { category: 'server_error', message: error.message, isRetryable: true, provider };
+  }
+
+  if (
+    msg.includes('400') ||
+    msg.includes('404') ||
+    msg.includes('422') ||
+    msg.includes('bad request') ||
+    msg.includes('not found')
+  ) {
+    return { category: 'bad_request', message: error.message, isRetryable: false, provider };
+  }
+
+  return { category: 'unknown', message: error.message, isRetryable: false, provider };
+}
+
+// ── Health Check ──
+
+export interface ProviderHealth {
+  provider: string;
+  configured: boolean;
+  circuitState: string;
+  lastChecked: number;
+}
+
+/**
+ * Get health status of all tracked cloud providers.
+ * Returns which are configured, circuit state, etc.
+ */
+export function getCloudHealth(): {
+  llm: ProviderHealth[];
+  stt: ProviderHealth[];
+  tts: ProviderHealth[];
+  circuits: ReturnType<typeof getCircuitStatus>;
+} {
+  const llmProviders = getAvailableLLMProviders();
+  const sttProviders = getAvailableSTTProviders();
+  const ttsProviders = getAvailableTTSProviders();
+  const circuits = getCircuitStatus();
+
+  const toHealth = (provider: string, configured: boolean): ProviderHealth => {
+    const circuit = circuits.find(c => c.key === provider);
+    return {
+      provider,
+      configured,
+      circuitState: circuit?.state || 'closed',
+      lastChecked: Date.now(),
+    };
+  };
+
+  return {
+    llm: LLM_PRIORITY.map(p => toHealth(p.provider, llmProviders[p.provider] || false)),
+    stt: STT_PRIORITY.map(p => toHealth(p.provider, sttProviders[p.provider] || false)),
+    tts: TTS_PRIORITY.map(p => toHealth(p.provider, ttsProviders[p.provider] || false)),
+    circuits,
+  };
+}

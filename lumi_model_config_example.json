@@ -1,0 +1,61 @@
+{
+  "version": "2.0",
+  "local": {
+    "enabled": true,
+    "endpoint": "http://localhost:11434/v1/chat/completions",
+    "model": "qwen2.5:7b",
+    "api_key": "",
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 2048,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
+      "context_length": 8192
+    },
+    "health_check": {
+      "timeout_ms": 5000
+    }
+  },
+  "cloud": {
+    "enabled": true,
+    "provider": "deepseek",
+    "endpoint": "https://api.deepseek.com/v1/chat/completions",
+    "model": "deepseek-chat",
+    "api_key": "${LUMI_CLOUD_API_KEY}",
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 4096,
+      "top_p": 0.9
+    },
+    "rate_limit": {
+      "requests_per_minute": 60,
+      "concurrent_max": 5
+    }
+  },
+  "routing": {
+    "strategy": "auto",
+    "complexity_threshold": 0.5,
+    "fallback": {
+      "enabled": true,
+      "timeout_ms": 30000,
+      "retry_count": 2
+    },
+    "cache": {
+      "enabled": true,
+      "ttl_seconds": 300,
+      "max_size": 1000
+    },
+    "latency_monitoring": {
+      "enabled": true,
+      "window_size": 10,
+      "auto_switch_threshold_ms": 5000
+    }
+  },
+  "secrets": {
+    "provider": "env",
+    "key_mappings": {
+      "cloud.api_key": "LUMI_CLOUD_API_KEY",
+      "local.api_key": "LUMI_LOCAL_API_KEY"
+    }
+  }
+}

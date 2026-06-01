@@ -5,6 +5,7 @@ import { readDB, writeDB, isDbDirty } from "../../db_layer";
 import { logger } from "../../logger";
 import { toolRegistry } from "../tools/registry";
 import { scheduler } from "../scheduler";
+import { getCloudHealth } from "../cloud/core";
 import { loadKeys, saveKeys, getKey, getAllKeyNames } from "../config/keys";
 import { requireAuth } from "../middleware/auth";
 import { getLatencyStats } from "../monitor/latency_store";
@@ -29,6 +30,11 @@ export function mountSystemRoutes(router: Router, jwtSecret: string, io?: any) {
       logger.error("Health check failed", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Cloud provider health — circuit breaker + fallback status
+  router.get("/cloud/health", (_req, res) => {
+    try { res.json(getCloudHealth()); } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   // Tool list for security config

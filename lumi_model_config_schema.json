@@ -1,0 +1,244 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lumi Model Configuration — The Hybrid Brain",
+  "description": "A dual-pathway model routing system. Local for reflex, speed, privacy. Cloud for depth, scale, collective intelligence.",
+  "type": "object",
+  "required": ["local", "cloud", "routing"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "default": "2.0"
+    },
+    "local": {
+      "type": "object",
+      "description": "🐢 Local model — your personal cortex. Always available, zero latency, fully private.",
+      "required": ["endpoint", "model"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable local inference"
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "examples": [
+            "http://localhost:11434/v1/chat/completions",
+            "http://192.168.1.42:8080/v1/completions"
+          ],
+          "description": "Local model server endpoint (Ollama, llama.cpp, vLLM, etc.)"
+        },
+        "model": {
+          "type": "string",
+          "examples": ["llama3.2:3b", "mistral:7b", "deepseek-r1:7b", "qwen2.5:7b"],
+          "description": "Model name as recognized by local server"
+        },
+        "api_key": {
+          "type": "string",
+          "default": "",
+          "description": "Optional API key for local servers"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Inference parameters",
+          "properties": {
+            "temperature": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 2.0,
+              "default": 0.7,
+              "description": "Lower = predictable, Higher = creative"
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32768,
+              "default": 2048
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "default": 0.9
+            },
+            "repeat_penalty": {
+              "type": "number",
+              "minimum": 1.0,
+              "maximum": 2.0,
+              "default": 1.1
+            },
+            "context_length": {
+              "type": "integer",
+              "minimum": 1024,
+              "default": 8192
+            }
+          },
+          "additionalProperties": false
+        },
+        "health_check": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "default": 5000
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "cloud": {
+      "type": "object",
+      "description": "☁️ Cloud model — connection to the global mind. Vast knowledge, continuous evolution.",
+      "required": ["endpoint", "model", "api_key"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["openai", "anthropic", "google", "deepseek", "qwen", "custom"],
+          "default": "custom",
+          "description": "Cloud provider for optimized routing logic"
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "examples": [
+            "https://api.openai.com/v1/chat/completions",
+            "https://api.deepseek.com/v1/chat/completions",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "examples": ["gpt-4o", "deepseek-chat", "qwen-plus", "claude-3-opus-20240229"]
+        },
+        "api_key": {
+          "type": "string",
+          "description": "API key — store in env vars, never in config files",
+          "x-env-var": "LUMI_CLOUD_API_KEY"
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "temperature": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 2.0,
+              "default": 0.7
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 131072,
+              "default": 4096
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "default": 0.9
+            },
+            "frequency_penalty": {
+              "type": "number",
+              "minimum": -2.0,
+              "maximum": 2.0,
+              "default": 0.0
+            },
+            "presence_penalty": {
+              "type": "number",
+              "minimum": -2.0,
+              "maximum": 2.0,
+              "default": 0.0
+            }
+          },
+          "additionalProperties": true
+        },
+        "rate_limit": {
+          "type": "object",
+          "properties": {
+            "requests_per_minute": { "type": "integer", "default": 60 },
+            "concurrent_max": { "type": "integer", "default": 5 }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "routing": {
+      "type": "object",
+      "description": "🧠 The routing strategy — the executive function deciding which brain hemisphere to use",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "cloud_first",
+            "local_first",
+            "auto",
+            "manual",
+            "hybrid",
+            "cost_optimized"
+          ],
+          "default": "auto",
+          "description": "Routing strategy selection"
+        },
+        "complexity_threshold": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5,
+          "description": "For 'auto': tasks above this score route to cloud"
+        },
+        "fallback": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "timeout_ms": { "type": "integer", "default": 30000 },
+            "retry_count": { "type": "integer", "default": 2 }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "ttl_seconds": { "type": "integer", "default": 300 },
+            "max_size": { "type": "integer", "default": 1000 }
+          }
+        },
+        "latency_monitoring": {
+          "type": "object",
+          "description": "Adaptive routing based on real-time latency",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "window_size": { "type": "integer", "default": 10 },
+            "auto_switch_threshold_ms": {
+              "type": "integer",
+              "default": 5000,
+              "description": "If cloud latency exceeds this, auto-switch to local"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "secrets": {
+      "type": "object",
+      "description": "🔐 Secret management — keys never touch config files",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["env", "file", "vault", "aws_secrets", "azure_keyvault"],
+          "default": "env"
+        },
+        "key_mappings": {
+          "type": "object",
+          "description": "Maps config fields to env var names",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}
