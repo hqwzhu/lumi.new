@@ -365,20 +365,32 @@ export function createWeComRoutes(
       const timestamp = (q.timestamp || '').replace(/ /g, '+');
       const nonce = (q.nonce || '').replace(/ /g, '+');
 
-      // Verify signature
-      if (msg_signature && timestamp && nonce) {
-        try {
-          const bodyStr = rawBody;
-          const echostr = bodyStr.match(/<Encrypt><!\[CDATA\[([\s\S]*?)\]\]><\/Encrypt>/)?.[1] || '';
-          if (echostr && !adapter.verifyWebhook({ msg_signature, timestamp, nonce, echostr })) {
+      // Decrypt: WeChat Work POST body is always encrypted XML
+      let decryptedXml = rawBody;
+      const encryptMatch = rawBody.match(/<Encrypt><!\[CDATA\[([\s\S]*?)\]\]><\/Encrypt>/);
+      if (encryptMatch) {
+        const echostr = encryptMatch[1];
+        // Verify signature if possible
+        if (msg_signature && timestamp && nonce) {
+          if (!adapter.verifyWebhook({ msg_signature, timestamp, nonce, echostr })) {
+            console.log('[WeCom] POST signature verification failed');
             return res.status(403).send('signature mismatch');
           }
-        } catch { /* best-effort verification */ }
+        }
+        try {
+          decryptedXml = (adapter as any).decrypt(echostr);
+          console.log('[WeCom] XML decrypted:', decryptedXml.slice(0, 200));
+        } catch (err: any) {
+          console.error('[WeCom] Decrypt failed:', err.message);
+          return res.status(403).send('decrypt failed');
+        }
       }
 
-      const msg = adapter.parseEvent({ rawBody });
+      const msg = adapter.parseEvent({ rawBody: decryptedXml });
       if (!msg) {
-        return res.send('success'); // WeCom expects plaintext "success"
+        console.log('[WeCom] parseEvent returned null — msgType may not be text, or XML parse failed');
+        console.log('[WeCom] XML was:', decryptedXml.slice(0, 300));
+        return res.send('success');
       }
 
       console.log(`[WeCom] ${msg.userName}: ${msg.text.slice(0, 80)}`);
