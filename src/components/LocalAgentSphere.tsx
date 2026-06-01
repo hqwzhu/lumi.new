@@ -492,27 +492,6 @@ export function LocalAgentSphere({
 
         {/* Controls */}
         <div className="mt-12 flex flex-col items-center gap-6 z-10">
-          <div className="flex items-center gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
-            <button
-              onClick={() => setSpatialMode('geometric')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-                spatialMode === 'geometric' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-              }`}
-            >
-              <Box size={14} />
-              {t.geometric || 'Geometric'}
-            </button>
-            <button
-              onClick={() => setSpatialMode('humanoid')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-                spatialMode === 'humanoid' ? 'bg-celestial-saturn text-black' : 'text-white/40 hover:text-white'
-              }`}
-            >
-              <UserIcon size={14} />
-              {t.humanoid || 'Humanoid'}
-            </button>
-          </div>
-
           <div className="flex items-center gap-3">
             {callState !== 'idle' && onToggleMute && (
               <Button
