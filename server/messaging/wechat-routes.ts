@@ -91,7 +91,7 @@ export function createWeChatRoutes(
   });
 
   // Auto-start polling if already configured
-  if (config.botToken && config.botId) {
+  if (config?.botToken && config?.botId) {
     startWeChatPolling(adapter, config, options);
   }
 

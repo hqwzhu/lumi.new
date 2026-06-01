@@ -28,10 +28,13 @@ export function WeChatSettings({ t }: { t?: any }) {
       const res = await fetch('/api/wechat/qrcode', { credentials: 'include' });
       const data = await res.json();
       if (data.qrcode) {
-        setQrCode(`data:image/png;base64,${data.qrcode}`);
-        setQrId(data.qrcode_id);
+        // qrcode is base64 PNG from the adapter
+        setQrCode(data.qrcode.startsWith('data:') ? data.qrcode : `data:image/png;base64,${data.qrcode}`);
+        // Use qrcode_img_content as the poll ID (it contains the qrcode=xxx query param)
+        const qrId = data.qrcode_id || new URLSearchParams((data.qrcode_img_content || '').split('?')[1] || '').get('qrcode') || '';
+        setQrId(qrId);
         setStep('show_qr');
-        startPolling(data.qrcode_id);
+        if (qrId) startPolling(qrId);
       } else {
         toast.error(data.error || 'Failed to get QR code');
       }

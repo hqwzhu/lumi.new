@@ -29,9 +29,10 @@ export interface WeChatClawBotConfig {
 // ── API types ──
 
 interface QRCodeResponse {
-  qrcode: string;  // base64 PNG
-  qrcode_id: string;
-  expires_in: number;
+  qrcode: string;            // base64 PNG image
+  qrcode_id: string;         // QR code identifier for polling
+  qrcode_img_content: string; // URL to QR image
+  ret: number;
 }
 
 interface QRCodeStatusResponse {
@@ -83,14 +84,23 @@ export class WeChatClawBotAdapter implements MessageAdapter {
     const res = await fetch('https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3');
     const data = await res.json();
     if (!data.qrcode) throw new Error(`QR code fetch failed: ${JSON.stringify(data)}`);
-    return { qrcode: data.qrcode, qrcode_id: data.qrcode_id || data.qrcode, expires_in: data.expires_in || 300 };
+    // qrcode_img_content is a URL to the QR image; fetch and convert to base64 for the UI
+    let qrcodeB64 = '';
+    try {
+      const imgRes = await fetch(data.qrcode_img_content);
+      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+      qrcodeB64 = imgBuf.toString('base64');
+    } catch { /* fall through */ }
+    return { qrcode: qrcodeB64 || data.qrcode, qrcode_id: data.qrcode, qrcode_img_content: data.qrcode_img_content, ret: data.ret || 0 };
   }
 
   async checkQRCodeStatus(qrcodeId: string): Promise<QRCodeStatusResponse> {
     const res = await fetch(`https://ilinkai.weixin.qq.com/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcodeId)}`);
     const data = await res.json();
+    // ret=0 means success (scanned + confirmed), ret!=0 means pending/error
+    const isConfirmed = data.ret === 0 && data.bot_token;
     return {
-      status: data.status || (data.bot_token ? 'confirmed' : 'pending'),
+      status: isConfirmed ? 'confirmed' : (data.status || 'pending'),
       bot_token: data.bot_token,
       bot_id: data.bot_id,
       baseurl: data.baseurl || 'https://ilinkai.weixin.qq.com',
