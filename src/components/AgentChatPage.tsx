@@ -373,33 +373,30 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       toast.error(data.message);
     });
 
-    // Live-refresh messages from API when voice/other sources save to conversation.
-    // Skip if a chunk stream is in-progress OR local state is already up-to-date.
-    // conversation_updated NOW fires AFTER agent:response (order fixed in chat.ts).
-    // Reload from API only if counts differ (voice added messages, tool msgs persisted, etc).
+    // Text chat state is managed by agent:chunk/agent:response — API reload ONLY for voice/other channels.
+    // conversation_updated now arrives AFTER agent:response (fixed order in chat.ts).
+    // streamingMsgId is null by then for text chat → no-op. For voice it's still set → reload.
     socket.on("chat:conversation_updated", (data: { conversationId: string; agentId: string }) => {
       if (data.agentId !== agentId) return;
       fetchConversations();
-      if (streamingMsgId.current) return;
+      if (!streamingMsgId.current) return; // text chat: state already correct, skip
+      // Voice path: streaming just completed, reload full state from API
+      streamingMsgId.current = null;
       const cid = activeCidRef.current;
       if (cid && data.conversationId === cid) {
         fetch(`/api/conversations/${data.conversationId}/messages?limit=100`)
           .then(r => r.json())
           .then(result => {
-            if (!result.messages || !Array.isArray(result.messages)) return;
-            setMessages(prev => {
-              // Only replace if counts changed (new voice/tool messages) — avoids flicker
-              const localCount = prev.filter(m => m.type !== 'tool').length;
-              if (localCount >= result.messages.length) return prev;
-              return result.messages.map((m: any, idx: number) => ({
+            if (result.messages && Array.isArray(result.messages)) {
+              setMessages(result.messages.map((m: any, idx: number) => ({
                 id: m.id || `hist-${idx}`,
                 text: m.content,
                 userName: m.role === 'assistant' ? (agentNameRef.current || (t.lumi || 'Lumi')) : (user?.displayName || (t.you || 'You')),
                 timestamp: m.createdAt,
                 type: m.role === 'assistant' ? 'agent' : 'user',
                 mode: m.mode,
-              }));
-            });
+              })));
+            }
           })
           .catch(() => {});
       }
