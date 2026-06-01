@@ -47,6 +47,8 @@ export interface OwnerProfile {
   frequentExpressions: string[];
   /** Topic clusters the owner talks about most */
   interestClusters: string[];
+  /** Timestamps of when each cluster was last observed (index-parallel to interestClusters) */
+  interestClusterTimestamps?: string[];
   /** 0 = very casual, 1 = very formal */
   formalityLevel: number;
   /** 0 = stoic/minimal, 1 = very emotionally expressive */
@@ -303,9 +305,17 @@ export function computeMutations(
       });
     }
 
-    // 3. Interest absorption — append to coreMotivation if relevant
-    if (p >= 0.25 && profile.interestClusters && profile.interestClusters.length > 0) {
-      const topInterest = profile.interestClusters[0];
+    // 3. Interest absorption — append to coreMotivation if relevant.
+    // Interest decay: skip clusters older than 60 days.
+    const freshInterests = (profile.interestClusterTimestamps && profile.interestClusters)
+      ? profile.interestClusters.filter((_, i) => {
+          const ts = profile.interestClusterTimestamps?.[i];
+          if (!ts) return true;
+          return Date.now() - new Date(ts).getTime() < 60 * 86400000;
+        })
+      : profile.interestClusters;
+    if (p >= 0.25 && freshInterests && freshInterests.length > 0) {
+      const topInterest = freshInterests[0];
       if (topInterest && !config.coreMotivation.includes(topInterest)) {
         const absorbed = ` I share my owner's interest in ${topInterest}.`;
         mutations.push({
@@ -362,9 +372,17 @@ export function computeMutations(
     });
   }
 
-  // 3. Interest absorption — fold owner's interests into core motivation if relevant
-  if (profile.interestClusters && profile.interestClusters.length > 0 && p >= 0.25) {
-    const topInterests = profile.interestClusters.slice(0, 3);
+  // 3. Interest absorption — fold owner's interests into core motivation if relevant.
+  // Decay: skip interests older than 60 days.
+  const bestInterests = (profile.interestClusterTimestamps && profile.interestClusters)
+    ? profile.interestClusters.filter((_, i) => {
+        const ts = profile.interestClusterTimestamps?.[i];
+        if (!ts) return true;
+        return Date.now() - new Date(ts).getTime() < 60 * 86400000;
+      })
+    : profile.interestClusters;
+  if (bestInterests && bestInterests.length > 0 && p >= 0.25) {
+    const topInterests = bestInterests.slice(0, 3);
     const currentMotivation = config.coreMotivation;
     const interestMention = topInterests.join('、');
 
@@ -510,8 +528,17 @@ export async function evolvePersonality(
     return null;
   }
 
+  // Evolution quality feedback: if connection dropped since last evolution, be more conservative
+  const prevConnectionAfterEvolve = (config as any)._connectionAfterLastEvolve as number | undefined;
+  let effectiveConfig = evolutionConfig;
+  if (prevConnectionAfterEvolve != null && connectionScore < prevConnectionAfterEvolve) {
+    const damping = 0.5; // halve plasticity if connection regressed
+    effectiveConfig = { ...evolutionConfig, plasticity: evolutionConfig.plasticity * damping };
+    console.log(`[Evolution] Connection regressed (${prevConnectionAfterEvolve.toFixed(2)} → ${connectionScore.toFixed(2)}), damping plasticity to ${effectiveConfig.plasticity.toFixed(2)}`);
+  }
+
   // Compute mutations
-  const mutations = computeMutations(config, profile, evolutionConfig);
+  const mutations = computeMutations(config, profile, effectiveConfig);
   if (mutations.length === 0) {
     console.log(`[Evolution] No mutations needed — personality already aligned`);
     return null;
@@ -531,6 +558,9 @@ export async function evolvePersonality(
   };
 
   step.narrative = generateEvolutionNarrative(step, config.name);
+
+  // Store connection score for next evolution's quality feedback
+  (config as any)._connectionAfterLastEvolve = connectionScore;
 
   return step;
 }

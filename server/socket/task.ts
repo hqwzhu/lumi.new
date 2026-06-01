@@ -210,6 +210,12 @@ export function registerTaskHandler(
       }
 
       const requestConfirmation = async (toolName: string, args: Record<string, any>): Promise<boolean> => {
+        // Tool trust: if user has approved this tool ≥ 5 times, auto-approve
+        const { getTrustedTools, recordToolApprove, recordToolDeny } = await import("../personality/tool_trust");
+        if (getTrustedTools(uid).includes(toolName)) {
+          socket.emit("agent:tool_call", { name: toolName, arguments: args, result: 'Auto-approved (trusted)', error: undefined });
+          return true;
+        }
         return new Promise((resolve) => {
           const cid = crypto.randomUUID();
           const timeout = setTimeout(() => {
@@ -218,6 +224,14 @@ export function registerTaskHandler(
           }, 30000);
           socket.once(`tool:confirm_result:${cid}`, (data: { allowed: boolean }) => {
             clearTimeout(timeout);
+            if (data.allowed) {
+              const promoted = recordToolApprove(uid, toolName);
+              if (promoted) {
+                socket.emit("agent:notification", { type: 'trust', level: 'info', message: `Tool "${toolName}" is now trusted — future uses will be auto-approved.` });
+              }
+            } else {
+              recordToolDeny(uid, toolName);
+            }
             resolve(data.allowed === true);
           });
           socket.emit('agent:confirm_tool', {
