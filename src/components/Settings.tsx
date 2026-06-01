@@ -31,7 +31,7 @@ import { useApp } from '@/contexts/AppContext';
 import { VoiceForge } from './VoiceForge';
 import { MCPSettings } from './MCPSettings';
 import { RemoteMCPSettings } from './RemoteMCPSettings';
-import { FeishuSettings } from './FeishuSettings';
+import { MessagingHub } from './MessagingHub';
 
 function buildSidebarGroups(t: any) {
   return [
@@ -271,7 +271,7 @@ export function Settings({
       case 'remote-mcp':
         return <RemoteMCPSettings t={t} />;
       case 'messaging':
-        return <FeishuSettings t={t} />;
+        return <MessagingHub t={t} />;
       default:
         return null;
     }

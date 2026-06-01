@@ -1,6 +1,6 @@
-// Messaging integrations (Feishu, etc.)
+// Messaging integrations (Feishu, WeCom, etc.)
 import { Router } from "express";
-import { createMessagingRoutes } from "../messaging";
+import { createMessagingRoutes, createWeComRoutes } from "../messaging";
 import { getMessagingConfig } from "../messaging/config";
 import { personalityRegistry } from "../personality";
 import { queryMemories } from "../memory";
@@ -11,16 +11,29 @@ export function setupMessaging(
   llm: { getDeepSeek: any; getGemini: any; getOpenAI: any; getAnthropic: any; getQwen: any },
 ) {
   const cfg = getMessagingConfig();
+  const llmGetters = { getDeepSeek: llm.getDeepSeek, getGemini: llm.getGemini, getOpenAI: llm.getOpenAI, getAnthropic: llm.getAnthropic, getQwen: llm.getQwen };
 
   if (cfg.feishu?.appId && cfg.feishu?.appSecret) {
     apiRouter.use("/", createMessagingRoutes(cfg.feishu, {
-      llmGetters: { getDeepSeek: llm.getDeepSeek, getGemini: llm.getGemini, getOpenAI: llm.getOpenAI, getAnthropic: llm.getAnthropic, getQwen: llm.getQwen },
+      llmGetters,
       personalityRegistry,
       queryMemories,
       loadEmotionalState,
     }));
-    console.log('[Feishu] Messaging routes mounted at /api/feishu/*');
+    console.log('[Feishu] Routes mounted at /api/feishu/*');
   } else {
-    console.log('[Feishu] Not configured — set FEISHU_APP_ID and FEISHU_APP_SECRET in .env');
+    console.log('[Feishu] Not configured');
+  }
+
+  if (cfg.wecom?.corpId && cfg.wecom?.appSecret) {
+    apiRouter.use("/", createWeComRoutes(cfg.wecom, {
+      llmGetters,
+      personalityRegistry,
+      queryMemories,
+      loadEmotionalState,
+    }));
+    console.log('[WeCom] Routes mounted at /api/wecom/*');
+  } else {
+    console.log('[WeCom] Not configured');
   }
 }

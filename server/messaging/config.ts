@@ -15,6 +15,14 @@ export interface MessagingConfig {
     verificationToken?: string;
     enabled: boolean;
   };
+  wecom: {
+    corpId: string;
+    agentId: string;
+    appSecret: string;
+    token: string;
+    encodingAESKey: string;
+    enabled: boolean;
+  };
 }
 
 function loadFromEnv(): MessagingConfig {
@@ -24,6 +32,14 @@ function loadFromEnv(): MessagingConfig {
       appSecret: process.env.FEISHU_APP_SECRET || '',
       verificationToken: process.env.FEISHU_VERIFICATION_TOKEN || undefined,
       enabled: !!(process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET),
+    },
+    wecom: {
+      corpId: process.env.WECOM_CORP_ID || '',
+      agentId: process.env.WECOM_AGENT_ID || '',
+      appSecret: process.env.WECOM_APP_SECRET || '',
+      token: process.env.WECOM_TOKEN || '',
+      encodingAESKey: process.env.WECOM_ENCODING_AES_KEY || '',
+      enabled: !!(process.env.WECOM_CORP_ID && process.env.WECOM_APP_SECRET),
     },
   };
 }
@@ -56,12 +72,23 @@ export function isMessagingConfigured(): boolean {
   return _configured;
 }
 
-export function updateMessagingConfig(partial: Partial<MessagingConfig['feishu']>): MessagingConfig {
-  _config = {
-    feishu: { ..._config.feishu, ...partial },
-  };
-  _config.feishu.enabled = !!(_config.feishu.appId && _config.feishu.appSecret);
-  _configured = _config.feishu.enabled;
+export function updateMessagingConfig(
+  partial: Partial<MessagingConfig['feishu']> & { wecom?: Partial<MessagingConfig['wecom']> },
+): MessagingConfig {
+  if (partial.wecom) {
+    _config = {
+      ..._config,
+      wecom: { ..._config.wecom, ...partial.wecom },
+    };
+    _config.wecom.enabled = !!(_config.wecom.corpId && _config.wecom.appSecret);
+  } else {
+    _config = {
+      ..._config,
+      feishu: { ..._config.feishu, ...partial as Partial<MessagingConfig['feishu']> },
+    };
+    _config.feishu.enabled = !!(_config.feishu.appId && _config.feishu.appSecret);
+  }
+  _configured = _config.feishu.enabled || _config.wecom.enabled;
   saveToFile(_config);
   return _config;
 }

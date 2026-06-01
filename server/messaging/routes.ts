@@ -305,3 +305,136 @@ function resolveProviderOrder(
 
   return ordered;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Enterprise WeChat (企业微信) Routes
+// ═══════════════════════════════════════════════════════════════════
+
+import { WeComAdapter, type WeComConfig } from './wecom';
+
+export function createWeComRoutes(
+  config: WeComConfig,
+  options?: {
+    onMessage?: MessageHandler;
+    llmGetters?: Record<string, () => any>;
+    personalityRegistry?: any;
+    queryMemories?: (opts: { userId: string; query: string; limit: number; minConfidence: number }) => any[];
+    loadEmotionalState?: (userId: string) => any;
+  },
+): Router {
+  const router = Router();
+  const adapter = new WeComAdapter(config);
+
+  // ── GET /wecom/events — URL verification ──
+  router.get('/wecom/events', (req, res) => {
+    try {
+      const { msg_signature, timestamp, nonce, echostr } = req.query as Record<string, string>;
+      if (!echostr) return res.status(400).send('Missing echostr');
+      const plaintext = adapter.verifyUrl(echostr, { msg_signature, timestamp, nonce });
+      res.type('text/plain').send(plaintext);
+    } catch (err: any) {
+      console.error('[WeCom] URL verify error:', err.message);
+      res.status(403).send('Verification failed');
+    }
+  });
+
+  // ── POST /wecom/events — receive messages ──
+  router.post('/wecom/events', async (req, res) => {
+    try {
+      // WeCom callback POST sends XML in the body
+      const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      const msg_signature = (req.query.msg_signature || req.body.msg_signature || '') as string;
+      const timestamp = (req.query.timestamp || req.body.timestamp || '') as string;
+      const nonce = (req.query.nonce || req.body.nonce || '') as string;
+
+      // Verify signature
+      if (msg_signature && timestamp && nonce) {
+        try {
+          const bodyStr = typeof req.body === 'string' ? req.body : '';
+          const echostr = bodyStr.match(/<Encrypt><!\[CDATA\[([\s\S]*?)\]\]><\/Encrypt>/)?.[1] || '';
+          if (echostr && !adapter.verifyWebhook({ msg_signature, timestamp, nonce, echostr })) {
+            return res.status(403).send('signature mismatch');
+          }
+        } catch { /* best-effort verification */ }
+      }
+
+      const msg = adapter.parseEvent({ rawBody });
+      if (!msg) {
+        return res.send('success'); // WeCom expects plaintext "success"
+      }
+
+      console.log(`[WeCom] ${msg.userName}: ${msg.text.slice(0, 80)}`);
+
+      // Respond IMMEDIATELY (WeCom requires < 5s)
+      res.type('text/plain').send('success');
+
+      // Process AI reply async
+      if (options?.onMessage) {
+        const reply = await options.onMessage(msg);
+        if (reply) {
+          await adapter.sendMessage(msg.chatId, { text: reply.text, platform: 'wechat' });
+        }
+      } else {
+        const replyText = await processWithPersonality(msg, options);
+        await adapter.sendMessage(msg.chatId, { text: replyText, platform: 'wechat' });
+      }
+    } catch (err: any) {
+      console.error('[WeCom] Event error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).send('error');
+      }
+    }
+  });
+
+  // ── POST /wecom/send — manual send ──
+  router.post('/wecom/send', async (req, res) => {
+    try {
+      const { userId, text } = req.body;
+      if (!userId) return res.status(400).json({ error: 'userId required' });
+      if (!text) return res.status(400).json({ error: 'text required' });
+      const messageId = await adapter.sendMessage(userId, { text, platform: 'wechat' });
+      res.json({ success: true, messageId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── GET /wecom/status ──
+  router.get('/wecom/status', (_req, res) => {
+    res.json({
+      platform: 'wecom',
+      configured: config.corpId && config.appSecret ? true : false,
+      corpId: config.corpId ? `${config.corpId.slice(0, 8)}...` : null,
+      agentId: config.agentId || null,
+    });
+  });
+
+  // ── GET /wecom/config ──
+  router.get('/wecom/config', requireAuth, (_req, res) => {
+    res.json({
+      corpId: config.corpId,
+      corpIdMasked: config.corpId ? `${config.corpId.slice(0, 8)}...` : '',
+      agentId: config.agentId,
+      hasSecret: !!config.appSecret,
+      hasAesKey: !!config.encodingAESKey,
+      enabled: !!(config.corpId && config.appSecret),
+    });
+  });
+
+  // ── POST /wecom/config ──
+  router.post('/wecom/config', requireAuth, async (req, res) => {
+    try {
+      const { corpId, agentId, appSecret, token, encodingAESKey } = req.body;
+      const updated = updateMessagingConfig({
+        wecom: { corpId, agentId, appSecret, token, encodingAESKey },
+      });
+      Object.assign(config, updated.wecom);
+      adapter.reload(config);
+      res.json({ success: true, configured: updated.wecom.enabled });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  return router;
+}

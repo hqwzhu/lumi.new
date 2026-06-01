@@ -14,4 +14,6 @@ export type {
 
 export { FeishuAdapter } from './feishu';
 export type { FeishuConfig } from './feishu';
-export { createMessagingRoutes } from './routes';
+export { createMessagingRoutes, createWeComRoutes } from './routes';
+export { WeComAdapter } from './wecom';
+export type { WeComConfig } from './wecom';
