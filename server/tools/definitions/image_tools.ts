@@ -20,7 +20,7 @@ async function generateImage(args: Record<string, any>): Promise<string> {
       'X-DashScope-Async': 'enable',
     },
     body: JSON.stringify({
-      model: 'wan2.1-t2i-large',
+      model: 'wan2.2-t2i-plus',
       input: { prompt },
       parameters: { size, n },
     }),
