@@ -1,4 +1,5 @@
 import { ParsedToolCall, NormalizedLLMResponse } from '../tools/types';
+import { withCloudResilience } from '../cloud/resilience';
 
 export type MessageContent =
   | string
@@ -391,7 +392,10 @@ export async function makeLLMCall(
       ...(config.provider !== 'ollama' ? { userId: config.userId } : {}),
     });
 
-    const response = await client.chat.completions.create(params);
+    const response = await withCloudResilience(
+      () => client.chat.completions.create(params),
+      { provider: config.provider, model: config.model },
+    );
     return parseDeepSeekResponse(response);
   }
 
@@ -407,7 +411,10 @@ export async function makeLLMCall(
     });
 
     const modelInstance = client.getGenerativeModel(modelConfig);
-    const result = await modelInstance.generateContent({ contents });
+    const result = await withCloudResilience(
+      () => modelInstance.generateContent({ contents }),
+      { provider: 'gemini', model: config.model },
+    );
     return parseGeminiResponse(result);
   }
 
@@ -423,7 +430,10 @@ export async function makeLLMCall(
       userId: config.userId,
     });
 
-    const response = await client.chat.completions.create(params);
+    const response = await withCloudResilience(
+      () => client.chat.completions.create(params),
+      { provider: 'openai', model: config.model },
+    );
     return parseOpenAIResponse(response);
   }
 
@@ -438,7 +448,10 @@ export async function makeLLMCall(
       maxTokens: config.maxTokens,
     });
 
-    const response = await client.messages.create(params);
+    const response = await withCloudResilience(
+      () => client.messages.create(params),
+      { provider: 'anthropic', model: config.model },
+    );
     return parseAnthropicResponse(response);
   }
 
@@ -487,7 +500,10 @@ export async function makeLLMCallStreaming(
     });
     params.stream = true;
 
-    const stream = await client.chat.completions.create(params, { signal: config.signal });
+    const stream: any = await withCloudResilience(
+      () => client.chat.completions.create(params, { signal: config.signal }),
+      { provider: config.provider, model: config.model },
+    );
     const accumulatedText: string[] = [];
     const accumulatedReasoning: string[] = [];
     const toolCallAccumulators: Map<number, { id: string; name: string; args: string }> = new Map();
@@ -549,7 +565,10 @@ export async function makeLLMCallStreaming(
     });
 
     const modelInstance = client.getGenerativeModel(modelConfig);
-    const result = await modelInstance.generateContentStream({ contents });
+    const result: any = await withCloudResilience(
+      () => modelInstance.generateContentStream({ contents }),
+      { provider: 'gemini', model: config.model },
+    );
 
     const accumulatedText: string[] = [];
     const toolCalls: ParsedToolCall[] = [];
@@ -595,7 +614,10 @@ export async function makeLLMCallStreaming(
       maxTokens: config.maxTokens,
     });
 
-    const stream = await client.messages.stream(params);
+    const stream: any = await withCloudResilience(
+      () => client.messages.stream(params),
+      { provider: 'anthropic', model: config.model },
+    );
 
     const textParts: string[] = [];
     const toolCalls: ParsedToolCall[] = [];

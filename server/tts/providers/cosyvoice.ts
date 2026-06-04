@@ -5,6 +5,7 @@ import os from 'os';
 import { TTSResult, VoiceListItem } from '../types';
 import { getKey } from '../../config/keys';
 import { getDataPath } from '../../config/data_path';
+import { withCloudResilience } from '../../cloud/resilience';
 
 const BASE_URL = 'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer';
 
@@ -64,15 +65,18 @@ export async function synthesizeSpeech(
 
   const body = { model: 'cosyvoice-v3-flash', input };
 
-  const res = await fetch(BASE_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+  const res = await withCloudResilience(
+    () => fetch(BASE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    { provider: 'cosyvoice', maxRetries: 1 },
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));

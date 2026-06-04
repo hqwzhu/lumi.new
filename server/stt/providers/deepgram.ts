@@ -1,6 +1,7 @@
 import { STTResult } from '../types';
 import { logger } from '../../../logger';
 import { getKey } from '../../config/keys';
+import { isCircuitClosed, recordSuccess, recordFailure } from '../../cloud/circuit_breaker';
 
 function getApiKey(): string {
   const key = process.env.DEEPGRAM_API_KEY || getKey('DEEPGRAM_API_KEY');
@@ -15,10 +16,16 @@ export interface DeepgramStreamSession {
   onError: (callback: (err: Error) => void) => void;
 }
 
+const PROVIDER = 'deepgram';
+
 export function createStream(
   language: string = 'zh-CN',
   interimResults: boolean = true,
 ): DeepgramStreamSession {
+  if (!isCircuitClosed(PROVIDER)) {
+    throw new Error('[CircuitBreaker] Deepgram STT is temporarily unavailable (circuit open). The circuit will probe automatically after cooldown.');
+  }
+
   const apiKey = getApiKey();
   const params = new URLSearchParams({
     encoding: 'linear16',
@@ -48,6 +55,7 @@ export function createStream(
   const errorCallbacks: Array<(err: Error) => void> = [];
 
   ws.onopen = () => {
+    recordSuccess(PROVIDER);
     logger.info('[Deepgram] Streaming session started');
   };
 
@@ -58,6 +66,7 @@ export function createStream(
       const { type, channel } = msg;
 
       if (type === 'Results') {
+        recordSuccess(PROVIDER);
         const alternatives = channel?.alternatives || msg?.channel?.alternatives;
         const is_final = msg.is_final ?? true;
         const speech_final = msg.speech_final ?? false;
@@ -83,11 +92,16 @@ export function createStream(
   };
 
   ws.onerror = (event: Event) => {
+    const err = new Error(`Deepgram WebSocket error: ${(event as any).message || event.type || 'unknown'}`);
+    recordFailure(PROVIDER, undefined, err);
     logger.error('[Deepgram] WebSocket error:', (event as any).message || event.type || 'unknown');
     errorCallbacks.forEach(cb => cb(new Error('Deepgram WebSocket error')));
   };
 
   ws.onclose = (event: CloseEvent) => {
+    if (event.code !== 1000 && event.code !== 1001 && event.code !== 0) {
+      recordFailure(PROVIDER, undefined, new Error(`Deepgram closed (code=${event.code}, reason=${event.reason || 'none'})`));
+    }
     logger.info(`[Deepgram] Streaming session closed (code=${event.code}, reason=${event.reason || 'none'})`);
   };
 

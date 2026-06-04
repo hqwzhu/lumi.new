@@ -1,6 +1,7 @@
 import { STTResult } from '../types';
 import { logger } from '../../../logger';
 import { getKey } from '../../config/keys';
+import { isCircuitClosed, recordSuccess, recordFailure } from '../../cloud/circuit_breaker';
 
 function getApiKey(): string {
   const key = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY
@@ -16,10 +17,16 @@ export interface QwenStreamSession {
   onError: (callback: (err: Error) => void) => void;
 }
 
+const PROVIDER = 'qwen-stt';
+
 export function createStream(
   language: string = 'zh',
   interimResults: boolean = true,
 ): QwenStreamSession {
+  if (!isCircuitClosed(PROVIDER)) {
+    throw new Error('[CircuitBreaker] Qwen STT is temporarily unavailable (circuit open). The circuit will probe automatically after cooldown.');
+  }
+
   const apiKey = getApiKey();
   const model = 'qwen3-asr-flash-realtime';
   const url = `wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=${model}`;
@@ -44,6 +51,7 @@ export function createStream(
   }
 
   ws.onopen = () => {
+    recordSuccess(PROVIDER);
     logger.info('[Qwen-ASR] WebSocket connected, sending session.update');
 
     // Configure session: VAD mode, PCM 16kHz mono
@@ -126,11 +134,16 @@ export function createStream(
   };
 
   ws.onerror = (event: Event) => {
+    const err = new Error(`Qwen-ASR WebSocket error: ${(event as any).message || event.type || 'unknown'}`);
+    recordFailure(PROVIDER, undefined, err);
     logger.error('[Qwen-ASR] WebSocket error:', (event as any).message || event.type || 'unknown');
     errorCallbacks.forEach(cb => cb(new Error('Qwen-ASR WebSocket error')));
   };
 
   ws.onclose = (event: CloseEvent) => {
+    if (event.code !== 1000 && event.code !== 1001 && event.code !== 0) {
+      recordFailure(PROVIDER, undefined, new Error(`Qwen-ASR closed (code=${event.code})`));
+    }
     logger.info(`[Qwen-ASR] Closed (code=${event.code}, reason=${event.reason || 'none'})`);
   };
 

@@ -2,6 +2,7 @@ import { TTSResult, VoiceListItem } from '../types';
 import fs from 'fs';
 import path from 'path';
 import { getDataPath } from '../../config/data_path';
+import { withCloudResilience } from '../../cloud/resilience';
 
 const BASE_URL = 'http://127.0.0.1:9880';
 
@@ -75,12 +76,15 @@ export async function synthesizeSpeech(
     streaming_mode: false,
   };
 
-  const res = await fetch(`${BASE_URL}/tts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
+  const res = await withCloudResilience(
+    () => fetch(`${BASE_URL}/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    { provider: 'gptsovits', maxRetries: 2, baseDelayMs: 500 },
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
