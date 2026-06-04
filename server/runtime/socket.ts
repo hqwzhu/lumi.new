@@ -9,6 +9,7 @@ import { registerPerceptionHandlers } from "../socket/perception";
 import { registerAmbientHandlers } from "../socket/ambient";
 import { registerConversationHandlers } from "../socket/conversations";
 import { registerWakeHandlers } from "../socket/wake";
+import { registerTerminalHandlers } from "../socket/terminal";
 import { getSensory } from "../socket/shared";
 import { perceptionEvents } from "../socket/shared";
 import { deviceRegistry } from "../devices";
@@ -92,6 +93,7 @@ export function initSocketRuntime({ io, jwtSecret, llm }: SocketContext) {
     registerAmbientHandlers(socket, getUserId, io);
     registerConversationHandlers(socket, getUserId);
     registerWakeHandlers(socket, getUserId);
+    registerTerminalHandlers(socket, getUserId);
     registerChatHandler(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);
     registerTaskHandler(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);
     registerVoiceHandlers(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);

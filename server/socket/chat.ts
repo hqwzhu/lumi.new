@@ -447,7 +447,7 @@ export function registerChatHandler(
         let persistedHistory: NormalizedMessage[] = [];
         if (agentId) {
           const conv = getOrCreateActiveConversation(uid, agentId);
-          const msgs = getMessagesByTokenBudget(conv.id, 6000);
+          const msgs = getMessagesByTokenBudget(conv.id, 32000);
           persistedHistory = msgs
             .filter((m: any) => m.message || m.response)
             .flatMap((m: any) => {

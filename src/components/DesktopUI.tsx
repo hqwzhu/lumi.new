@@ -45,6 +45,7 @@ import {
   Brush,
   Mic,
   Briefcase,
+  Terminal as TerminalIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -90,6 +91,7 @@ import { ToolConfirmDialog } from './ToolConfirmDialog';
 const KnowledgeBase = lazy(() => import('./KnowledgeBase').then(m => ({ default: m.KnowledgeBase })));
 import { PersonalityEditor } from './PersonalityEditor';
 import { Settings } from './Settings';
+import { TerminalWindow } from './Terminal';
 import { systemService } from '@/services/systemService';
 import { usePlatform } from '@/hooks/usePlatform';
 
@@ -879,6 +881,7 @@ export function DesktopUI({
     { id: 'memory-avatar', labelKey: 'memoryAvatars', icon: <Castle size={24} />, colorClass: 'from-fuchsia-500 to-purple-600', windowId: 'memory-avatar' },
     { id: 'avatar-studio', labelKey: 'avatarStudio', icon: <Brush size={24} />, colorClass: 'from-cyan-400 to-blue-600', windowId: 'avatar-studio' },
     { id: 'sound', labelKey: 'sound', icon: <Volume2 size={24} />, colorClass: 'from-sky-500 to-indigo-600', windowId: 'sound' },
+    { id: 'terminal', labelKey: 'terminal', icon: <TerminalIcon size={24} />, colorClass: 'from-gray-600 to-slate-800', windowId: 'terminal' },
   ];
 
   const handleWallpaperUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1357,7 +1360,7 @@ export function DesktopUI({
         setSettingsSection('appearance');
         break;
       case 'open_terminal':
-        toggleWindow('kernel');
+        toggleWindow('terminal');
         break;
       case 'open':
         if (context?.targetId) toggleWindow(context.targetId);
@@ -1398,6 +1401,7 @@ export function DesktopUI({
     if (windowId === 'subscription') return { w: '850px', h: '640px' };
     if (windowId === 'avatar-studio') return { w: '1050px', h: '720px' };
     if (windowId === 'sound') return { w: '900px', h: '700px' };
+    if (windowId === 'terminal') return { w: '900px', h: '600px' };
     return { w: '900px', h: '700px' };
   };
 
@@ -2259,6 +2263,8 @@ export function DesktopUI({
                     />
                   ) : windowId === 'sound' ? (
                     <SoundPanel t={t} />
+                  ) : windowId === 'terminal' ? (
+                    <TerminalWindow t={t} onClose={() => closeWindow('terminal')} isActive={focusedWindow === 'terminal'} />
                   ) : windowId === 'chat' ? (
                     // Chat is now fullscreen overlay — this case should not be reached
                     null

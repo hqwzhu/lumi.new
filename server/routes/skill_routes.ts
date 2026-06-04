@@ -132,7 +132,17 @@ export function mountSkillRoutes(
         await mcpManager.restartServer(skillName);
         res.json({ success: true, name: skillName, directory: destDir });
       } else if (source === 'npm' && pkgName) {
-        res.status(400).json({ error: 'npm install not yet implemented — use git URL instead' });
+        const npmDir = await mcpManager.installFromNpm(pkgName);
+        const npmName = path.basename(npmDir);
+        await mcpManager.restartServer(npmName);
+        io.emit('skill:installed', { name: npmName, source: 'npm' });
+        res.json({ success: true, name: npmName, directory: npmDir });
+      } else if (source === 'github' && url) {
+        const ghDir = await mcpManager.installFromGitHub(url);
+        const ghName = path.basename(ghDir);
+        await mcpManager.restartServer(ghName);
+        io.emit('skill:installed', { name: ghName, source: 'github' });
+        res.json({ success: true, name: ghName, directory: ghDir });
       } else {
         res.status(400).json({ error: 'Invalid source. Use: git (with url), local (with path), or npm (with package)' });
       }
