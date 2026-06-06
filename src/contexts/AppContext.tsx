@@ -78,6 +78,7 @@ interface AppContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   createAgent: (name: string, category: string, data: any) => Promise<any>;
+  updateAgent: (id: string, updates: Partial<Agent>) => Promise<any>;
   deleteAgent: (id: string) => Promise<void>;
   updateBalance: (amount: number) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -119,9 +120,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try { return (localStorage.getItem('lumi_work_domain') as 'personal' | 'work') || 'personal'; } catch { return 'personal'; }
   });
 
-  const switchDomain = (domain: 'personal' | 'work') => {
+  const switchDomain = async (domain: 'personal' | 'work') => {
     setWorkDomain(domain);
     localStorage.setItem('lumi_work_domain', domain);
+    // Notify server to issue a JWT with the org context (or clear it for personal)
+    try {
+      const orgId = domain === 'work' ? (orgConnection?.orgId || null) : null;
+      const orgRole = domain === 'work' ? (orgConnection?.orgRole || 'member') : null;
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, orgRole }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Persist the updated org connection from server response
+        if (data.connection) {
+          setOrgConnection(data.connection);
+          localStorage.setItem('lumi_org_connection', JSON.stringify(data.connection));
+        }
+      }
+    } catch {}
   };
 
   const updateAIConfig = (newConfig: Partial<AIConfig>) => {
@@ -190,6 +210,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const agentsData = await agentsRes.json();
           setAgents(agentsData);
         }
+        // Load persisted notifications from server
+        try {
+          const notifRes = await fetch('/api/notifications', { credentials: 'include' });
+          if (notifRes.ok) {
+            const notifData = await notifRes.json();
+            if (notifData.notifications?.length > 0) {
+              setNotifications(prev => {
+                const existingIds = new Set(prev.map(n => n.id));
+                const newNotifs = notifData.notifications.filter((n: any) => !existingIds.has(n.id));
+                return [...newNotifs, ...prev].slice(0, 50);
+              });
+            }
+          }
+        } catch {}
+        // Load tool overrides from server
+        try {
+          const toRes = await fetch('/api/settings/tool_overrides', { credentials: 'include' });
+          if (toRes.ok) {
+            const serverOverrides = await toRes.json();
+            if (serverOverrides && Object.keys(serverOverrides).length > 0) {
+              setToolOverrides(serverOverrides);
+              localStorage.setItem('lumi_tool_overrides', JSON.stringify(serverOverrides));
+            }
+          }
+        } catch {}
       } else {
         setUser(null);
         setAgents([]);
@@ -272,6 +317,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateAgent = async (id: string, updates: Partial<Agent>) => {
+    try {
+      const response = await fetch(`/api/agents/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) throw new Error('Failed to update agent');
+      const updated = await response.json();
+      setAgents(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
+      toast.success(`Agent "${updated.name || id}" updated`);
+      return updated;
+    } catch (error: any) {
+      console.error('Update error:', error);
+      toast.error('Update failed: ' + error.message);
+    }
+  };
+
   const deleteAgent = async (id: string) => {
     try {
       const response = await fetch(`/api/agents/${id}`, {
@@ -338,6 +401,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToolOverrides(prev => {
       const next = { ...prev, [name]: override };
       localStorage.setItem('lumi_tool_overrides', JSON.stringify(next));
+      // Sync to server for tool registry awareness
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'tool_overrides', value: next }),
+      }).catch(() => {});
       return next;
     });
   };
@@ -365,6 +434,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       createAgent,
+      updateAgent,
       deleteAgent,
       updateBalance,
       refreshUser,

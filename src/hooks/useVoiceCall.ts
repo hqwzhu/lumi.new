@@ -458,6 +458,12 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     }
   }, [socket, callState, stopAllPlayback]);
 
+  const switchPersonality = useCallback((personalityId: string) => {
+    if (callState !== 'idle') {
+      socket?.emit('audio:switch-personality', { personalityId });
+    }
+  }, [socket, callState]);
+
   const toggleMute = useCallback(() => {
     setIsMuted(prev => {
       const next = !prev;
@@ -585,6 +591,7 @@ export function useVoiceCall({ socket, onTranscript, onResponse }: UseVoiceCallO
     endCall,
     interrupt,
     toggleMute,
+    switchPersonality,
     clearError: () => setError(null),
   };
 }

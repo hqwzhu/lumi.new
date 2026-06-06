@@ -3,6 +3,7 @@
  */
 import { Socket } from "socket.io";
 import { readDB, writeDB } from "../../db_layer";
+import { pushNotification } from "../routes/notifications";
 import { NormalizedMessage, makeLLMCall, StreamCallback } from "../llm/providers";
 import { LLMUsage } from "../tools/types";
 import { toolRegistry } from "../tools/registry";
@@ -434,6 +435,7 @@ export function registerChatHandler(
                 skillDescription: skillDesc,
                 timestamp: new Date().toISOString(),
               });
+              pushNotification(uid, { type: 'distill_hint', title: 'Skill Distillation', message: 'I notice this type of task is recurring. I can create an automated skill for this.' });
             }
           }
         } catch (orchErr: any) {
@@ -523,8 +525,10 @@ export function registerChatHandler(
             const pct = subStatus.used / subStatus.cap;
             if (pct >= 0.9) {
               socket.emit('agent:notification', { type: 'token_warning', level: 'critical', message: `Token usage at ${Math.round(pct * 100)}% (${subStatus.used.toLocaleString()} / ${subStatus.cap.toLocaleString()})` });
+              pushNotification(uid, { type: 'token_warning', title: 'Token Quota Critical', message: `Token usage at ${Math.round(pct * 100)}% (${subStatus.used.toLocaleString()} / ${subStatus.cap.toLocaleString()})` });
             } else if (pct >= 0.8) {
               socket.emit('agent:notification', { type: 'token_warning', level: 'warning', message: `Token usage at ${Math.round(pct * 100)}%` });
+              pushNotification(uid, { type: 'token_warning', title: 'Token Quota Warning', message: `Token usage at ${Math.round(pct * 100)}%` });
             }
           }
         } catch (llmErr: any) {
@@ -764,6 +768,7 @@ export function registerChatHandler(
             intimacy: updatedState.intimacy,
             timestamp: greetingTs,
           });
+          pushNotification(uid, { type: 'greeting', title: `Welcome back`, message: greeting });
         }
       }
 

@@ -788,6 +788,7 @@ export function DesktopUI({
   const [sanctuaryOpen, setSanctuaryOpen] = useState(false);
   const [sanctuaryAgent, setSanctuaryAgent] = useState<any>(null);
   const [petReaction, setPetReaction] = useState<{ animation: string; until: number } | null>(null);
+  const [activePersonality, setActivePersonality] = useState('lumi');
   const petReactionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const triggerPetReaction = (animation: string, ms: number = 1500) => {
@@ -924,7 +925,7 @@ export function DesktopUI({
 
   const socket = useSocket();
   useAmbientPoller(socket); // Ambient awareness: polls window, clipboard, idle state
-  const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, interrupt, toggleMute, isMuted } = useVoiceCall({
+  const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, interrupt, toggleMute, isMuted, switchPersonality } = useVoiceCall({
     socket,
   });
   // Wake word detection — server-side Qwen ASR (DASHSCOPE_API_KEY), falls back to Picovoice
@@ -932,7 +933,7 @@ export function DesktopUI({
     socket,
     startCallRef,
     enabled: true,
-    keyword: 'Jarvis',
+    keyword: 'Lumi',
     voiceId: selectedVoiceId,
     personalityId: 'lumi',
     agentId: 'lumi',
@@ -1872,7 +1873,7 @@ export function DesktopUI({
                 </button>
                 {/* Voice call button below pet */}
                 <button
-                  onClick={callState === 'idle' ? () => startCall(selectedVoiceId, 'lumi', 'lumi') : endCall}
+                  onClick={callState === 'idle' ? () => startCall(selectedVoiceId, activePersonality, activePersonality) : endCall}
                   className={`w-12 h-12 rounded-full border transition-all flex items-center justify-center ${
                     callState !== 'idle'
                       ? 'bg-red-500/20 border-red-500/40 text-red-400'
@@ -1881,6 +1882,26 @@ export function DesktopUI({
                 >
                   {callState !== 'idle' ? <Mic size={20} className="animate-pulse" /> : <Mic size={20} />}
                 </button>
+                {/* Personality selector — always visible */}
+                <div className="flex items-center gap-1 mt-1">
+                  {['lumi', 'scholar_default', 'founder_default'].map(pid => (
+                    <button
+                      key={pid}
+                      onClick={() => {
+                        setActivePersonality(pid);
+                        if (callState !== 'idle') switchPersonality(pid);
+                      }}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                        activePersonality === pid
+                          ? 'bg-celestial-saturn/20 text-celestial-saturn border border-celestial-saturn/30'
+                          : 'bg-white/5 text-white/45 border border-white/5 hover:bg-white/10 hover:text-white/60'
+                      }`}
+                      title={pid === 'lumi' ? '默认助手' : pid === 'scholar_default' ? '学术顾问' : '创始人顾问'}
+                    >
+                      {pid === 'lumi' ? 'Lumi' : pid === 'scholar_default' ? 'Scholar' : 'Founder'}
+                    </button>
+                  ))}
+                </div>
                 {/* Reset to sphere button */}
                 <button
                   onClick={(e) => {
@@ -1905,7 +1926,7 @@ export function DesktopUI({
                 highPerformance={isTauri}
                 isWallpaperMode={isWallpaperMode}
                 reaction={petReaction?.animation || null}
-                onStartCall={() => startCall(selectedVoiceId, 'lumi', 'lumi')}
+                onStartCall={() => startCall(selectedVoiceId, activePersonality, activePersonality)}
                 onEndCall={endCall}
                 onInterrupt={interrupt}
                 onToggleMute={toggleMute}
@@ -1919,9 +1940,28 @@ export function DesktopUI({
                 diffused={diffused}
                 isLightMode={isLightMode}
               />
+              {/* Personality selector — sphere mode */}
+              <div className="flex items-center gap-1 mt-2 justify-center">
+                {['lumi', 'scholar_default', 'founder_default'].map(pid => (
+                  <button
+                    key={pid}
+                    onClick={() => {
+                      setActivePersonality(pid);
+                      if (callState !== 'idle') switchPersonality(pid);
+                    }}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                      activePersonality === pid
+                        ? 'bg-celestial-saturn/20 text-celestial-saturn border border-celestial-saturn/30'
+                        : 'bg-white/5 text-white/45 border border-white/5 hover:bg-white/10 hover:text-white/60'
+                    }`}
+                  >
+                    {pid === 'lumi' ? 'Lumi' : pid === 'scholar_default' ? 'Scholar' : 'Founder'}
+                  </button>
+                ))}
+              </div>
               {wakeWord.isListening && callState === 'idle' && (
                 <div className="mt-2 text-xs text-white/45 uppercase tracking-[0.25em] font-mono">
-                  Listening for &ldquo;Jarvis&rdquo;
+                  Listening for &ldquo;Lumi&rdquo;
                 </div>
               )}
               {wakeWord.error && (

@@ -80,6 +80,29 @@ export function mountAgentRoutes(
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+  router.put("/agents/:id", requireAuth, (req, res) => {
+    try {
+      const { id } = req.params;
+      const db = readDB();
+      const idx = db.agents.findIndex((a: any) => a.id === id && a.ownerUid === req.user!.uid);
+      if (idx === -1) return res.status(404).json({ error: "Agent not found or unauthorized" });
+      const agent = db.agents[idx];
+      const allowedFields = [
+        'name', 'category', 'personalityId', 'modelPreference', 'memoryScope',
+        'autonomyLevel', 'executionMode', 'skillTags', 'knowledgeDomains',
+        'allowCrossPollination', 'isFrozen', 'territory', 'relationshipType',
+      ];
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) agent[field] = req.body[field];
+      }
+      if (req.body.data !== undefined) agent.data = typeof req.body.data === 'string' ? req.body.data : JSON.stringify(req.body.data);
+      if (req.body.runtimeConfig !== undefined) agent.runtimeConfig = typeof req.body.runtimeConfig === 'string' ? req.body.runtimeConfig : JSON.stringify(req.body.runtimeConfig);
+      agent.lastActiveAt = new Date().toISOString();
+      writeDB(db);
+      res.json(agent);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   router.delete("/agents/:id", requireAuth, (req, res) => {
     try {
       const { id } = req.params; const db = readDB();

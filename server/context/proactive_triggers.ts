@@ -56,7 +56,7 @@ export function processActivityEvent(
         timestamp: new Date().toISOString(),
       };
       // Emit to user's socket room
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
     if (isErrorText(text) && !isOnCooldown(userId, 'clipboard_error')) {
@@ -68,7 +68,7 @@ export function processActivityEvent(
         action: 'debug_error',
         timestamp: new Date().toISOString(),
       };
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
     if (isCodeSnippet(text) && !isOnCooldown(userId, 'clipboard_code')) {
@@ -80,7 +80,7 @@ export function processActivityEvent(
         action: 'analyze_code',
         timestamp: new Date().toISOString(),
       };
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
     if (isFilePath(text) && !isOnCooldown(userId, 'clipboard_path')) {
@@ -92,7 +92,7 @@ export function processActivityEvent(
         action: 'open_path',
         timestamp: new Date().toISOString(),
       };
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
     if (isStackTrace(text) && !isOnCooldown(userId, 'clipboard_trace')) {
@@ -104,7 +104,7 @@ export function processActivityEvent(
         action: 'debug_trace',
         timestamp: new Date().toISOString(),
       };
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
   }
@@ -131,7 +131,7 @@ export function processActivityEvent(
         message: msg,
         timestamp: new Date().toISOString(),
       };
-      io.to(`user:${userId}`).emit('lumi:proactive', suggestion);
+      io.to(`user:${userId}`).emit('agent:proactive', suggestion);
       return suggestion;
     }
   }

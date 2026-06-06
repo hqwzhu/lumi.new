@@ -43,7 +43,7 @@ export function broadcastDeviceChange(userId: string): void {
   const sockets = userSockets.get(userId);
   if (sockets) {
     for (const sid of sockets) {
-      _io.to(sid).emit('devices:refresh', { timestamp: new Date().toISOString() });
+      _io.to(sid).emit('devices:update', { timestamp: new Date().toISOString() });
     }
   }
 }

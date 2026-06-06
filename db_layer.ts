@@ -354,6 +354,16 @@ function createTables(): Promise<void> {
         updatedAt TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'info',
+        title TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL DEFAULT '',
+        read INTEGER NOT NULL DEFAULT 0,
+        timestamp INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS audit_log (
         id TEXT PRIMARY KEY,
         orgId TEXT NOT NULL,
@@ -457,6 +467,11 @@ async function loadMemoryDB(): Promise<void> {
   const orgKbArticles = await query<any>('SELECT * FROM org_kb_articles');
   const orgKbEmbeddings = await query<any>('SELECT * FROM org_kb_embeddings');
   const agentTemplates = await query<any>('SELECT * FROM agent_templates');
+  const notificationsRaw = await query<any>('SELECT * FROM notifications');
+  const notifications = notificationsRaw.map((n: any) => ({
+    ...n,
+    read: !!n.read,
+  }));
   const auditLogEntries = await query<any>('SELECT * FROM audit_log');
 
   // Load settings
@@ -524,6 +539,7 @@ async function loadMemoryDB(): Promise<void> {
     orgKbArticles: orgKbArticles || [],
     orgKbEmbeddings: orgKbEmbeddings || [],
     agentTemplates: agentTemplates || [],
+    notifications: notifications || [],
     auditLog: auditLogEntries || [],
   };
 }
@@ -733,6 +749,12 @@ async function persistMemoryDB(): Promise<void> {
       createSQL: `CREATE TABLE _temp_agent_templates (id TEXT PRIMARY KEY, orgId TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, category TEXT NOT NULL, config TEXT NOT NULL, icon TEXT DEFAULT 'Bot', version INTEGER DEFAULT 1, status TEXT NOT NULL DEFAULT 'draft', authorId TEXT NOT NULL, reviewedBy TEXT, reviewComment TEXT, downloadCount INTEGER DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
       insertSQL: `INSERT INTO _temp_agent_templates (id, orgId, name, description, category, config, icon, version, status, authorId, reviewedBy, reviewComment, downloadCount, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       rows: () => (memoryDB.agentTemplates || []).map((t: any) => [t.id, t.orgId, t.name, t.description, t.category, t.config, t.icon || 'Bot', t.version || 1, t.status || 'draft', t.authorId, t.reviewedBy || null, t.reviewComment || null, t.downloadCount || 0, t.createdAt, t.updatedAt]),
+    },
+    {
+      name: 'notifications',
+      createSQL: `CREATE TABLE _temp_notifications (id TEXT PRIMARY KEY, userId TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '', read INTEGER NOT NULL DEFAULT 0, timestamp INTEGER NOT NULL)`,
+      insertSQL: `INSERT INTO _temp_notifications (id, userId, type, title, message, read, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      rows: () => (memoryDB.notifications || []).map((n: any) => [n.id, n.userId, n.type || 'info', n.title || '', n.message || '', n.read ? 1 : 0, n.timestamp]),
     },
     {
       name: 'audit_log',

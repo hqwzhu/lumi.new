@@ -233,7 +233,7 @@ export function createWakeDetector(
   echoFilter?: (text: string) => boolean,
 ): WakeDetectorSession {
   // Read user STT preference — if explicitly set, honor it
-  let userPref: 'auto' | 'ark' | 'qwen' = 'auto';
+  let userPref: string = 'auto';
   try {
     userPref = getVoicePreference().stt || 'auto';
   } catch {}

@@ -88,6 +88,7 @@ export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
   const [npmResults, setNpmResults] = useState<ExternalResult[]>([]);
   const [githubResults, setGithubResults] = useState<ExternalResult[]>([]);
   const [searchingExternal, setSearchingExternal] = useState(false);
+  const [installProgress, setInstallProgress] = useState<{ skillId: string; stage: string } | null>(null);
   const socket = useSocket();
 
   const [translationReady, setTranslationReady] = useState(false);
@@ -156,11 +157,20 @@ export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
   useEffect(() => {
     if (!socket) return;
     const refresh = () => { fetchInstalled(); fetchMarketplace(); };
-    socket.on('skill:installed', refresh);
+    const onInstalling = (data: { skillId: string; name: string; stage: string }) => {
+      setInstallProgress({ skillId: data.skillId, stage: data.stage });
+    };
+    const onInstalled = () => {
+      setInstallProgress(null);
+      refresh();
+    };
+    socket.on('skill:installing', onInstalling);
+    socket.on('skill:installed', onInstalled);
     socket.on('skill:uninstalled', refresh);
     socket.on('skill:updated', refresh);
     return () => {
-      socket.off('skill:installed', refresh);
+      socket.off('skill:installing', onInstalling);
+      socket.off('skill:installed', onInstalled);
       socket.off('skill:uninstalled', refresh);
       socket.off('skill:updated', refresh);
     };
@@ -411,6 +421,24 @@ export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
 
         {activeTab === 'marketplace' && (
           <motion.div key="marketplace" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }} className="space-y-6">
+            {/* Install progress banner */}
+            <AnimatePresence>
+              {installProgress && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3 bg-celestial-saturn/10 border border-celestial-saturn/20 rounded-2xl">
+                    <RefreshCw size={14} className="animate-spin text-celestial-saturn" />
+                    <div>
+                      <span className="text-xs font-bold text-celestial-saturn uppercase">
+                        {installProgress.stage === 'downloading' ? (t.installingStatus || 'Downloading...') :
+                         installProgress.stage === 'copying' ? (t.installingStatus || 'Copying files...') :
+                         installProgress.stage === 'connecting' ? (t.connectingStage || 'Connecting...') :
+                         (t.installingStatus || 'Installing...')}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {/* Filters row */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="relative flex-1 min-w-[200px]">

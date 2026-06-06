@@ -3,6 +3,7 @@
  */
 import { Socket } from "socket.io";
 import { readDB, writeDB } from "../../db_layer";
+import { pushNotification } from "../routes/notifications";
 import { recordTokenUsage } from "../llm/token_tracker";
 import { NormalizedMessage } from "../llm/providers";
 import { runWithTools, LLMUsageRecord } from "../llm/adapter";
@@ -259,6 +260,7 @@ export function registerTaskHandler(
               const promoted = recordToolApprove(uid, toolName);
               if (promoted) {
                 socket.emit("agent:notification", { type: 'trust', level: 'info', message: `Tool "${toolName}" is now trusted — future uses will be auto-approved.` });
+                pushNotification(uid, { type: 'trust', title: 'Tool Trusted', message: `Tool "${toolName}" is now trusted — auto-approved for future use.` });
               }
             } else {
               recordToolDeny(uid, toolName);

@@ -87,6 +87,11 @@ export function initSocketRuntime({ io, jwtSecret, llm }: SocketContext) {
       perceptionEvents.delete(uid);
     });
 
+    // Skill event relay — forward client-emitted skill events to all connected clients
+    socket.on("skill:installed", (data) => { socket.broadcast.emit("skill:installed", data); });
+    socket.on("skill:uninstalled", (data) => { socket.broadcast.emit("skill:uninstalled", data); });
+    socket.on("skill:updated", (data) => { socket.broadcast.emit("skill:updated", data); });
+
     // Register all handlers
     registerDeviceHandlers(socket, getUserId, io);
     registerPerceptionHandlers(socket, getUserId, io);

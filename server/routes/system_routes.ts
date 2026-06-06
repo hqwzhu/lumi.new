@@ -253,6 +253,38 @@ export function mountSystemRoutes(router: Router, jwtSecret: string, io?: any) {
     res.json({ success: true, saved: Object.keys(toSave).filter(k => !toDelete.includes(k)), deleted: toDelete });
   });
 
+  // Generic settings store — for tool overrides, security prefs, etc.
+  router.post("/settings", requireAuth, (req, res) => {
+    try {
+      const { key, value } = req.body || {};
+      if (!key || typeof key !== 'string' || value === undefined) {
+        return res.status(400).json({ error: 'key and value required' });
+      }
+      const db = readDB();
+      if (!db.settings) db.settings = [];
+      const idx = db.settings.findIndex((s: any) => s.key === key);
+      if (idx >= 0) {
+        db.settings[idx].value = JSON.stringify(value);
+      } else {
+        db.settings.push({ key, value: JSON.stringify(value) });
+      }
+      writeDB(db);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get("/settings/:key", requireAuth, (req, res) => {
+    try {
+      const db = readDB();
+      const row = (db.settings || []).find((s: any) => s.key === req.params.key);
+      res.json(row ? JSON.parse(row.value) : null);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // System stats — real-time CPU / memory / platform info
   router.get("/system/stats", async (_req: any, res: any) => {
     try {
