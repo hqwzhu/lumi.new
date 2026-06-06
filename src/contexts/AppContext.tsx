@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { toast } from 'sonner';
 import * as authService from '../services/authService';
+import * as agentService from '../services/agentService';
+import * as notificationService from '../services/notificationService';
 
 interface UserProfile {
   uid: string;
@@ -205,23 +207,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const customAuth = await authService.getMe();
       if (customAuth) {
         setUser({ ...customAuth.user, provider: 'custom' } as any);
-        const agentsRes = await fetch('/api/agents');
-        if (agentsRes.ok) {
-          const agentsData = await agentsRes.json();
-          setAgents(agentsData);
-        }
+        try { setAgents(await agentService.listAgents()); } catch {}
         // Load persisted notifications from server
         try {
-          const notifRes = await fetch('/api/notifications', { credentials: 'include' });
-          if (notifRes.ok) {
-            const notifData = await notifRes.json();
-            if (notifData.notifications?.length > 0) {
-              setNotifications(prev => {
-                const existingIds = new Set(prev.map(n => n.id));
-                const newNotifs = notifData.notifications.filter((n: any) => !existingIds.has(n.id));
-                return [...newNotifs, ...prev].slice(0, 50);
-              });
-            }
+          const notifData = await notificationService.fetchNotifications();
+          if (notifData.notifications?.length > 0) {
+            setNotifications(prev => {
+              const existingIds = new Set(prev.map(n => n.id));
+              const newNotifs = notifData.notifications.filter((n: any) => !existingIds.has(n.id));
+              return [...newNotifs, ...prev].slice(0, 50);
+            });
           }
         } catch {}
         // Load tool overrides from server
@@ -296,17 +291,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error('You must be authenticated to synthesize agents');
       return null;
     }
-
     try {
-      const response = await fetch('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category, data: JSON.stringify(data) })
-      });
-
-      if (!response.ok) throw new Error('Failed to create agent');
-
-      const newAgent = await response.json();
+      const newAgent = await agentService.createAgent({ name, category, data: JSON.stringify(data) });
       setAgents(prev => [...prev, newAgent]);
       addNotification({ type: 'success', title: 'Agent Synthesized', message: `${name} (${category}) has been created and is ready for use.` });
       toast.success(`${name} has been synthesized`);
@@ -319,13 +305,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateAgent = async (id: string, updates: Partial<Agent>) => {
     try {
-      const response = await fetch(`/api/agents/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) throw new Error('Failed to update agent');
-      const updated = await response.json();
+      const updated = await agentService.updateAgent(id, updates);
       setAgents(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
       toast.success(`Agent "${updated.name || id}" updated`);
       return updated;
@@ -337,12 +317,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteAgent = async (id: string) => {
     try {
-      const response = await fetch(`/api/agents/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete agent');
-      
+      await agentService.deleteAgent(id);
       const deleted = agents.find(a => a.id === id);
       setAgents(prev => prev.filter(a => a.id !== id));
       addNotification({ type: 'info', title: 'Agent Released', message: `"${deleted?.name || id}" has been dissolved.` });

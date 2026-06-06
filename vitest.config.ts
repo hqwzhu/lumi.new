@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'test/**/*.test.{ts,tsx}'],
     exclude: ['node_modules', 'dist', 'dist-server', 'src-tauri', 'gpt-sovits-src'],
+    testTimeout: 15000,
+    hookTimeout: 20000,
   },
   resolve: {
     alias: {

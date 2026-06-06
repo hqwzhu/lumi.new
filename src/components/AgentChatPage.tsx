@@ -8,6 +8,8 @@ import { useTTS } from '@/hooks/useTTS';
 import { GlassCard, PulseCounter } from './SharedUI';
 import { toast } from 'sonner';
 import { FoundersSanctuary } from './FoundersSanctuary';
+import * as conversationService from '@/services/conversationService';
+import * as agentService from '@/services/agentService';
 import { usePlatform } from '@/hooks/usePlatform';
 import { runAgentLogic, AgentResponse } from '@/services/agentService';
 import { useApp } from '@/contexts/AppContext';
