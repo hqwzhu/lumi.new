@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ShieldAlert, Check, X, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Check, X, AlertTriangle, Infinity } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,15 +13,24 @@ interface PendingConfirm {
 }
 
 /**
- * Listens for agent:confirm_tool socket events and renders a modal dialog.
- * Rendered via Portal to document.body. Temporarily exits wallpaper mode
- * when a dialog appears, since set_ignore_cursor_events(true) makes the
- * entire window click-through at the Win32 level.
+ * Tool confirmation dialog with session-level auto-approve and global allow-all toggle.
+ * When allowAll is enabled, all confirm tools auto-pass without showing the dialog.
+ * "Always Allow" adds the tool name to a session whitelist.
  */
 export function ToolConfirmDialog({ socket, isWallpaperMode = false }: { socket: any; isWallpaperMode?: boolean }) {
   const [pending, setPending] = useState<PendingConfirm[]>([]);
+  const [autoApproved, setAutoApproved] = useState<Set<string>>(new Set());
+  const [allowAll, setAllowAll] = useState(() => {
+    try { return localStorage.getItem('lumi_auto_approve') === 'true'; } catch { return false; }
+  });
   const wasWallpaperRef = useRef(false);
   const t = useT();
+
+  const toggleAllowAll = () => {
+    const next = !allowAll;
+    setAllowAll(next);
+    localStorage.setItem('lumi_auto_approve', String(next));
+  };
 
   // Temporarily exit wallpaper mode while confirm dialog is showing
   useEffect(() => {
@@ -38,17 +47,45 @@ export function ToolConfirmDialog({ socket, isWallpaperMode = false }: { socket:
     if (!socket) return;
 
     const handleConfirm = (data: { correlationId: string; name: string; arguments: Record<string, any> }) => {
+      // 1. Global allow-all — auto pass
+      if (allowAll) {
+        socket.emit(`tool:confirm_result:${data.correlationId}`, { correlationId: data.correlationId, allowed: true });
+        return;
+      }
+      // 2. Session-level auto-approve for this tool
+      if (autoApproved.has(data.name)) {
+        socket.emit(`tool:confirm_result:${data.correlationId}`, { correlationId: data.correlationId, allowed: true });
+        return;
+      }
+      // 3. Show dialog
       setPending(prev => [...prev, data]);
     };
 
     socket.on('agent:confirm_tool', handleConfirm);
     return () => { socket.off('agent:confirm_tool', handleConfirm); };
-  }, [socket]);
+  }, [socket, allowAll, autoApproved]);
 
   const respond = useCallback((correlationId: string, allowed: boolean) => {
     socket?.emit(`tool:confirm_result:${correlationId}`, { correlationId, allowed });
     setPending(prev => prev.filter(p => p.correlationId !== correlationId));
   }, [socket]);
+
+  const allowAlways = useCallback((correlationId: string, toolName: string) => {
+    setAutoApproved(prev => new Set(prev).add(toolName));
+    socket?.emit(`tool:confirm_result:${correlationId}`, { correlationId, allowed: true });
+    setPending(prev => prev.filter(p => p.correlationId !== correlationId));
+  }, [socket]);
+
+  // Sync allowAll from other tabs (storage event)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'lumi_auto_approve') {
+        setAllowAll(e.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const current = pending[0];
 
@@ -69,16 +106,31 @@ export function ToolConfirmDialog({ socket, isWallpaperMode = false }: { socket:
             onClick={e => e.stopPropagation()}
             className="bg-zinc-900 border border-yellow-500/30 rounded-[2rem] p-8 max-w-md w-full mx-4 shadow-2xl"
           >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-yellow-500/10 rounded-2xl">
-                <ShieldAlert size={24} className="text-yellow-400" />
+            {/* Header with global toggle */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-yellow-500/10 rounded-2xl">
+                  <ShieldAlert size={24} className="text-yellow-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-yellow-400">{t.toolAuthorization || 'Tool Authorization'}</h3>
+                  <p className="text-xs text-white/55 mt-0.5">{t.toolExplicitPermission || 'This tool requires your explicit permission'}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-yellow-400">{t.toolAuthorization || 'Tool Authorization'}</h3>
-                <p className="text-xs text-white/55 mt-0.5">{t.toolExplicitPermission || 'This tool requires your explicit permission'}</p>
-              </div>
+              {/* Global allow-all toggle */}
+              <button
+                onClick={toggleAllowAll}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${allowAll ? 'bg-emerald-500' : 'bg-white/10'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${allowAll ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
             </div>
 
+            <p className="text-[12px] text-white/40 mb-4">
+              {t.autoApproveDesc || 'Enable to auto-approve all tools. Disable to restore per-tool confirmations.'}
+            </p>
+
+            {/* Tool info */}
             <div className="space-y-4">
               <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                 <div className="flex items-center gap-2 mb-2">
@@ -98,18 +150,25 @@ export function ToolConfirmDialog({ socket, isWallpaperMode = false }: { socket:
                 </p>
               )}
 
-              <div className="flex items-center gap-3">
+              {/* Three action buttons */}
+              <div className="flex items-center gap-2.5">
                 <Button
                   onClick={() => respond(current.correlationId, false)}
-                  className="flex-1 bg-white/5 text-white/60 hover:bg-white/10 font-bold text-xs px-4 py-3 rounded-xl border border-white/10 transition-all"
+                  className="flex-1 bg-white/5 text-white/60 hover:bg-white/10 font-bold text-xs px-3 py-3 rounded-xl border border-white/10 transition-all"
                 >
                   <X size={14} className="mr-1" /> {t.deny || 'Deny'}
                 </Button>
                 <Button
                   onClick={() => respond(current.correlationId, true)}
-                  className="flex-1 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 font-bold text-xs px-4 py-3 rounded-xl border border-yellow-500/30 transition-all"
+                  className="flex-1 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 font-bold text-xs px-3 py-3 rounded-xl border border-yellow-500/30 transition-all"
                 >
                   <Check size={14} className="mr-1" /> {t.allow || 'Allow'}
+                </Button>
+                <Button
+                  onClick={() => allowAlways(current.correlationId, current.name)}
+                  className="flex-1 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 font-bold text-xs px-3 py-3 rounded-xl border border-emerald-500/30 transition-all"
+                >
+                  <Infinity size={14} className="mr-1" /> {t.alwaysAllow || 'Always'}
                 </Button>
               </div>
             </div>

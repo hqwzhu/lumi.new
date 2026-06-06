@@ -75,11 +75,13 @@ async function executeAction(
   switch (action.action) {
     case 'click':
       await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
+      desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
       await sleep(80);
       await desktopRelay('desktop_mouse_click', { button: 'left' });
       break;
     case 'double_click':
       await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
+      desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
       await sleep(80);
       await desktopRelay('desktop_mouse_click', { button: 'left' });
       await sleep(150);
@@ -87,6 +89,7 @@ async function executeAction(
       break;
     case 'right_click':
       await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
+      desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
       await sleep(80);
       await desktopRelay('desktop_mouse_click', { button: 'right' });
       break;
@@ -236,7 +239,12 @@ export async function computerUseLoop(
   const actionHistory: string[] = [];
   let consecutiveErrors = 0;
 
-  for (let i = 0; i < maxIter; i++) {
+  // ── Enter desktop control mode: wallpaper (click-through) + cursor glow ──
+  try { await options.desktopRelay('desktop_set_wallpaper_mode', { enabled: true }); } catch {}
+  try { await options.desktopRelay('desktop_cursor_glow_show', {}); } catch {}
+
+  try {
+    for (let i = 0; i < maxIter; i++) {
     if (options.isCancelled?.()) {
       return `Task cancelled by user after ${i} step(s). Last actions: ${actionHistory.slice(-3).join('; ') || 'none'}`;
     }
@@ -313,4 +321,11 @@ export async function computerUseLoop(
   }
 
   return `Reached maximum of ${maxIter} iterations. Last actions: ${actionHistory.slice(-5).join('; ') || 'none'}`;
+  } finally {
+    // Restore desktop: hide cursor glow then exit wallpaper mode
+    options.desktopRelay('desktop_cursor_glow_hide', {}).catch(() => {});
+    setTimeout(() => {
+      options.desktopRelay('desktop_set_wallpaper_mode', { enabled: false }).catch(() => {});
+    }, 300);
+  }
 }

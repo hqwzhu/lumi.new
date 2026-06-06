@@ -22,6 +22,9 @@ export interface ToolContext {
     getOpenAI?: () => any;
     getAnthropic?: () => any;
     getQwen?: () => any;
+    getArk?: () => any;
+    getOllama?: () => any;
+    getLmStudio?: () => any;
   };
 }
 

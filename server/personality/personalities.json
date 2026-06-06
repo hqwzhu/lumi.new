@@ -34,9 +34,6 @@
       ],
       "requireConfirmation": [
         "desktop_run_command",
-        "desktop_open",
-        "write_file",
-        "url_fetch",
         "code_execution"
       ],
       "forbiddenTools": [],

@@ -26,7 +26,7 @@ export function registerClipboardTools(registry: ToolRegistry): void {
     },
     handler: readClipboard,
     permission: 'user',
-    securityLevel: 'confirm',
+    securityLevel: 'safe',
   });
 
   registry.register({

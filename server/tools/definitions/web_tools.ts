@@ -177,6 +177,6 @@ export function registerWebOpsTools(registry: ToolRegistry): void {
     },
     handler: urlFetchHandler,
     permission: 'user',
-    securityLevel: 'confirm',
+    securityLevel: 'safe',
   });
 }

@@ -81,7 +81,7 @@ export function registerDesktopTools(registry: ToolRegistry): void {
     },
     handler: desktopOpen,
     permission: 'user',
-    securityLevel: 'confirm',
+    securityLevel: 'safe',
   });
 
   registry.register({
