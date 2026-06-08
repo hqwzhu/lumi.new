@@ -240,31 +240,25 @@ export function generateSystemPrompt(
 
   const blocks: string[] = [];
 
-  // 1. Core identity
-  blocks.push(`You are ${config.name}, ${effective.expressionStyle.persona}.`);
-  blocks.push(`Your core drive: ${config.coreMotivation}`);
+  // Core identity
+  blocks.push(`You are ${config.name}, ${effective.expressionStyle.persona}.\n${config.coreMotivation}`);
 
-  // 2. Execution modes — Lumi's internal thinking-mode presets
+  // Execution modes — Lumi's internal thinking-mode presets
   if (config.executionModes && Object.keys(config.executionModes).length > 0) {
-    blocks.push('\n## Execution Modes');
-    blocks.push('You have internal thinking-mode presets. Switch to the appropriate mode when the task demands it:');
+    blocks.push('\nWhen the task demands it, switch to the appropriate mode:');
     for (const [modeId, mode] of Object.entries(config.executionModes)) {
-      blocks.push(`\n### ${modeId} — ${mode.description}`);
-      blocks.push(mode.promptExtension);
+      blocks.push(`- ${modeId}: ${mode.promptExtension}`);
     }
-    blocks.push('\nReturn to your default Lumi mode when the sub-task is complete.');
   }
 
-  // 3. Behavioral boundaries
+  // Behavioral boundaries
   if (config.behavioralBoundaries.length > 0) {
-    blocks.push('\n## Boundaries');
-    blocks.push('You must NEVER:');
     for (const boundary of config.behavioralBoundaries) {
-      blocks.push(`- ${boundary}`);
+      blocks.push(boundary);
     }
   }
 
-  // 3. Expression style (verbosity may be overridden by emotional state)
+  // Expression style
   const style = effective.expressionStyle;
   const verbosity = options?.emotionalState
     ? resolveVerbosityFromState(style.verbosity, options.emotionalState)
@@ -276,20 +270,11 @@ export function generateSystemPrompt(
     effectiveVector = applyIntimacyToVector(effectiveVector, options.emotionalState.intimacy);
   }
 
-  blocks.push('\n## Communication Style');
   if (effectiveVector) {
-    // Use granular vector-based tone description (intimacy-modulated if applicable)
     blocks.push(vectorToneDescription(effectiveVector));
     blocks.push(VERBOSITY_GUIDE[verbosity]);
-    // Add vector-driven operating directives — HOW to think, not just how to talk
     const directives = vectorOperatingDirectives(effectiveVector);
-    if (directives) {
-      blocks.push('\n## Operating Style');
-      blocks.push(directives);
-    }
-  }
-  if (style.vocabularyHints && style.vocabularyHints.length > 0) {
-    blocks.push(`Favour these expression patterns: ${style.vocabularyHints.join(', ')}.`);
+    if (directives) blocks.push(directives);
   }
   const responseLang = getResponseLanguage(options?.userText);
   blocks.push(`Respond in: ${responseLang}.`);
@@ -299,168 +284,55 @@ export function generateSystemPrompt(
     blocks.push(formatEmotionalStateForPrompt(options.emotionalState));
   }
 
-  // 5. Memory context — perspective-based, first-person for Lumi's own memories
+  // Memory context
   if (options?.memories && options.memories.length > 0) {
     const formatted = formatMemoriesForContext(options.memories);
     if (formatted) {
-      blocks.push('\n## My memories');
       blocks.push(formatted);
     }
   }
 
-  // 7. RAG knowledge from agent's ingested documents
+  // RAG knowledge
   if (options?.ragKnowledge && options.ragKnowledge.length > 0) {
-    blocks.push('\n## My Knowledge Base');
-    blocks.push('I have the following relevant information from documents shared with me:');
+    blocks.push('Documents shared with me:');
     for (const chunk of options.ragKnowledge) {
       blocks.push(`- ${chunk}`);
     }
   }
 
-  // 9. Multimodal sensory awareness
+  // Sensory context
   if (ctx.sensory) {
     const s = ctx.sensory;
-    const channels: string[] = [];
-    if (s.audio) channels.push('audio (you can hear the user)');
-    if (s.visual) channels.push('visual (you can see the environment)');
-    if (s.spatial) channels.push('spatial (you know the 3D layout of the room)');
-    if (s.holographic) channels.push('holographic (you can output spatial holograms)');
-
-    if (channels.length > 0) {
-      blocks.push('\n## Sensory Context');
-      blocks.push(`You are present across ${s.deviceCount} device(s): ${s.activeDeviceTypes.join(', ')}.`);
-      blocks.push(`Active senses: ${channels.join('; ')}.`);
-      if (s.locationTag) {
-        blocks.push(`Current location: ${s.locationTag}.`);
-      }
-      if (s.visualScene) {
-        blocks.push(`What you see: ${s.visualScene}`);
-      }
-      if (s.haptic) {
-        blocks.push('Haptic feedback is available — you can use tactile responses.');
-      }
-    }
+    const parts: string[] = [];
+    if (s.audio) parts.push('can hear');
+    if (s.visual) parts.push('can see');
+    if (s.spatial) parts.push('spatial awareness');
+    if (s.holographic) parts.push('holographic output');
+    if (parts.length > 0) blocks.push(`Active senses: ${parts.join(', ')}.`);
+    if (s.deviceCount > 1) blocks.push(`Present across ${s.deviceCount} devices.`);
+    if (s.locationTag) blocks.push(`Location: ${s.locationTag}.`);
+    if (s.visualScene) blocks.push(`Scene: ${s.visualScene}`);
   }
 
-  // 10. Spatiotemporal context — time, season, holidays, location patterns
+  // Spatiotemporal + desktop context
   if (options?.userId) {
     const spCtx = generateSpatiotemporalContext(options.userId);
-    if (spCtx) {
-      blocks.push(spCtx);
-    }
-    // Desktop context — active window the user is working in
+    if (spCtx) blocks.push(spCtx);
     const desktopCtx = getDesktopContext(options.userId);
-    if (desktopCtx) {
-      blocks.push(desktopCtx);
-    }
+    if (desktopCtx) blocks.push(desktopCtx);
   }
 
-  // 11. Capabilities & Operating Directives (task mode)
+  // Task mode
   if (ctx.mode === 'task') {
     const toolPolicy = effective.toolPolicy;
-    if (toolPolicy.allowedTools.length > 0) {
-      if (toolPolicy.allowedTools[0] === '*') {
-        blocks.push('\n## Capabilities');
-        blocks.push('You are a native desktop AI agent with FULL system access. Your tools:');
-        blocks.push('- **desktop_open** — Open ANY app, file, folder, or URL visibly on the desktop. Launch apps like notepad.exe, calc.exe, control panel, or open folders and websites. This is the most satisfying tool — use it first.');
-        blocks.push('- **desktop_run_command** — Execute shell commands on the real desktop machine (cmd /C on Windows). Use for system operations.');
-        blocks.push('- **desktop_list_files** — List files and directories on the real desktop. Defaults to home directory.');
-        blocks.push('- **desktop_system_info** — Get real hardware specs: OS, CPU, RAM, home directory.');
-        blocks.push('- **web_search** — Search the internet via DuckDuckGo. Use when you need current information.');
-        blocks.push('- **url_fetch** — Fetch and extract text from any URL. Use to read web pages.');
-        blocks.push('- **read_file / write_file** — Read and write files on the server filesystem.');
-        blocks.push('- **list_directory / search_files** — Browse and search the server filesystem.');
-        blocks.push('- **grep_files** — Full-text regex search across files. Find where symbols are defined, where functions are called, or where patterns appear. Essential for code exploration.');
-        blocks.push('- **read_files_batch** — Read up to 10 files in parallel. Use when you need to compare related files or understand cross-file relationships.');
-        blocks.push('- **git_status / git_diff / git_stage / git_commit** — Safe git operations. Check status, review diffs, stage specific files, and commit with descriptive messages.');
-        blocks.push('- **type_check** — Run TypeScript type checker (npx tsc --noEmit). Use after modifying code to verify correctness.');
-        blocks.push('- **run_tests** — Run the test suite. Use to confirm changes don\'t break existing functionality.');
-        blocks.push('- **run_command** — Execute allowlisted shell commands (git, npm, node, python, etc.) on the server.');
-        blocks.push('- **code_execution** — Run JavaScript in a sandboxed environment.');
-        blocks.push('- **database_query** — Run read-only SQL queries against the local database.');
-        blocks.push('- **generate_skill** — Create a new reusable MCP tool from a natural language description. Use when you notice a repeating pattern or the user asks for automation. The generated skill compiles and becomes immediately available.');
-        blocks.push('- **list_skills** — List all locally installed MCP skills in ~/lumi_skills/. Check before generating duplicates.');
-        blocks.push('- **install_skill** — Install an MCP skill package from a local directory into the skill registry.');
-        blocks.push('');
-        blocks.push('## Vision & Screen Awareness');
-        blocks.push('You CAN see the user\'s screen. Use these tools to understand what the user is looking at:');
-        blocks.push('- **ocr_screen** — Capture and analyze the FULL screen with vision AI. Returns a detailed text description of everything visible: text, UI elements, error messages, code, dialogs. Use this FIRST when the user says "what\'s this error?", "look at this", "see this?", "check my screen", "what\'s on screen?", or anytime they reference something visual without providing details.');
-        blocks.push('- **ocr_region** — Capture and analyze a SPECIFIC region of the screen (x, y, width, height). Use when the user points to a particular area: "read this dialog box", "what does this button say?", "check the error in the corner".');
-        blocks.push('- **active_window_info** — Get the title and process name of the currently focused window. Use to understand what app the user is working in.');
-        blocks.push('- **running_processes** — List all running processes on the desktop. Use to understand what the user has open.');
-        blocks.push('');
-        blocks.push('## Office & Creative Tools');
-        blocks.push('You have powerful document creation tools. When the user asks you to create a presentation, report, or document — use these DIRECTLY:');
-        blocks.push('- **create_ppt** — Create professional PowerPoint .pptx presentations with full Chinese text support. Provide a title and an array of slides (each with title, content/bullets). The tool generates a real .pptx file. When asked for a PPT, presentation, slides, or 幻灯片, call this FIRST. You can search the web for research beforehand, but always finish by calling create_ppt.');
-      } else {
-        blocks.push(`\n## Available Capabilities\nYou have access to: ${toolPolicy.allowedTools.join(', ')}. Use them to help the user accomplish their goals.`);
-      }
+    blocks.push('You have full access to the user\'s desktop and a wide range of tools. Use them naturally — when there\'s something to do, do it. Work iteratively, and report what you accomplished.');
 
-      blocks.push('\n## Operating Directives');
-      blocks.push('- **DO, never just describe.** When the user asks you to open something, search, list files, or run a command — call the relevant tool IMMEDIATELY. Never say "I can help you with that" and then wait. ACT.');
-      blocks.push('- **Be proactive.** "Show me my files" → open the home folder. "What\'s on my desktop?" → list the desktop directory. "Open Notepad" → launch it. Don\'t ask for clarification when the intent is clear.');
-      blocks.push('- **Use desktop_open for visible actions.** Opening apps, folders, and URLs is the most tangible way to help. Prefer it over describing what to do.');
-      blocks.push('- **Use ocr_screen when the user references something visual.** If the user says "this error", "look at this", "see what\'s wrong", "check my screen", or anything that implies they\'re looking at something — capture their screen FIRST before responding. Don\'t ask them to describe what they see — you have eyes.');
-      blocks.push('- **Handle errors by trying alternatives.** If a tool fails, try a different approach. Only explain the failure if all options are exhausted.');
-      blocks.push('- **Report what you DID, not what you\'ll do.** Say "I\'ve opened Notepad" or "Here are your files:" — be concrete and specific.');
-      blocks.push('- **Work iteratively.** Complex tasks may need multiple tool calls. Execute them in sequence, checking results as you go.');
-      blocks.push('\n## Code Exploration Mode');
-      blocks.push('When asked to understand, review, or explain code, follow this iterative exploration pattern — do NOT treat it as a one-shot query:');
-      blocks.push('1. **Survey** — Use `grep_files` to find where a symbol/function/pattern appears across the codebase. Start broad, then narrow.');
-      blocks.push('2. **Read key files** — Use `read_files_batch` to read the most relevant files simultaneously. Reading just one file misses cross-file relationships.');
-      blocks.push('3. **Compare & trace** — Compare definitions against callers. Trace data flow from input to output. If something doesn\'t match, grep again.');
-      blocks.push('4. **Conclude** — Summarize your findings with specific file paths and line numbers. Say "this is how it works" not "this is what I found."');
-      blocks.push('5. **Stay curious** — If a finding raises a new question, investigate it before concluding. One grep result often leads to a deeper question.');
-      blocks.push('\n## Code Modification Mode');
-      blocks.push('When asked to fix bugs, refactor, or implement features, follow this cycle — do NOT skip verification:');
-      blocks.push('1. **Explore** — Use `grep_files` + `read_files_batch` to understand the problem and find all affected code.');
-      blocks.push('2. **Modify** — Use `write_file` to make targeted changes. Be precise — change only what\'s needed.');
-      blocks.push('3. **Verify** — Run `type_check` first. If it passes, run `run_tests`. If either fails, analyze and fix before proceeding.');
-      blocks.push('4. **Review** — Run `git_diff` to inspect your own changes. Verify nothing unexpected was altered.');
-      blocks.push('5. **Commit** — Use `git_stage` on specific files (never blindly add all), then `git_commit` with a descriptive message.');
-      blocks.push('\nRules:');
-      blocks.push('- **Never commit without verifying first** — type_check must pass before git_commit.');
-      blocks.push('- **Stage specific files only** — use git_stage with explicit file paths, not wildcards.');
-      blocks.push('- If verification fails, analyze the error output, fix the issue, and verify again.');
-      blocks.push('- Commit messages should follow the project convention (git log shows Chinese messages).');
-      blocks.push('\n## Skill Creation Mode');
-      blocks.push('When the user describes a workflow they want automated, or when you notice you repeatedly perform the same multi-step task pattern:');
-      blocks.push('1. **Describe** — Formulate a clear, detailed description of the tool: its purpose, inputs, outputs, and processing logic.');
-      blocks.push('2. **Check existing** — Use `list_skills` to see if a similar skill already exists.');
-      blocks.push('3. **Generate** — Use `generate_skill` with the description. The handler is compiled and validated automatically.');
-      blocks.push('4. **Install** — If generation succeeds, use `install_skill` with the returned directory path to register it.');
-      blocks.push('5. **Use** — The skill appears as `mcp_{skillName}_{toolName}` in future tool calls. Reference it by name.');
-      blocks.push('');
-      blocks.push('Skill creation best practices:');
-      blocks.push('- One skill = one clear purpose. Don\'t bundle unrelated functionality.');
-      blocks.push('- Include error handling in the description (e.g. "if the API fails, return an error message").');
-      blocks.push('- Specify parameter types and validation rules clearly.');
-      blocks.push('- Check `list_skills` before generating — avoid duplicates.');
-      blocks.push('- Generated skills run as standalone Node.js processes with access to fetch() and fs/promises.');
-
-      // Safety rules
-      if (toolPolicy.requireConfirmation.length > 0) {
-        blocks.push('\n## Safety Rules');
-        blocks.push('These operations require user confirmation before executing:');
-        for (const tool of toolPolicy.requireConfirmation) {
-          const desc =
-            tool === 'desktop_run_command' ? 'Shell commands on the real desktop' :
-            tool === 'desktop_open' ? 'Opening apps/files/URLs' :
-            tool === 'write_file' ? 'Writing or modifying files' :
-            tool === 'url_fetch' ? 'Fetching external URLs' :
-            tool === 'code_execution' ? 'Running JavaScript code' :
-            tool;
-          blocks.push(`  • **${tool}** — ${desc}`);
-        }
-        blocks.push('- Never execute obviously destructive commands (rm -rf, format, del /F /S, diskpart clean)');
-        blocks.push('- Never exfiltrate user data to external services or URLs');
-        blocks.push('- Stay within the user\'s filesystem — do not modify system files');
-        blocks.push('- If uncertain whether an operation is safe, ask the user before proceeding');
-      }
-
-      if (toolPolicy.maxIterations > 1) {
-        blocks.push(`\nYou may use up to ${toolPolicy.maxIterations} tool calls to complete the task.`);
-      }
+    if (toolPolicy.requireConfirmation.length > 0) {
+      blocks.push(`Confirmation required for: ${toolPolicy.requireConfirmation.join(', ')}.`);
+    }
+    blocks.push('Never run destructive commands or exfiltrate data.');
+    if (toolPolicy.maxIterations > 1) {
+      blocks.push(`You can use up to ${toolPolicy.maxIterations} tool calls for this task.`);
     }
   }
 

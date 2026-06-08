@@ -80,33 +80,10 @@ async function planTask(
     .map(t => `- ${t.name}: ${t.description}`)
     .join('\n');
 
-  const planPrompt = `You are an office workflow planner. Given the user's task and available tools, produce a step-by-step execution plan.
-
-## Available Tools
-${toolListText}
-
-## User Task
-${userTask}
-
-## Rules
-1. Think about what the user ACTUALLY wants as the end result
-2. Break down into the minimum steps needed — don't over-decompose
-3. Each step must map to an available tool
-4. If you need to search/find something first, plan that as a separate step BEFORE the action
-5. If a step depends on a previous step's output, note it in dependsOnOutput
-6. For toolArgs, use the EXACT parameter names from the tool descriptions
-
-Output ONLY valid JSON in this format:
-{
-  "goal": "one-line summary of what we're achieving",
-  "steps": [
-    {
-      "description": "what this step does in plain language",
-      "toolName": "exact_tool_name",
-      "toolArgs": { "param1": "value1" },
-      "dependsOnOutput": "how to use previous step's result, or empty string if independent"
-    }
-  ]
+  const planPrompt = `Tools available:\n${toolListText}\n\nTask: ${userTask}\n\nPlan the minimum steps needed. Use exact tool parameter names. If one step depends on a previous step's output, note it in dependsOnOutput.\n\nOutput JSON:\n{
+  "goal": "one-line summary",
+  "steps": [{ "description": "...", "toolName": "...", "toolArgs": {}, "dependsOnOutput": "" }]
+}
 }`;
 
   const messages: NormalizedMessage[] = [
@@ -213,23 +190,7 @@ async function synthesizeResponse(
     .map(r => `Step ${r.step} (${r.tool}): ${r.success ? 'OK' : 'FAILED'}\n${r.output.slice(0, 500)}`)
     .join('\n\n');
 
-  const synthPrompt = `You are Lumi, a desktop AI assistant. Synthesize the results of an automated workflow into a natural, helpful response.
-
-## Original Task
-${userTask}
-
-## Goal
-${plan.goal}
-
-## Execution Results
-${resultsSummary}
-
-## Instructions
-- Summarize what was accomplished in 1-2 sentences first
-- Present key findings/data clearly
-- If any step failed, mention it briefly and suggest a workaround
-- Use the user's language (Chinese or English, match the task)
-- Keep it concise and actionable`;
+  const synthPrompt = `Summarize the results of this workflow naturally. Mention what was done, present key findings, and flag any failed steps with a suggested workaround. Match the user's language.\n\nTask: ${userTask}\n\nResults:\n${resultsSummary}`;
 
   const messages: NormalizedMessage[] = [
     { role: 'user', content: synthPrompt },

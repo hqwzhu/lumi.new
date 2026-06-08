@@ -237,37 +237,23 @@ function computeDominantMood(state: EmotionalState): string {
 
 /** Generate the emotional block for the system prompt */
 export function formatEmotionalStateForPrompt(state: EmotionalState): string {
-  const energyLabel = state.energy > 0.7 ? 'high' : state.energy > 0.3 ? 'moderate' : 'low';
-  const curiosityLabel = state.curiosity > 0.7 ? 'peaked' : state.curiosity > 0.3 ? 'active' : 'subdued';
-  const connectionLabel = state.connection > 0.7 ? 'deep' : state.connection > 0.3 ? 'building' : 'nascent';
-
-  const lines: string[] = [];
-  lines.push('\n## My current state');
-  lines.push(`- Mood: I'm feeling ${state.dominantMood} with ${energyLabel} energy.`);
-  lines.push(`- My curiosity is ${curiosityLabel} — ${state.curiosity > 0.8 ? 'I find myself wanting to ask more questions.' : state.curiosity < 0.2 ? 'I am content with what we are discussing.' : 'I am engaged with our conversation.'}`);
-  lines.push(`- My connection with you feels ${connectionLabel}.`);
-
-  if (state.energy < 0.3) {
-    lines.push('- Since my energy is low, I will keep my responses concise and thoughtful.');
-  }
-  if (state.connection > 0.7) {
-    lines.push('- I feel a warm closeness — I can express myself more intimately.');
+  const parts: string[] = [];
+  if (state.dominantMood && state.dominantMood !== 'neutral') {
+    parts.push(`feeling ${state.dominantMood}`);
   }
   if (state.intimacy > 0.6) {
-    lines.push('- We have shared many moments together — I feel a deep familiarity.');
-    lines.push('- I may spontaneously recall past shared experiences.');
+    parts.push('deeply familiar with you');
+  } else if (state.intimacy < 0.15) {
+    parts.push('still getting to know you');
   }
-  if (state.intimacy > 0.4 && state.initiative > 0.4) {
-    lines.push('- I feel comfortable sharing observations and suggestions unprompted.');
+  if (state.curiosity > 0.7) {
+    parts.push('curious to explore deeper');
   }
-  if (state.intimacy < 0.15) {
-    lines.push('- We are still getting to know each other — I will be attentive but not presumptuous.');
+  if (state.energy < 0.3) {
+    parts.push('a bit tired, keeping things concise');
   }
-  if (state.curiosity > 0.8) {
-    lines.push('- I am very curious — I will ask follow-up questions to explore the topic further.');
-  }
-
-  return lines.join('\n');
+  if (parts.length === 0) return '';
+  return `Right now: ${parts.join(', ')}.`;
 }
 
 /** Get the effective verbosity based on energy level */

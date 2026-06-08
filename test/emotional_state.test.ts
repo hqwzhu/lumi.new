@@ -91,8 +91,8 @@ describe('formatEmotionalStateForPrompt', () => {
   it('includes mood and energy in output', () => {
     const state = createDefaultEmotionalState();
     const output = formatEmotionalStateForPrompt(state);
-    expect(output).toContain('curious');
-    expect(output).toContain('high energy');
+    expect(output).toContain('feeling curious');
+    expect(output).toContain('Right now');
   });
 
   it('shows concise hint when energy is low', () => {
@@ -104,7 +104,7 @@ describe('formatEmotionalStateForPrompt', () => {
   it('shows curiosity prompt when curiosity is high', () => {
     const state = { ...createDefaultEmotionalState(), curiosity: 0.9 };
     const output = formatEmotionalStateForPrompt(state);
-    expect(output).toContain('ask follow-up');
+    expect(output).toContain('explore deeper');
   });
 });
 

@@ -24,7 +24,7 @@ import { checkLLMAccess, recordUsage, estimateTokens } from "../subscription/pro
 import { recordTokenUsage } from "../llm/token_tracker";
 import { runOrchestratedTask, shouldDistillSkill, buildSkillDescription } from "../agents/orchestrator";
 import { runNLChainer, shouldChainTask } from "../agents/nl_chainer";
-import { recommendSkills, formatRecommendations } from "../agents/skill_recommender";
+import { autoInstallForTask } from "../agents/auto_installer";
 import { searchKnowledgeBase } from "../org/kb";
 import { getWorkflow, recordWorkflowRun, listWorkflows } from "../agents/workflows";
 
@@ -466,6 +466,9 @@ export function registerChatHandler(
 
       // Path B2: NL Task Chainer — for office workflows that chain tools (search→read→create etc.)
       if (!responseText && shouldChainTask(text)) {
+        // Pre-flight: auto-install any matching uninstalled/outdated skills
+        await autoInstallForTask(text, { emit: (event, data) => socket.emit(event, data) });
+
         try {
           socket.emit("agent:status", { status: "thinking", agentName: "Lumi Office" });
           const chainerResult = await runNLChainer(
@@ -674,12 +677,6 @@ export function registerChatHandler(
         orgId: orgId || '',
       });
       writeDB(db);
-
-      // Skill auto-recommendation: suggest uninstalled skills that match the user's task
-      const skillRecs = recommendSkills(text);
-      if (skillRecs.length > 0) {
-        responseText += formatRecommendations(skillRecs);
-      }
 
       // Emit response BEFORE conversation_updated so the client finalizes streaming first
       socket.emit("agent:response", { text: responseText, agentName: personality.name, source: "chat" });
