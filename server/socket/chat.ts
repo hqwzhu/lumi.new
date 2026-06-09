@@ -466,48 +466,12 @@ export function registerChatHandler(
       const allToolRecords: { name: string; args: string; result?: string; error?: string }[] = [];
 
       // Path B1.5: Music intent — detect "放歌/放音乐/来首歌" and trigger atmosphere layer
-      if (!responseText && /放.*歌|放.*音乐|来首歌|播放.*音乐|听.*歌|来点音乐|给我放|随便放点/.test(text)) {
+      if (!responseText && /放.*歌|放.*音乐|来首歌|播放|听.*歌|来点音乐|给我放|随便放点|我想听|搜.*歌|换.*歌|切.*歌/.test(text)) {
         try {
-          const emotionalState = loadEmotionalState(uid);
-          const mood = emotionalState.dominantMood || 'peaceful';
-          const moodSearchMap: Record<string, string> = {
-            happy: '欢快 流行', playful: '轻松 治愈', warm: '温暖 民谣',
-            sad: '伤感 安静', melancholic: '怀旧 老歌', tired: '轻音乐 纯音乐',
-            curious: '新歌 推荐', focused: '专注 纯音乐', contemplative: '安静 钢琴',
-            excited: '热歌 嗨', peaceful: '治愈 轻松',
-          };
-          const searchKeyword = moodSearchMap[mood] || '推荐 热门';
-          const searchUrl = `https://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s=${encodeURIComponent(searchKeyword)}&type=1&limit=5&offset=0`;
-          const searchRes = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://music.163.com/' } });
-          const searchData = await searchRes.json();
-          const songs = searchData?.result?.songs || [];
-          if (songs.length > 0) {
-            const pick = songs[Math.floor(Math.random() * songs.length)];
-            const trackInfo = {
-              name: pick.name,
-              artists: (pick.artists || []).map((a: any) => a.name),
-              album: pick.album?.name,
-              duration: pick.duration || pick.dt,
-            };
-            // Try ncm-cli play (uses mpv + authenticated stream, supports VIP)
-            // Fall back to public outer URL if ncm-cli is not configured
-            let audioUrl: string | undefined;
-            try {
-              const { exec: execCb } = await import('child_process');
-              const { promisify } = await import('util');
-              const execP = promisify(execCb);
-              await execP(`npx @music163/ncm-cli play --song --encrypted-id "${pick.id}" --original-id "${pick.id}" --output json`, { timeout: 10000 });
-            } catch {
-              // Fallback: public outer URL (works for free songs only)
-              audioUrl = `https://music.163.com/song/media/outer/url?id=${pick.id}.mp3`;
-            }
-            emitMusicAtmosphere(socket, {
-              track: trackInfo,
-              mood,
-              audioUrl,
-              lumiReason: `你现在心情${mood === 'tired' ? '有点累' : mood === 'sad' ? '不太好' : mood === 'happy' ? '很开心' : '还不错'}，选了这首给你听。`,
-            });
-            responseText = `正在播放「${trackInfo.name}」— ${trackInfo.artists.join('、')}`;
+          const { searchAndPlay } = await import('../music/search_play');
+          const result = await searchAndPlay(uid, socket, text);
+          if (result.success && result.text) {
+            responseText = result.text;
             llmWasCalled = true;
           }
         } catch (musicErr: any) {

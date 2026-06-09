@@ -29,6 +29,7 @@ interface MusicAtmosphere {
   lumiReason?: string;
   audioUrl?: string;
   lyrics?: Array<{ time: number; text: string }>;
+  scene?: import('../music/scene_generator').MusicScene;
 }
 
 const userPollers = new Map<string, ReturnType<typeof setInterval>>();
@@ -86,13 +87,17 @@ export function registerMusicHandlers(
   });
 
   socket.on('music:next', async () => {
-    await ncmCmd('next');
-    pollAndEmitState(socket);
+    try {
+      const { searchAndPlay } = await import('../music/search_play');
+      await searchAndPlay(uid, socket);
+    } catch {}
   });
 
   socket.on('music:prev', async () => {
-    await ncmCmd('prev');
-    pollAndEmitState(socket);
+    try {
+      const { searchAndPlay } = await import('../music/search_play');
+      await searchAndPlay(uid, socket);
+    } catch {}
   });
 
   socket.on('music:seek', async (data: { seconds: number }) => {
@@ -116,7 +121,8 @@ export function registerMusicHandlers(
 
 async function pollAndEmitState(socket: Socket) {
   const raw = await ncmCmd('state');
-  const data = tryParse(raw);
+  const result = tryParse(raw);
+  const data = result?.state || result;
   if (data) {
     socket.emit('music:state', {
       playing: data.status === 'playing' || data.playing === true,
@@ -124,7 +130,7 @@ async function pollAndEmitState(socket: Socket) {
       artists: data.artists || (data.artist ? [data.artist] : undefined),
       album: data.album,
       duration: data.duration,
-      progress: data.progress || data.position || data.elapsed,
+      progress: data.position || data.progress || 0,
       coverUrl: data.coverUrl || data.cover,
       volume: data.volume,
       source: 'netease',
@@ -148,8 +154,15 @@ function stopStatePoller(uid: string) {
 
 /**
  * Emit a music atmosphere event to trigger the MusicMoodLayer in the frontend.
- * Called from chat.ts when Lumi decides to play music based on mood.
+ * Broadcasts to ALL sockets in the user's room (since frontend may have multiple connections).
  */
 export function emitMusicAtmosphere(socket: Socket, atmosphere: MusicAtmosphere) {
+  const rooms = Array.from(socket.rooms);
+  const userRoom = rooms.find(r => r.startsWith('user:'));
+  if (userRoom) {
+    socket.to(userRoom).emit('music:atmosphere', atmosphere);
+  }
   socket.emit('music:atmosphere', atmosphere);
+  // Start polling ncm-cli state to sync progress/lyrics to frontend
+  startStatePoller(socket, userRoom || 'default');
 }

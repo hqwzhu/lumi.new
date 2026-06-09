@@ -449,6 +449,32 @@ async function processVoiceInput(
     }
     logger.info(`[Audio] Cognition: ${cognition.intent.category} (confidence: ${cognition.intent.confidence}), model: ${effectiveModel}`);
 
+    // ── Music intent shortcut — intercept before LLM tool-call loop ──
+    if (/放.*歌|放.*音乐|来首歌|播放|听.*歌|来点音乐|给我放|随便放点|我想听|搜.*歌|换.*歌|切.*歌/.test(userText)) {
+      logger.info('[Audio] Music intent matched, attempting shortcut...');
+      try {
+        const { searchAndPlay } = await import('../music/search_play');
+        const result = await searchAndPlay(session.userId, socket, userText);
+        if (result.success && result.text) {
+          responseText = result.text;
+          flushSentence(responseText);
+          await Promise.allSettled(ttsPromises);
+          const conv = getOrCreateActiveConversation(session.userId, session.agentId);
+          addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'user', content: userText, personality: session.personalityId, mode: 'voice' });
+          addMessage({ userId: session.userId, agentId: session.agentId, conversationId: conv.id, role: 'assistant', content: responseText, personality: session.personalityId, mode: 'voice' });
+          session.isProcessing = false;
+          session.isSpeaking = false;
+          session.pipelineAbortController = null;
+          socket.emit('chat:conversation_updated', { conversationId: conv.id, agentId: session.agentId });
+          socket.emit("audio:status", { status: "listening" });
+          socket.emit("agent:status", { status: "idle" });
+          return;
+        }
+      } catch (musicErr: any) {
+        logger.warn('[Audio] Music intent shortcut failed, falling through to LLM:', musicErr.message);
+      }
+    }
+
     // ── Orchestrator: complex/moderate tasks → multi-agent decomposition ──
     let usedOrchestrator = false;
     const complexity = classifyComplexity(userText, { userId: session.userId, personalityId: session.personalityId });

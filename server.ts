@@ -34,6 +34,67 @@ apiRouter.use("/", fileRoutes);
 apiRouter.use("/", subscriptionRoutes);
 apiRouter.use("/", lapRoutes);
 
+// ── NetEase ncm-cli login ──
+let ncmLoginPolling: ReturnType<typeof setTimeout> | null = null;
+let ncmLoginQrUrl: string | null = null;
+let ncmLoginDone = false;
+
+apiRouter.post('/ncm/login', async (_req, res) => {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execP = promisify(exec);
+    const result = await execP('npx @music163/ncm-cli login --background --output json', { timeout: 15000 });
+    const data = JSON.parse(result.stdout);
+    ncmLoginQrUrl = data.qrCodeUrl || data.clickableUrl || null;
+    ncmLoginDone = false;
+
+    // Poll login status every 3s
+    if (ncmLoginPolling) clearInterval(ncmLoginPolling);
+    ncmLoginPolling = setInterval(async () => {
+      try {
+        const check = await execP('npx @music163/ncm-cli login --check --output json', { timeout: 8000 });
+        const cd = JSON.parse(check.stdout);
+        if (cd.success) {
+          ncmLoginDone = true;
+          ncmLoginQrUrl = null;
+          if (ncmLoginPolling) { clearInterval(ncmLoginPolling); ncmLoginPolling = null; }
+        }
+      } catch {}
+    }, 3000);
+
+    res.json({ success: true, qrUrl: ncmLoginQrUrl });
+  } catch (e: any) {
+    res.json({ success: false, error: e.message || String(e) });
+  }
+});
+
+// On startup: restore ncm-cli credentials from stored keys, then check login
+(async () => {
+  try {
+    const { getKey } = await import('./server/config/keys');
+    const appId = getKey('NETEASE_APP_ID');
+    const privateKey = getKey('NETEASE_PRIVATE_KEY');
+    if (appId && privateKey) {
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execP = promisify(exec);
+      await execP(`npx @music163/ncm-cli config set appId "${appId}"`, { timeout: 10000 }).catch(() => {});
+      await execP(`npx @music163/ncm-cli config set privateKey "${privateKey.replace(/\n/g, '\\n')}"`, { timeout: 10000 }).catch(() => {});
+      const check = await execP('npx @music163/ncm-cli login --check --output json', { timeout: 10000 });
+      const data = JSON.parse(check.stdout);
+      if (data.success) {
+        ncmLoginDone = true;
+        console.log('[NCM] Already logged in from previous session.');
+      }
+    }
+  } catch {}
+})();
+
+apiRouter.get('/ncm/login/status', (_req, res) => {
+  res.json({ done: ncmLoginDone, qrUrl: ncmLoginQrUrl });
+});
+
 // ── Org routes ──
 // Org creation is always available (personal→org upgrade path).
 // Full org routes mount only when ROLE=org.
@@ -72,6 +133,13 @@ process.on('unhandledRejection', (reason) => {
   if (reason instanceof Error) console.error(reason.stack);
   process.exit(1);
 });
+
+// Cleanup mpv on exit so music stops when server shuts down
+process.on('exit', () => {
+  try { require('child_process').execSync('taskkill //F //IM "mpv.exe"', { timeout: 3000, stdio: 'ignore' }); } catch {}
+});
+process.on('SIGINT', () => process.exit());
+process.on('SIGTERM', () => process.exit());
 
 async function start() {
   await setupStatic(app, __filename, __dirname, ROLE);

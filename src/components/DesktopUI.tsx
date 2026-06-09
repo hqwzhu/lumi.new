@@ -47,6 +47,7 @@ import {
   Briefcase,
   Terminal as TerminalIcon,
   MousePointer2,
+  Music,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -95,6 +96,8 @@ import { PersonalityEditor } from './PersonalityEditor';
 import { Settings } from './Settings';
 import { TerminalWindow } from './Terminal';
 import { MusicMoodLayer } from './MusicMoodLayer';
+import { MusicCenter } from './MusicCenter';
+import { useMusicVisible } from '../hooks/useMusicPlayer';
 import { systemService } from '@/services/systemService';
 import { usePlatform } from '@/hooks/usePlatform';
 
@@ -926,6 +929,7 @@ export function DesktopUI({
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
 
   const socket = useSocket();
+  const musicVisible = useMusicVisible();
   useAmbientPoller(socket); // Ambient awareness: polls window, clipboard, idle state
   const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, interrupt, toggleMute, isMuted, switchPersonality } = useVoiceCall({
     socket,
@@ -1373,6 +1377,7 @@ export function DesktopUI({
     { id: 'kernel', label: t.kernelMonitor || 'Kernel Monitor', icon: <Activity size={24} />, color: 'from-orange-500 to-red-600' },
     { id: 'devices', label: t.devices || 'Devices', icon: <Cpu size={24} />, color: 'from-blue-600 to-cyan-400' },
     { id: 'settings', label: t.settings || 'OS Integrity', icon: <SettingsIcon size={24} />, color: 'from-gray-400 to-slate-600' },
+    { id: 'music-center', label: '音乐中心', icon: <Music size={24} />, color: 'from-red-500 to-pink-600' },
   ];
 
   const sphereSentiment =
@@ -1386,6 +1391,7 @@ export function DesktopUI({
     if (windowId === 'personality') return { w: '1050px', h: '720px' };
     if (windowId === 'generate') return { w: '1050px', h: '720px' };
     if (windowId === 'music') return { w: '850px', h: '620px' };
+    if (windowId === 'music-center') return { w: '420px', h: '520px' };
     if (windowId === 'tools') return { w: '850px', h: '620px' };
     if (windowId === 'github-mcp') return { w: '850px', h: '620px' };
     if (windowId === 'notifications') return { w: '700px', h: '550px' };
@@ -1602,7 +1608,7 @@ export function DesktopUI({
 
       <div className="fixed inset-0 z-[100] pointer-events-none">
         {/* Top Status Bar */}
-        <div className={`absolute top-0 inset-x-0 h-10 glass-dark border-b border-white/5 flex items-center justify-between px-6 pointer-events-auto backdrop-blur-md transition-all duration-1000 ${isWallpaperMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        <div className={`absolute top-0 inset-x-0 h-10 glass-dark border-b border-white/5 flex items-center justify-between px-6 pointer-events-auto backdrop-blur-md transition-all duration-1000 ${isWallpaperMode || musicVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex items-center gap-6">
             <button onClick={onExit} className="flex items-center gap-2 group transition-all">
                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-celestial-mars to-celestial-saturn flex items-center justify-center p-1 group-hover:rotate-12 transition-transform shadow-lg shadow-celestial-saturn/20">
@@ -1738,7 +1744,7 @@ export function DesktopUI({
         </AnimatePresence>
 
         {/* Bottom Taskbar / Dock */}
-        <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-50 h-16 px-4 glass-dark rounded-[2.5rem] border border-white/10 flex items-center gap-2 shadow-2xl backdrop-blur-2xl transition-all duration-1000 ${isWallpaperMode ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
+        <div className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-50 h-16 px-4 glass-dark rounded-[2.5rem] border border-white/10 flex items-center gap-2 shadow-2xl backdrop-blur-2xl transition-all duration-1000 ${isWallpaperMode || musicVisible ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}>
           <button 
             onClick={() => setViewMode(viewMode === 'personal' ? 'world' : 'personal')}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all group relative ${
@@ -1840,8 +1846,8 @@ export function DesktopUI({
         className={`absolute inset-0 z-[15] flex flex-col ${viewMode === 'world' ? 'pointer-events-none' : ''}`}
       >
         <div className="relative w-full h-full pointer-events-auto">
-          {/* Central Interactive Entity */}
-          <div className="absolute inset-0 flex items-center justify-center z-[15] pointer-events-none">
+          {/* Central Interactive Entity — hidden when music layer is active */}
+          <div className={`absolute inset-0 flex items-center justify-center z-[15] pointer-events-none ${musicVisible ? 'opacity-0 pointer-events-none' : ''}`}>
         <motion.div 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -2239,23 +2245,25 @@ export function DesktopUI({
                     <Settings t={t} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} activeSection={settingsSection} onSectionChange={setSettingsSection} />
                   ) : windowId === 'music' ? (
                     <div className="flex flex-col items-center justify-center h-full text-center space-y-8 animate-in zoom-in-95 duration-500">
-                       <div className="relative">
-                          <Disc size={120} className="text-celestial-saturn animate-[spin_8s_linear_infinite]" />
-                          <Headphones size={40} className="absolute -bottom-4 -right-4 text-white p-2 bg-black rounded-full" />
-                       </div>
-                       <div className="space-y-2">
-                          <h2 className="text-3xl font-black uppercase tracking-tighter text-white">{t.mediaCenter || 'Media Center'}</h2>
-                          <p className="text-white/40 max-w-md text-sm">{t.mediaCenterDesc || 'Voice synthesis, media playback, and audio settings.'}</p>
-                       </div>
-                       <div className="flex gap-4">
-                          <button onClick={() => { toggleWindow('settings'); setSettingsSection('voice'); }} className="px-6 py-3 bg-celestial-saturn/10 border border-celestial-saturn/30 rounded-2xl text-xs font-black uppercase tracking-widest text-celestial-saturn hover:bg-celestial-saturn/20 transition-all">
-                             {t.voiceForge || 'Voice Forge'}
-                          </button>
-                          <button onClick={() => { toggleWindow('settings'); setSettingsSection('music'); }} className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-white/40 hover:bg-white/10 transition-all">
-                             {t.mediaServices || 'Media Services'}
-                          </button>
-                       </div>
+                      <div className="relative">
+                        <Disc size={120} className="text-celestial-saturn animate-[spin_8s_linear_infinite]" />
+                        <Headphones size={40} className="absolute -bottom-4 -right-4 text-white p-2 bg-black rounded-full" />
+                      </div>
+                      <div className="space-y-2">
+                        <h2 className="text-3xl font-black uppercase tracking-tighter text-white">{t.mediaCenter || 'Media Center'}</h2>
+                        <p className="text-white/40 max-w-md text-sm">{t.mediaCenterDesc || 'Voice synthesis, media playback, and audio settings.'}</p>
+                      </div>
+                      <div className="flex gap-4">
+                        <button onClick={() => { toggleWindow('settings'); setSettingsSection('voice'); }} className="px-6 py-3 bg-celestial-saturn/10 border border-celestial-saturn/30 rounded-2xl text-xs font-black uppercase tracking-widest text-celestial-saturn hover:bg-celestial-saturn/20 transition-all">
+                          {t.voiceForge || 'Voice Forge'}
+                        </button>
+                        <button onClick={() => { toggleWindow('settings'); setSettingsSection('music'); }} className="px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-white/40 hover:bg-white/10 transition-all">
+                          {t.mediaServices || 'Media Services'}
+                        </button>
+                      </div>
                     </div>
+                  ) : windowId === 'music-center' ? (
+                    <MusicCenter isOpen={true} onClose={() => toggleWindow('music-center')} />
                   ) : windowId === 'personality' ? (
                     <PersonalityEditor t={t} />
                   ) : windowId === 'tools' ? (

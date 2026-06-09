@@ -1,5 +1,29 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import { useSocket } from './useSocket';
+
+let _musicVisible = false;
+const _listeners = new Set<() => void>();
+function setMusicVisible(v: boolean) {
+  _musicVisible = v;
+  _listeners.forEach(fn => fn());
+}
+export function useMusicVisible() {
+  return useSyncExternalStore(
+    (cb) => { _listeners.add(cb); return () => { _listeners.delete(cb); }; },
+    () => _musicVisible,
+  );
+}
+
+export interface MusicScene {
+  colors: { bg: string; primary: string; secondary: string; accent: string };
+  scene: string;
+  particles: string;
+  lyricsStyle: string;
+  intensity: number;
+  reason: string;
+  terrainColors?: string[];
+  emotion?: { valence: number; arousal: number };
+}
 
 export interface MusicTrack {
   name: string;
@@ -21,6 +45,7 @@ export interface MusicAtmosphere {
   lumiReason?: string;
   audioUrl?: string;
   lyrics?: MusicLyricLine[];
+  scene?: MusicScene;
 }
 
 export interface MusicPlayerState {
@@ -33,6 +58,7 @@ export interface MusicPlayerState {
   weather?: string;
   lumiReason?: string;
   lyrics: MusicLyricLine[];
+  scene: MusicScene | null;
   visible: boolean;
   source: 'netease' | 'minimax' | 'url' | null;
 }
@@ -50,6 +76,7 @@ export function useMusicPlayer() {
     weather: undefined,
     lumiReason: undefined,
     lyrics: [],
+    scene: null,
     visible: false,
     source: null,
   });
@@ -79,6 +106,7 @@ export function useMusicPlayer() {
     if (!socket) return;
 
     const onAtmosphere = (data: MusicAtmosphere) => {
+      setMusicVisible(true);
       setState(prev => ({
         ...prev,
         track: data.track,
@@ -86,8 +114,11 @@ export function useMusicPlayer() {
         weather: data.weather,
         lumiReason: data.lumiReason,
         lyrics: data.lyrics || [],
+        scene: data.scene || null,
         visible: true,
         isPlaying: true,
+        progress: 0,
+        duration: data.track.duration ? data.track.duration / 1000 : prev.duration,
         source: data.audioUrl ? 'url' : 'netease',
       }));
       if (data.audioUrl && audioRef.current) {
@@ -96,15 +127,23 @@ export function useMusicPlayer() {
       }
     };
 
+    // Local progress ticker for ncm-cli (mpv) playback — no audio element available
+    const progressInterval = setInterval(() => {
+      setState(prev => {
+        if (prev.source !== 'netease' || !prev.isPlaying || !prev.duration) return prev;
+        const next = prev.progress + 0.5;
+        return next >= prev.duration ? { ...prev, progress: prev.duration, isPlaying: false } : { ...prev, progress: next };
+      });
+    }, 500);
+
     const onState = (data: any) => {
       setState(prev => ({
         ...prev,
         isPlaying: data.playing ?? prev.isPlaying,
-        track: data.trackName ? { name: data.trackName, artists: data.artists || [], album: data.album, coverUrl: data.coverUrl, duration: data.duration } : prev.track,
-        progress: data.progress ?? prev.progress,
+        progress: data.progress != null ? data.progress : prev.progress,
+        duration: data.duration ? data.duration / 1000 : prev.duration,
         volume: data.volume ?? prev.volume,
         source: data.source ?? prev.source,
-        ...(data.audioUrl ? {} : {}),
       }));
       if (data.audioUrl && audioRef.current) {
         audioRef.current.src = data.audioUrl;
@@ -126,6 +165,7 @@ export function useMusicPlayer() {
     socket.on('music:error', onError);
 
     return () => {
+      clearInterval(progressInterval);
       socket.off('music:atmosphere', onAtmosphere);
       socket.off('music:state', onState);
       socket.off('music:lyrics', onLyrics);
@@ -166,8 +206,16 @@ export function useMusicPlayer() {
     setState(prev => ({ ...prev, volume: vol }));
   }, [socket]);
 
-  const show = useCallback(() => setState(prev => ({ ...prev, visible: true })), []);
-  const hide = useCallback(() => setState(prev => ({ ...prev, visible: false })), []);
+  const show = useCallback(() => {
+    setMusicVisible(true);
+    setState(prev => ({ ...prev, visible: true }));
+  }, []);
+  const hide = useCallback(() => {
+    audioRef.current?.pause();
+    socket?.emit('music:pause');
+    setMusicVisible(false);
+    setState(prev => ({ ...prev, visible: false, isPlaying: false }));
+  }, [socket]);
 
   return {
     ...state,
