@@ -37,6 +37,8 @@ const SKILL_KEYWORD_MAP: Array<{ keywords: RegExp[]; skillId: string; category: 
   { keywords: [/爬虫|crawl|爬取|抓取.*网页|网页.*数据|deep.crawl/i], skillId: 'skill-deep-crawler', category: 'Web' },
   { keywords: [/沙箱|sandbox|在线.*运行|在线.*执行|远程.*代码/i], skillId: 'skill-code-sandbox', category: 'Dev Tools' },
   { keywords: [/桌面.*自动化|自动.*点击|自动.*操作|maa/i], skillId: 'skill-desktop-automation', category: 'System' },
+  { keywords: [/音乐|作曲|写歌|唱歌|旋律|和弦|和声|歌词|乐理|编曲|midi|谱曲|音阶|五声音阶|作词/i], skillId: 'skill-melody', category: 'Creative' },
+  { keywords: [/网易云|网易音乐|netease|播放.*歌|搜.*歌|每日推荐|歌单|推荐.*歌曲|听.*歌|什么歌|放.*歌/i], skillId: 'skill-neteasemusic', category: 'Music' },
 ];
 
 function getInstalledNames(): Set<string> {

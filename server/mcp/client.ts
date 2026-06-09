@@ -516,11 +516,16 @@ main().catch((err) => { console.error('[npm-skill] Fatal:', err); process.exit(1
         },
       );
     } else if (config.command) {
-      // Expand ${VAR_NAME} placeholders in env values using process.env
+      // Expand ${VAR_NAME} placeholders in env values using process.env + stored keys
+      const storedKeys: Record<string, string> = {};
+      try {
+        const { loadKeys } = require('../config/keys');
+        Object.assign(storedKeys, loadKeys());
+      } catch {}
       const resolvedEnv: Record<string, string> = {};
       if (config.env) {
         for (const [k, v] of Object.entries(config.env)) {
-          resolvedEnv[k] = v.replace(/\$\{(\w+)\}/g, (_, name) => process.env[name] || '');
+          resolvedEnv[k] = v.replace(/\$\{(\w+)\}/g, (_, name) => process.env[name] || storedKeys[name] || '');
         }
       }
       transport = new StdioClientTransport({

@@ -48,10 +48,13 @@
         "MINIMAX_API_KEY": "${MINIMAX_API_KEY}",
         "MINIMAX_API_HOST": "https://api.minimaxi.com"
       },
-      "enabled": false,
+      "enabled": true,
       "source": "external",
       "description": "MiniMax multimodal generation: music, video, image, TTS, voice cloning. Requires API key.",
-      "toolCount": 6
+      "toolCount": 6,
+      "requiresApiKey": true,
+      "apiKeyEnv": "MINIMAX_API_KEY",
+      "apiKeyUrl": "https://platform.minimaxi.com"
     },
     "e2b": {
       "command": "npx",

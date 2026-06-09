@@ -94,6 +94,7 @@ const KnowledgeBase = lazy(() => import('./KnowledgeBase').then(m => ({ default:
 import { PersonalityEditor } from './PersonalityEditor';
 import { Settings } from './Settings';
 import { TerminalWindow } from './Terminal';
+import { MusicMoodLayer } from './MusicMoodLayer';
 import { systemService } from '@/services/systemService';
 import { usePlatform } from '@/hooks/usePlatform';
 
@@ -2686,6 +2687,9 @@ function BatteryWidget({ t }: { t?: any }) {
           </div>
         </motion.div>
       )}
+
+      {/* Music Mood Layer — fullscreen overlay triggered by backend music:atmosphere */}
+      <MusicMoodLayer />
     </div>
   );
 }
