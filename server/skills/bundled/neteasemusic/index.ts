@@ -91,47 +91,6 @@ server.registerTool('netease_setup', {
   },
 }, setupHandler);
 
-// ── Tool 2: netease_login ────────────────────────────────────────────────────
-
-async function loginHandler(args: any) {
-  try {
-    const checkOnly = args.check === true;
-    if (checkOnly) {
-      const result = await ncm('login --check');
-      const data = tryParseJSON(result.stdout);
-      return ok({ loggedIn: data?.loggedIn || data?.ok || false, message: data?.message || 'Login check complete' });
-    }
-
-    // Generate QR code for login
-    const result = await ncm('login --background', { timeout: 30000 });
-    const data = tryParseJSON(result.stdout);
-
-    // ncm-cli login might output QR code URL or the actual QR as text
-    // The output typically includes a qrCodeUrl or encoded QR data
-    if (data?.qrCodeUrl) {
-      return ok({ step: 'scan', qrCodeUrl: data.qrCodeUrl, uniKey: data.uniKey,
-        hint: 'Open NetEase Cloud Music app and scan the QR code. Poll netease_login with check=true to verify.' });
-    }
-
-    // If stdout contains a QR code URL
-    const qrMatch = result.stdout.match(/https?:\/\/[^\s"']+/);
-    if (qrMatch) {
-      return ok({ step: 'scan', qrCodeUrl: qrMatch[0],
-        hint: 'Open NetEase Cloud Music app and scan. Check login status with check=true.' });
-    }
-
-    return ok({ step: 'pending', rawOutput: result.stdout.slice(0, 500), hint: 'QR code should appear in terminal.' });
-  } catch (e: any) {
-    return err(`Login failed: ${e.message}`);
-  }
-}
-
-server.registerTool('netease_login', {
-  description: 'Log into NetEase Cloud Music via QR code scan or check login status.',
-  inputSchema: {
-    check: z.boolean().optional().describe('Set to true to only check current login status'),
-  },
-}, loginHandler);
 
 // ── Tool 3: netease_search ───────────────────────────────────────────────────
 
