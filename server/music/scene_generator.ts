@@ -51,7 +51,7 @@ export async function generateMusicScene(
   userId: string,
   trackInfo: { name: string; artists: string[] },
   mood: string,
-  provider: string = 'deepseek',
+  provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen' | 'ark' | 'ollama' | 'lmstudio' | 'auto' = 'deepseek',
   model: string = 'deepseek-v4-flash',
   llmGetters?: {
     getDeepSeek: () => any;
