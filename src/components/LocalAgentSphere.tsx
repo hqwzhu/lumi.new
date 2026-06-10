@@ -339,7 +339,7 @@ export function LocalAgentSphere({
         mainCtx.globalAlpha = 1;
 
         // ---- Render portal canvas (sphere overflow beyond container) ----
-        if (!disabledRef.current) {
+        {
           const portalCanvas = portalCanvasRef.current;
           if (portalCanvas) {
             const portalCtx = portalCanvas.getContext('2d');
@@ -354,9 +354,7 @@ export function LocalAgentSphere({
               const pcy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
 
               if (sphereScale > 1.05) {
-                // Pure black background
-                portalCtx.fillStyle = '#000000';
-                portalCtx.fillRect(0, 0, portalCanvas.width, portalCanvas.height);
+                portalCtx.clearRect(0, 0, portalCanvas.width, portalCanvas.height);
                 const containerWidth = rect ? rect.width : 500;
                 const portalScale = containerWidth / 600;
 
@@ -413,7 +411,7 @@ export function LocalAgentSphere({
   }, []);
 
   // Portal to document.body — escapes CSS transform ancestors (only when gestures active)
-  const portal = gesturesDisabled ? null : createPortal(
+  const portal = createPortal(
     <canvas
       ref={portalCanvasRef}
       width={window.innerWidth}
@@ -446,7 +444,7 @@ export function LocalAgentSphere({
     <>
       {portal}
       <div className={`relative w-full flex flex-col items-center justify-center py-20 transition-all duration-1000 ${isWallpaperMode ? 'opacity-40 scale-[0.8] blur-[1px]' : 'opacity-100 scale-100'}`}>
-        <div className={`absolute inset-0 bg-gradient-to-b from-red-500/5 via-transparent to-transparent pointer-events-none transition-opacity ${isWallpaperMode ? 'opacity-0' : 'opacity-100'}`} />
+        <div className="absolute inset-0 pointer-events-none" />
 
         <div
           ref={containerRef}
@@ -460,13 +458,6 @@ export function LocalAgentSphere({
           onTouchEnd={handleMouseUp}
           onClick={handleSphereClick}
         >
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div
-              className="absolute w-64 h-64 md:w-96 md:h-96 rounded-full bg-red-500 blur-[80px] opacity-10 will-change-transform"
-              animate={{ scale: [1, 1.1, 1] }}
-              transition={{ duration: 5, repeat: Infinity }}
-            />
-          </div>
 
           <canvas
             ref={mainCanvasRef}
@@ -489,11 +480,6 @@ export function LocalAgentSphere({
             ))}
           </AnimatePresence>
 
-          <motion.div
-            className="absolute inset-[-40px] rounded-full border border-white/5 border-dashed pointer-events-none will-change-transform"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
-          />
         </div>
 
         {/* Controls */}
