@@ -103,16 +103,24 @@ apiRouter.post('/ncm/login', async (_req, res) => {
   }
 });
 
-// On startup: restore ncm-cli credentials from stored keys, then check login
+// On startup: configure ncm-cli (mpv path + credentials), then check login
 (async () => {
   try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execP = promisify(exec);
+    const fs = await import('fs');
+
+    // Configure mpv player path so ncm-cli can find it
+    const mpvPath = process.env.MPV_PATH
+      || (fs.existsSync('C:/Program Files/MPV Player/mpv.exe') ? 'C:/Program Files/MPV Player/mpv.exe' : 'mpv');
+    await execP(`npx @music163/ncm-cli config set player "${mpvPath}"`, { timeout: 10000 }).catch(() => {});
+    console.log(`[NCM] Player configured: ${mpvPath}`);
+
     const { getKey } = await import('./server/config/keys');
     const appId = getKey('NETEASE_APP_ID');
     const privateKey = getKey('NETEASE_PRIVATE_KEY');
     if (appId && privateKey) {
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execP = promisify(exec);
       await execP(`npx @music163/ncm-cli config set appId "${appId}"`, { timeout: 10000 }).catch(() => {});
       await execP(`npx @music163/ncm-cli config set privateKey "${privateKey.replace(/\n/g, '\\n')}"`, { timeout: 10000 }).catch(() => {});
       const check = await execP('npx @music163/ncm-cli login --check --output json', { timeout: 10000 });

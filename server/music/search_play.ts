@@ -23,12 +23,8 @@ const moodReasonMap: Record<string, string> = {
 };
 
 function ncmExec(args: string, timeout = 15000): Promise<string> {
-  const mpvPath = 'C:\\Program Files\\MPV Player';
   return new Promise((resolve) => {
-    exec(`npx @music163/ncm-cli ${args} --output json`, {
-      timeout,
-      env: { ...process.env, PATH: `${mpvPath};${process.env.PATH || ''}` },
-    }, (err, stdout) => {
+    exec(`npx @music163/ncm-cli ${args} --output json`, { timeout }, (err, stdout) => {
       resolve(stdout || '');
     });
   });
@@ -40,10 +36,8 @@ function tryParse(text: string): any {
 
 /** Fire-and-forget ncm-cli play — mpv handles audio, frontend syncs via poller */
 function ncmFirePlay(encryptedId: string, originalId: string): void {
-  const mpvPath = 'C:\\Program Files\\MPV Player';
   exec(`npx @music163/ncm-cli play --song --encrypted-id "${encryptedId}" --original-id "${originalId}" --output json`, {
     timeout: 30000,
-    env: { ...process.env, PATH: `${mpvPath};${process.env.PATH || ''}` },
   }, (err, stdout) => {
     if (err?.killed) {
       // OK — long-running play, daemon/mpv continue independently

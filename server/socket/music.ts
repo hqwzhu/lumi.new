@@ -17,12 +17,9 @@ interface MusicAtmosphere {
 
 const userPollers = new Map<string, ReturnType<typeof setInterval>>();
 
-const mpvPath = 'C:\\Program Files\\MPV Player';
-const ncmEnv = { ...process.env, PATH: `${mpvPath};${process.env.PATH || ''}` };
-
 function ncmExec(args: string, timeout = 10000): Promise<string> {
   return new Promise((resolve) => {
-    exec(`npx @music163/ncm-cli ${args} --output json`, { timeout, env: ncmEnv }, (_err, stdout) => {
+    exec(`npx @music163/ncm-cli ${args} --output json`, { timeout }, (_err, stdout) => {
       resolve(stdout || '');
     });
   });

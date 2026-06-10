@@ -52,7 +52,7 @@ export async function generateMusicScene(
   trackInfo: { name: string; artists: string[] },
   mood: string,
   provider: 'deepseek' | 'gemini' | 'openai' | 'anthropic' | 'qwen' | 'ark' | 'ollama' | 'lmstudio' | 'auto' = 'deepseek',
-  model: string = 'deepseek-v4-flash',
+  model: string = 'deepseek-chat',
   llmGetters?: {
     getDeepSeek: () => any;
     getGemini: () => any;
