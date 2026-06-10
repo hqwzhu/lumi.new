@@ -136,17 +136,72 @@ export function mountAgentRoutes(
     const { prompt, mode } = req.body || {};
     if (!prompt?.trim()) return res.status(400).json({ error: "Prompt is required" });
     const lower = prompt.toLowerCase();
-    const colorMap: Record<string, any> = { white: '#f0f0f0', black: '#3a3a3a', red: '#e85545', blue: '#5599dd', green: '#5ddb5d', purple: '#9966cc', pink: '#f0a0b0', orange: '#f4a460', yellow: '#f5d442', grey: '#888888' };
+
     if (mode === 'ai_enhanced') {
       try {
-        const llmPrompt = `You are a pixel art character designer. Given: "${prompt}". Output ONLY valid JSON: { "petName": "...", "color": "white|black|red|blue|green|purple|pink|orange|yellow|grey", "hasWings": true/false, "hasHorns": true/false, "isSmall": true/false, "isRound": true/false }`;
+        const llmPrompt = `You are a pixel-art pet designer for a desktop companion app. Given a Chinese or English description, output ONLY valid JSON (no markdown, no explanation) that describes a cute desktop pet.
+
+User description: "${prompt}"
+
+Output JSON fields:
+- petName: short name (Chinese if input is Chinese, max 8 chars)
+- species: "cat" | "fox" | "rabbit" | "bear" | "hamster" | "blob" | "bird" | "dragon"
+- color: main body color — "white" | "black" | "red" | "blue" | "green" | "purple" | "pink" | "orange" | "yellow" | "brown" | "cream" | "grey"
+- pattern: "solid" | "striped" | "spotted" | "bicolor" | "gradient"
+- patternColor: secondary color for pattern (use color list above)
+- eyeShape: "round" | "oval" | "slit" | "star" | "heart"
+- eyeColor: eye color hex
+- mouthStyle: "smile" | "open" | "shocked" | "neutral" | "tongue"
+- size: "tiny" | "small" | "normal" | "large"
+- hasWings: true/false
+- hasHorns: true/false
+- special: "none" | "glowing" | "sparkly"
+
+Match species to description clues: 猫→cat, 狐狸/狐→fox, 兔→rabbit, 熊→bear, 仓鼠/鼠→hamster, 史莱姆/软泥→blob, 鸟→bird, 龙→dragon.
+Choose pattern/eyeShape/mouthStyle that fits the described personality.
+If the description doesn't specify, use reasonable defaults. Be creative!`;
         const result = await makeLLMCall([{ role: 'user', content: llmPrompt }], [], { provider: 'qwen', model: 'qwen-plus', maxTokens: 500 }, llmGetters.getDeepSeek, llmGetters.getGemini, llmGetters.getOpenAI, llmGetters.getAnthropic, llmGetters.getQwen);
-        let aiDesign: any = {}; try { aiDesign = JSON.parse((result.text || '').replace(/```json|```/g, '').trim()); } catch { aiDesign = {}; }
-        const color = aiDesign.color && colorMap[aiDesign.color] ? aiDesign.color : 'orange';
-        return res.json({ generated: true, prompt, petId: `ai-${Date.now()}`, petName: aiDesign.petName || prompt.slice(0, 30), tags: { color, hasWings: !!aiDesign.hasWings, hasHorns: !!aiDesign.hasHorns, isSmall: !!aiDesign.isSmall, isRound: !!aiDesign.isRound }, aiEnhanced: true });
+        let aiDesign: any = {};
+        try { aiDesign = JSON.parse((result.text || '').replace(/```json\s*|```/g, '').trim()); } catch { aiDesign = {}; }
+        const colorMap: Record<string, string> = { white:'#f0f0f0',black:'#3a3a3a',red:'#e85545',blue:'#5599dd',green:'#5ddb5d',purple:'#9966cc',pink:'#f0a0b0',orange:'#f4a460',yellow:'#f5d442',brown:'#8B6914',cream:'#fff8dc',grey:'#888888' };
+        const tags: any = {
+          species: aiDesign.species || 'cat',
+          color: colorMap[aiDesign.color] || aiDesign.color || '#f4a460',
+          pattern: aiDesign.pattern || 'solid',
+          patternColor: colorMap[aiDesign.patternColor] || aiDesign.patternColor || '',
+          eyeShape: aiDesign.eyeShape || 'round',
+          eyeColor: aiDesign.eyeColor || '',
+          mouthStyle: aiDesign.mouthStyle || 'smile',
+          size: aiDesign.size || 'normal',
+          hasWings: !!aiDesign.hasWings,
+          hasHorns: !!aiDesign.hasHorns,
+          special: aiDesign.special || 'none',
+        };
+        return res.json({ generated: true, prompt, petId: `ai-${Date.now()}`, petName: aiDesign.petName || prompt.slice(0, 30), tags, aiEnhanced: true });
       } catch (err: any) { console.error('[Pet Gen] AI-enhanced failed:', err.message); }
     }
-    const hasWings = /wing|fly|bird|dragon/i.test(lower), hasHorns = /horn|dragon/i.test(lower), isSmall = /small|tiny|mini/i.test(lower), isRound = /round|blob|ball|slime/i.test(lower);
-    res.json({ generated: true, prompt, petId: `custom-${Date.now()}`, petName: prompt.slice(0, 30), tags: { color: Object.keys(colorMap).find(c => lower.includes(c)) || 'orange', hasWings, hasHorns, isSmall, isRound } });
+
+    // Procedural fallback: regex matching
+    const speciesMatch = /猫|cat|狐狸|fox|兔|rabbit|bunny|熊|bear|仓鼠|hamster|史莱姆|blob|slime|鸟|bird|龙|dragon/i;
+    let species = 'cat';
+    if (/狐狸|fox/i.test(lower)) species = 'fox';
+    else if (/兔|rabbit|bunny/i.test(lower)) species = 'rabbit';
+    else if (/熊|bear/i.test(lower)) species = 'bear';
+    else if (/仓鼠|hamster/i.test(lower)) species = 'hamster';
+    else if (/史莱姆|blob|slime|软泥/i.test(lower)) species = 'blob';
+    else if (/鸟|bird/i.test(lower)) species = 'bird';
+    else if (/龙|dragon/i.test(lower)) species = 'dragon';
+
+    const colorMap: Record<string, string> = { white:'#f0f0f0',black:'#3a3a3a',red:'#e85545',blue:'#5599dd',green:'#5ddb5d',purple:'#9966cc',pink:'#f0a0b0',orange:'#f4a460',yellow:'#f5d442',brown:'#8B6914',cream:'#fff8dc',grey:'#888888' };
+    const color = Object.keys(colorMap).find(c => lower.includes(c)) || 'orange';
+    const pattern = /条纹|stripe|斑点|spot|花纹/i.test(lower) ? (/斑点|spot/i.test(lower) ? 'spotted' : 'striped') : 'solid';
+    const eyeShape = /星星|star|星眼/i.test(lower) ? 'star' : /爱心|heart|心形/i.test(lower) ? 'heart' : /蛇眼|slit|竖瞳/i.test(lower) ? 'slit' : 'round';
+    const mouthStyle = /张嘴|open|张大/i.test(lower) ? 'open' : /惊讶|shock/i.test(lower) ? 'shocked' : /吐舌|tongue/i.test(lower) ? 'tongue' : 'smile';
+    const size = /tiny|小小|迷你|mini/i.test(lower) ? 'tiny' : /small|小/i.test(lower) ? 'small' : /large|大|big/i.test(lower) ? 'large' : 'normal';
+    const hasWings = /wing|翅膀|fly/i.test(lower);
+    const hasHorns = /horn|角/i.test(lower);
+    const special = /glow|发光|光/i.test(lower) ? 'glowing' : /spark|星星|闪光|闪/i.test(lower) ? 'sparkly' : 'none';
+
+    res.json({ generated: true, prompt, petId: `custom-${Date.now()}`, petName: prompt.slice(0, 30), tags: { species, color: colorMap[color] || '#f4a460', pattern, patternColor: '', eyeShape, eyeColor: '', mouthStyle, size, hasWings, hasHorns, special } });
   }));
 }
