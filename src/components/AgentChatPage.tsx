@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, MessageSquare, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown, ChevronRight, XCircle, History, Clock, Plus, Info, Copy, Check, Trash2 } from 'lucide-react';
+import { Send, Loader2, ArrowLeft, Ghost, Zap, Cpu, Sparkles, Upload, FileText, Mic, Video, CheckCircle2, Pause, Play, Square, ChevronDown, ChevronRight, XCircle, Info, Copy, Check } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { socketService } from '@/services/socketService';
@@ -100,17 +100,11 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [optimizationProgress, setOptimizationProgress] = useState(0);
-  const [activeConversation, setActiveConversation] = useState<any>(null);
-  const [showResumePrompt, setShowResumePrompt] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [showInfoPanel, setShowInfoPanel] = useState(true);  // visible by default
+  const [showInfoPanel, setShowInfoPanel] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const { speak, stop, pause, resume, isSpeaking, isPaused } = useTTS();
   const recognition = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const activeCidRef = useRef<string | null>(null);
   const agentNameRef = useRef<string>('Lumi');
 
   // Escape to close panels
@@ -131,8 +125,6 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
 
   const isFounder = agentId === 'founder' || agentCategory === 'founder' || agentName.includes('Founder') || agentName.includes('创始人');
 
-  // Keep refs in sync for socket callback closures
-  useEffect(() => { activeCidRef.current = activeConversationId; }, [activeConversationId]);
   useEffect(() => { agentNameRef.current = agentName; }, [agentName]);
 
   useEffect(() => {
@@ -162,81 +154,6 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     }
   }, []);
 
-  const handleResumeConversation = useCallback(async (conversationId: string) => {
-    try {
-      const res = await fetch(`/api/conversations/${conversationId}/messages?limit=100`);
-      const data = await res.json();
-      if (data.messages && Array.isArray(data.messages)) {
-        const historyMessages = data.messages.map((m: any, idx: number) => ({
-          id: `resume-${idx}`,
-          text: m.content || m.message || '',
-          userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || (t.chatUserFallback || 'User')),
-          timestamp: m.timestamp || new Date().toISOString(),
-          type: m.role === 'assistant' ? 'agent' : 'user'
-        }));
-        setMessages(historyMessages);
-      }
-      setShowResumePrompt(false);
-    } catch (err) {
-      console.error("Failed to resume conversation", err);
-    }
-  }, [agentName, user]);
-
-  const fetchConversations = useCallback(async () => {
-    setIsLoadingConversations(true);
-    try {
-      const res = await fetch('/api/conversations');
-      const data = await res.json();
-      if (data.conversations) setConversations(data.conversations);
-    } catch (err) {
-      console.error('Failed to fetch conversations', err);
-    } finally {
-      setIsLoadingConversations(false);
-    }
-  }, []);
-
-  const handleSelectConversation = useCallback(async (convId: string) => {
-    if (convId === activeConversationId) return;
-    setIsLoadingMessages(true);
-    try {
-      const res = await fetch(`/api/conversations/${convId}/messages?limit=100`);
-      const data = await res.json();
-      if (data.messages && Array.isArray(data.messages)) {
-        const historyMessages = data.messages.map((m: any, idx: number) => ({
-          id: `conv-${idx}`,
-          text: m.content || m.message || '',
-          userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || (t.chatUserFallback || 'User')),
-          timestamp: m.timestamp || new Date().toISOString(),
-          type: m.role === 'assistant' ? 'agent' : 'user'
-        }));
-        setMessages(historyMessages);
-        setActiveConversationId(convId);
-        setShowResumePrompt(false);
-        const conv = conversations.find(c => c.id === convId);
-        if (conv) setActiveConversation(conv);
-      }
-    } catch (err) {
-      toast.error(t.failedToLoadConversation || 'Failed to load conversation');
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  }, [activeConversationId, agentName, user, conversations, t.failedToLoadConversation]);
-
-  const handleNewConversation = useCallback(async () => {
-    if (activeConversationId) {
-      try {
-        await fetch(`/api/conversations/${activeConversationId}/close`, { method: 'POST' });
-      } catch (err) {
-        console.error('Failed to close conversation', err);
-      }
-    }
-    setMessages([]);
-    setActiveConversationId(null);
-    setActiveConversation(null);
-    setShowResumePrompt(false);
-    fetchConversations();
-  }, [activeConversationId, fetchConversations]);
-
   const handleCopyMessage = useCallback(async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -247,8 +164,6 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
 
   useEffect(() => {
     if (agentId && !isFounder) {
-      fetchConversations();
-
       fetch(`/api/agents/${agentId}/history`)
         .then(res => res.json())
         .then(data => {
@@ -265,20 +180,28 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
         })
         .catch(err => console.error(t.failedToLoadChatHistory || "Failed to load chat history", err));
 
+      // Load the single active conversation
       fetch('/api/conversations/active')
-        .then(res => res.json())
-        .then(data => {
-          if (data.activeConversation) {
-            setActiveConversation(data.activeConversation);
-            setActiveConversationId(data.activeConversation.id);
-            if (data.activeConversation.agentId !== agentId) {
-              setShowResumePrompt(true);
+        .then(r => r.json())
+        .then(async (data) => {
+          const conv = data.activeConversation;
+          if (conv) {
+            const msgRes = await fetch(`/api/conversations/${conv.id}/messages?limit=500`);
+            const msgData = await msgRes.json();
+            if (msgData.messages && Array.isArray(msgData.messages)) {
+              setMessages(msgData.messages.map((m: any, idx: number) => ({
+                id: m.id || `msg-${idx}`,
+                text: m.content || m.message || '',
+                userName: m.role === 'assistant' ? agentName : (user?.displayName || user?.username || (t.chatUserFallback || 'User')),
+                timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
+                type: m.role === 'assistant' ? 'agent' : 'user',
+              })));
             }
           }
         })
-        .catch(err => toast.error(t.failedToLoadConversation || 'Failed to load conversation'));
+        .catch(() => {});
     }
-  }, [agentId, agentName, user, isFounder, fetchConversations, t.failedToLoadChatHistory, t.failedToLoadConversation]);
+  }, [agentId, agentName, user, isFounder, t.failedToLoadChatHistory]);
 
   const streamingMsgId = useRef<string | null>(null);
 
@@ -379,29 +302,24 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     // conversation_updated now arrives AFTER agent:response (fixed order in chat.ts).
     // streamingMsgId is null by then for text chat → no-op. For voice it's still set → reload.
     socket.on("chat:conversation_updated", (data: { conversationId: string; agentId: string }) => {
-      if (data.agentId !== agentId) return;
-      fetchConversations();
-      if (!streamingMsgId.current) return; // text chat: state already correct, skip
+      if (data.agentId !== agentId || !streamingMsgId.current) return;
       // Voice path: streaming just completed, reload full state from API
       streamingMsgId.current = null;
-      const cid = activeCidRef.current;
-      if (cid && data.conversationId === cid) {
-        fetch(`/api/conversations/${data.conversationId}/messages?limit=100`)
-          .then(r => r.json())
-          .then(result => {
-            if (result.messages && Array.isArray(result.messages)) {
-              setMessages(result.messages.map((m: any, idx: number) => ({
-                id: m.id || `hist-${idx}`,
-                text: m.content,
-                userName: m.role === 'assistant' ? (agentNameRef.current || (t.lumi || 'Lumi')) : (user?.displayName || (t.you || 'You')),
-                timestamp: m.createdAt,
-                type: m.role === 'assistant' ? 'agent' : 'user',
-                mode: m.mode,
-              })));
-            }
-          })
-          .catch(() => {});
-      }
+      fetch(`/api/conversations/${data.conversationId}/messages?limit=100`)
+        .then(r => r.json())
+        .then(result => {
+          if (result.messages && Array.isArray(result.messages)) {
+            setMessages(result.messages.map((m: any, idx: number) => ({
+              id: m.id || `hist-${idx}`,
+              text: m.content,
+              userName: m.role === 'assistant' ? (agentNameRef.current || 'Lumi') : (user?.displayName || 'You'),
+              timestamp: m.createdAt,
+              type: m.role === 'assistant' ? 'agent' : 'user',
+              mode: m.mode,
+            })));
+          }
+        })
+        .catch(() => {});
     });
 
     return () => {
@@ -681,86 +599,6 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       </div>
 
       <div className="flex gap-3 flex-1 min-h-0">
-        {/* ── Conversation Sidebar ── */}
-        <div className="w-56 flex-shrink-0 flex flex-col glass rounded-[2.5rem] border-white/10 overflow-hidden">
-          <div className="p-4 border-b border-white/5">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 mb-3">
-              {t.conversations || 'Conversations'}
-            </h3>
-            <Button
-              onClick={handleNewConversation}
-              className="w-full justify-start gap-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl py-2 text-xs font-bold text-white/70"
-            >
-              <Plus size={14} />
-              {t.newConversation || 'New Conversation'}
-            </Button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-            {isLoadingConversations ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 size={20} className="animate-spin text-white/45" />
-              </div>
-            ) : conversations.length === 0 ? (
-              <div className="text-center py-8 text-xs text-white/45 font-bold uppercase tracking-widest">
-                {t.noConversations || 'No conversations yet'}
-              </div>
-            ) : (
-              conversations.map(conv => (
-                <div key={conv.id} className="group relative">
-                  <button
-                    onClick={() => handleSelectConversation(conv.id)}
-                    className={`w-full text-left p-3 rounded-xl transition-all ${
-                      activeConversationId === conv.id
-                        ? 'bg-white/10'
-                        : 'hover:bg-white/5'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-white/70 truncate pr-6">
-                      {conv.title || t.untitled || 'Untitled'}
-                    </div>
-                    <div className="text-xs text-white/55 mt-0.5 truncate">
-                      {conv.summary || ''}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[12px] text-white/45">
-                        {(() => {
-                          if (!conv.lastActiveAt) return '';
-                          const d = new Date(conv.lastActiveAt);
-                          const now = new Date();
-                          const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-                          if (diffDays === 0) return t.today || 'Today';
-                          if (diffDays === 1) return t.yesterday || 'Yesterday';
-                          return d.toLocaleDateString();
-                        })()}
-                      </span>
-                      {conv.messageCount > 0 && (
-                        <span className="text-[12px] text-white/45">{conv.messageCount} {t.chatMsgs || 'msgs'}</span>
-                      )}
-                    </div>
-                  </button>
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      try {
-                        await fetch(`/api/conversations/${conv.id}/close`, { method: 'POST' });
-                        if (activeConversationId === conv.id) {
-                          setActiveConversationId(null);
-                          setMessages([]);
-                          setActiveConversation(null);
-                        }
-                        fetchConversations();
-                      } catch {}
-                    }}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-red-500/20 text-white/45 hover:text-red-400"
-                    title={t.chatCloseConv || 'Close conversation'}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
 
         {/* ── Chat Panel ── */}
         <div className="flex-1 flex flex-col glass rounded-[2.5rem] md:rounded-[3rem] border-white/10 overflow-hidden shadow-2xl min-w-0">
@@ -768,7 +606,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
             <div className="flex items-center gap-3">
               <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-celestial-nebula animate-ping' : 'bg-celestial-saturn animate-pulse'}`} />
               <span className="text-xs md:text-xs font-bold uppercase tracking-widest text-white/60">
-                {activeConversation?.title || activeConversation?.summary?.slice(0, 30) || t.neuralLink || 'Neural Link'}
+                Neural Link
               </span>
               {isSpeaking && (
                 <div className="flex items-center gap-3 ml-2 md:ml-4 scale-75 md:scale-100 origin-left">
@@ -803,6 +641,33 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                 </div>
               )}
             </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  className="h-7 w-40 px-3 py-0 text-xs bg-white/5 border border-white/10 rounded-full text-white/60 placeholder:text-white/20 outline-none focus:border-white/20 focus:bg-white/[0.07] transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                  >
+                    <XCircle size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {messages.length > 0 && (
+              <button
+                onClick={() => setMessages([])}
+                className="h-7 px-2 text-[10px] font-bold uppercase tracking-widest text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-full border border-transparent hover:border-red-500/20 transition-colors"
+              >
+                Clear
+              </button>
+            )}
             <Button
               onClick={() => setShowInfoPanel(!showInfoPanel)}
               variant="ghost"
@@ -821,61 +686,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
             ref={scrollRef}
             className="flex-1 overflow-y-auto p-4 md:p-8 space-y-4 md:space-y-6 custom-scrollbar"
           >
-            {/* Resume conversation prompt */}
-            {showResumePrompt && activeConversation && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                    <History size={16} className="text-amber-400" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-amber-300 uppercase tracking-tight">{t.unfinishedConversation || 'Unfinished conversation'}</p>
-                    <p className="text-xs text-white/40 flex items-center gap-1">
-                      <Clock size={10} />
-                      {new Date(activeConversation.lastActiveAt).toLocaleString()}
-                      {activeConversation.messageCount > 0 && (
-                        <span> &middot; {activeConversation.messageCount} {t.messagesCount || 'messages'}</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => handleResumeConversation(activeConversation.id)}
-                    className="bg-amber-500 text-black font-bold text-xs px-3 py-1.5 rounded-xl hover:scale-105 transition-transform"
-                  >
-                    {t.continueBtn || 'Continue'}
-                  </Button>
-                  <Button
-                    onClick={handleNewConversation}
-                    variant="ghost"
-                    className="text-white/45 hover:text-white/60 text-xs px-2"
-                  >
-                    {t.newBtn || 'New'}
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Active conversation indicator */}
-            {activeConversation && !showResumePrompt && activeConversation.agentId === agentId && activeConversation.messageCount > 0 && (
-              <div className="flex items-center gap-2 text-[12px] text-white/45 font-bold uppercase tracking-widest">
-                <History size={10} />
-                <span>{activeConversation.messageCount} {t.messagesCount || 'messages'}</span>
-                <span>&middot;</span>
-                <span>{t.lastActive || 'Last active'} {new Date(activeConversation.lastActiveAt).toLocaleString()}</span>
-              </div>
-            )}
-            {isLoadingMessages ? (
-              <div className="h-full flex flex-col items-center justify-center gap-3">
-                <Loader2 size={28} className="animate-spin text-white/45" />
-                <span className="text-xs text-white/45 font-bold uppercase tracking-widest">{t.loading || 'Loading...'}</span>
-              </div>
-            ) : messages.length === 0 && (
+            {messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-center space-y-8 px-4">
                 <div className="space-y-3 opacity-20">
                   <Sparkles size={64} className="text-celestial-saturn mx-auto" />
@@ -903,8 +714,17 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                 )}
               </div>
             )}
+            {searchQuery.trim() && messages.length > 0 && (
+              <div className="text-[10px] text-white/30 font-mono uppercase tracking-wider text-center">
+                {messages.filter(m => m.text?.toLowerCase().includes(searchQuery.toLowerCase())).length} / {messages.length} messages
+              </div>
+            )}
             <AnimatePresence initial={false}>
-              {messages.map((msg) => (
+              {(() => {
+                const displayMsgs = searchQuery.trim()
+                  ? messages.filter(m => m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
+                  : messages;
+                return displayMsgs.map((msg) => (
                 msg.type === 'tool' ? (
                   <motion.div
                     key={msg.id}
@@ -1010,7 +830,8 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                     {msg.userName} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </motion.div>
-              )))}
+              )));
+            })()}
             </AnimatePresence>
             {isTyping && (
               <div className="flex flex-col gap-3">

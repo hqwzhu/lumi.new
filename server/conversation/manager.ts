@@ -151,7 +151,9 @@ export function addMessage(msg: {
   return id;
 }
 
-export function getMessages(conversationId: string, limit = 50): MessageRecord[] {
+const DEFAULT_CONTEXT_TOKENS = parseInt(process.env.CONTEXT_TOKEN_BUDGET || '1000000', 10);
+
+export function getMessages(conversationId: string, limit = 1000): MessageRecord[] {
   const db = readDB();
   if (!db.interactions) return [];
   return db.interactions
@@ -164,14 +166,13 @@ export function getMessages(conversationId: string, limit = 50): MessageRecord[]
  * Get messages trimmed to a token budget rather than a fixed count.
  * Always keeps the last `keepRecent` messages (default 4).
  * Trims oldest messages first from the middle.
- * Target token budget: 6000 tokens.
  */
 export function getMessagesByTokenBudget(
   conversationId: string,
-  maxTokens: number = 6000,
+  maxTokens: number = DEFAULT_CONTEXT_TOKENS,
   keepRecent: number = 4,
 ): MessageRecord[] {
-  const all = getMessages(conversationId, 200);
+  const all = getMessages(conversationId, 2000);
   if (all.length <= keepRecent) return all;
 
   const keep = all.slice(-keepRecent); // always keep most recent
@@ -198,7 +199,7 @@ export function getMessagesByTokenBudget(
   return [...selected, ...keep];
 }
 
-export function getMessagesForAgent(userId: string, agentId: string, limit = 50): MessageRecord[] {
+export function getMessagesForAgent(userId: string, agentId: string, limit = 500): MessageRecord[] {
   const conv = getActiveConversation(userId, agentId);
   if (!conv) return [];
   return getMessages(conv.id, limit);
