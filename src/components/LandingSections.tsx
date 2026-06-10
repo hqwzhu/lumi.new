@@ -381,7 +381,7 @@ export function LandingSections({ t, onNavigateToSolutions, onSelectDesktop, onS
               {t.launchWebApp || 'Launch Web App'}
             </button>
           </div>
-          <p className="text-xs text-white/45 font-mono">{t.versionInfo || 'v2.0.4 · Windows 10+ · 120MB · Free'}</p>
+          <p className="text-xs text-white/45 font-mono">{t.versionInfo || 'v3.0.0 · Windows 10+ · 120MB · Free'}</p>
         </motion.div>
       </section>
 

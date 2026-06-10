@@ -912,7 +912,7 @@ export const translations: TranslationMap = {
     osLabel: "OS",
     // Navbar
     lumiKernel: "Lumi Kernel",
-    stableVersion: "STABLE v2.0.4",
+    stableVersion: "STABLE v3.0.0",
     // Sphere controls
     clickToStartSession: "Click to start voice session",
     sessionActiveClickToEnd: "Session active - Click to end",
@@ -1054,7 +1054,7 @@ export const translations: TranslationMap = {
     chatMsgs: "msgs",
     chatConnError: "Connection error during upload",
     // ── DesktopUI ──
-    desktopVersion: "Lumi OS v2.0.4",
+    desktopVersion: "Lumi OS v3.0.0",
     liveDeviceLabel: "Live",
     desktopRefresh: "Refresh",
     desktopChangeWallpaper: "Change Wallpaper",
@@ -2425,7 +2425,7 @@ export const translations: TranslationMap = {
     osLabel: "操作系统",
     // Navbar
     lumiKernel: "Lumi 内核",
-    stableVersion: "稳定版 v2.0.4",
+    stableVersion: "稳定版 v3.0.0",
     // Sphere controls
     clickToStartSession: "点击开始语音会话",
     sessionActiveClickToEnd: "会话进行中 - 点击结束",
@@ -2567,7 +2567,7 @@ export const translations: TranslationMap = {
     chatMsgs: "条消息",
     chatConnError: "上传连接错误",
     // ── DesktopUI ──
-    desktopVersion: "Lumi OS v2.0.4",
+    desktopVersion: "Lumi OS v3.0.0",
     liveDeviceLabel: "在线",
     desktopRefresh: "刷新",
     desktopChangeWallpaper: "更换壁纸",

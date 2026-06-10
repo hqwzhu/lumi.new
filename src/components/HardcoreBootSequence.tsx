@@ -23,7 +23,7 @@ export function HardcoreBootSequence({ onComplete, t }: { onComplete: () => void
     { text: 'Shard-A (System) OK', delay: 100 },
     { text: 'Shard-B (Neural) OK', delay: 100 },
     { text: 'Shard-C (Memory) OK', delay: 100 },
-    { text: 'Booting Lumi Virtual Kernel v2.0.4...', delay: 500 },
+    { text: 'Booting Lumi Virtual Kernel v3.0.0...', delay: 500 },
     { text: '[ LOADING MODULES ]', delay: 200 },
     { text: 'Mounting /dev/mesh-01...', delay: 150 },
     { text: 'Mapping Neural Synapses...', delay: 250 },
