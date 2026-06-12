@@ -944,6 +944,12 @@ export function DesktopUI({
   const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, interrupt, toggleMute, isMuted, switchPersonality } = useVoiceCall({
     socket,
   });
+  // Spacebar push-to-talk: track whether this call was started by spacebar
+  const isSpacebarRecording = useRef(false);
+  const callStateRef = useRef(callState);
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  const canvasOpenRef = useRef(canvasOpen);
+  useEffect(() => { canvasOpenRef.current = canvasOpen; }, [canvasOpen]);
   // Wake word detection — server-side Qwen ASR (DASHSCOPE_API_KEY), falls back to Picovoice
   const wakeWord = useWakeWord({
     socket,
@@ -1263,20 +1269,55 @@ export function DesktopUI({
   }, []);
 
   useEffect(() => {
+    const isInputFocused = () => {
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = (el as HTMLElement).tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsSearchOpen(true);
+        return;
       }
       if (e.key === 'Escape') {
         setIsSearchOpen(false);
         setIsControlCenterOpen(false);
         if (isWallpaperMode) toggleWallpaperMode();
+        return;
+      }
+      if (e.key === ' ' && !e.repeat) {
+        if (isInputFocused()) return;
+        if (canvasOpenRef.current || isSearchOpen || isControlCenterOpen) return;
+        e.preventDefault();
+        const cs = callStateRef.current;
+        if (cs === 'speaking') {
+          interrupt();
+          startCall(selectedVoiceId, 'lumi', 'lumi');
+          isSpacebarRecording.current = true;
+        } else if (cs === 'idle') {
+          startCall(selectedVoiceId, 'lumi', 'lumi');
+          isSpacebarRecording.current = true;
+        }
       }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ' && isSpacebarRecording.current) {
+        isSpacebarRecording.current = false;
+        endCall();
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isWallpaperMode, toggleWallpaperMode]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isWallpaperMode, toggleWallpaperMode, interrupt, startCall, endCall, selectedVoiceId]);
 
   const [bootVisible, setBootVisible] = useState(true);
 
