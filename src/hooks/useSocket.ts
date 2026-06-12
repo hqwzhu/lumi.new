@@ -149,6 +149,22 @@ async function handleDesktopExec(socket: Socket, data: {
         output = 'Drag completed';
         break;
       }
+      // Independent cursor: click at coords without stealing real mouse
+      case 'desktop_mouse_click_at': {
+        await invoke('mouse_click_at', { x: args.x, y: args.y, button: args.button || 'left' });
+        output = `Virtual click ${args.button || 'left'} at (${args.x}, ${args.y})`;
+        break;
+      }
+      case 'desktop_mouse_double_click_at': {
+        await invoke('mouse_double_click_at', { x: args.x, y: args.y });
+        output = `Virtual double-click at (${args.x}, ${args.y})`;
+        break;
+      }
+      case 'desktop_mouse_right_click_at': {
+        await invoke('mouse_right_click_at', { x: args.x, y: args.y });
+        output = `Virtual right-click at (${args.x}, ${args.y})`;
+        break;
+      }
       case 'desktop_keyboard_type': {
         await invoke('keyboard_type', { text: args.text });
         output = `Typed ${args.text?.length || 0} chars`;
@@ -176,6 +192,11 @@ async function handleDesktopExec(socket: Socket, data: {
       case 'desktop_cursor_glow_hide': {
         window.dispatchEvent(new CustomEvent('cursor-glow:hide'));
         output = 'Glow hidden';
+        break;
+      }
+      case 'desktop_cursor_glow_click': {
+        window.dispatchEvent(new CustomEvent('cursor-glow:click', { detail: { x: args.x, y: args.y } }));
+        output = 'Glow click animation';
         break;
       }
       default:

@@ -1014,6 +1014,26 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 use enigo::{Enigo, Mouse, Settings, Coordinate, Direction, Button, Keyboard, Key};
 
+// Windows cursor save/restore for independent (virtual) cursor clicks.
+// Saves real cursor pos, moves to target, clicks, restores — all within ~2 frames.
+#[cfg(target_os = "windows")]
+mod cursor_guard {
+    #[repr(C)]
+    struct POINT { x: i32, y: i32 }
+    extern "system" {
+        fn GetCursorPos(lpPoint: *mut POINT) -> i32;
+        fn SetCursorPos(x: i32, y: i32) -> i32;
+    }
+    pub fn get_pos() -> (i32, i32) {
+        let mut pt = POINT { x: 0, y: 0 };
+        unsafe { GetCursorPos(&mut pt); }
+        (pt.x, pt.y)
+    }
+    pub fn restore(x: i32, y: i32) {
+        unsafe { SetCursorPos(x, y); }
+    }
+}
+
 #[tauri::command]
 fn mouse_move(x: f64, y: f64) -> Result<String, String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init: {}", e))?;
@@ -1119,6 +1139,58 @@ fn keyboard_press(key: String) -> Result<String, String> {
     Ok(format!("Pressed key: {}", key))
 }
 
+// ── Independent cursor: click at coordinates without stealing the user's mouse ──
+
+#[cfg(not(target_os = "windows"))]
+fn save_cursor() -> (i32, i32) { (0, 0) }
+#[cfg(not(target_os = "windows"))]
+fn restore_cursor(_x: i32, _y: i32) {}
+
+#[cfg(target_os = "windows")]
+fn save_cursor() -> (i32, i32) { cursor_guard::get_pos() }
+#[cfg(target_os = "windows")]
+fn restore_cursor(x: i32, y: i32) { cursor_guard::restore(x, y); }
+
+fn click_at_impl(x: f64, y: f64, button: Button) -> Result<(), String> {
+    let saved = save_cursor();
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init: {}", e))?;
+    enigo.move_mouse(x as i32, y as i32, Coordinate::Abs).map_err(|e| format!("move: {}", e))?;
+    enigo.button(button, Direction::Click).map_err(|e| format!("click: {}", e))?;
+    restore_cursor(saved.0, saved.1);
+    Ok(())
+}
+
+#[tauri::command]
+fn mouse_click_at(x: f64, y: f64, button: Option<String>) -> Result<String, String> {
+    let b = button.unwrap_or_else(|| "left".to_string());
+    let btn = match b.as_str() {
+        "left" => Button::Left,
+        "right" => Button::Right,
+        "middle" => Button::Middle,
+        _ => return Err(format!("Unknown button: {}", b)),
+    };
+    click_at_impl(x, y, btn)?;
+    Ok(format!("Clicked {} at ({}, {}) [virtual cursor]", b, x as i32, y as i32))
+}
+
+#[tauri::command]
+fn mouse_double_click_at(x: f64, y: f64) -> Result<String, String> {
+    let saved = save_cursor();
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("enigo init: {}", e))?;
+    enigo.move_mouse(x as i32, y as i32, Coordinate::Abs).map_err(|e| format!("move: {}", e))?;
+    enigo.button(Button::Left, Direction::Click).map_err(|e| format!("click1: {}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    enigo.button(Button::Left, Direction::Click).map_err(|e| format!("click2: {}", e))?;
+    restore_cursor(saved.0, saved.1);
+    Ok(format!("Double-clicked at ({}, {}) [virtual cursor]", x as i32, y as i32))
+}
+
+#[tauri::command]
+fn mouse_right_click_at(x: f64, y: f64) -> Result<String, String> {
+    click_at_impl(x, y, Button::Right)?;
+    Ok(format!("Right-clicked at ({}, {}) [virtual cursor]", x as i32, y as i32))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1157,6 +1229,9 @@ pub fn run() {
             mouse_drag,
             keyboard_type,
             keyboard_press,
+            mouse_click_at,
+            mouse_double_click_at,
+            mouse_right_click_at,
         ])
         .setup(|app| {
             let resource_dir = app

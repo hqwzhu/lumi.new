@@ -74,24 +74,22 @@ async function executeAction(
 ): Promise<void> {
   switch (action.action) {
     case 'click':
-      await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
       desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
-      await sleep(80);
-      await desktopRelay('desktop_mouse_click', { button: 'left' });
+      await sleep(150);
+      await desktopRelay('desktop_mouse_click_at', { x: action.x!, y: action.y!, button: 'left' });
+      desktopRelay('desktop_cursor_glow_click', { x: action.x!, y: action.y! }).catch(() => {});
       break;
     case 'double_click':
-      await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
       desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
-      await sleep(80);
-      await desktopRelay('desktop_mouse_click', { button: 'left' });
       await sleep(150);
-      await desktopRelay('desktop_mouse_click', { button: 'left' });
+      await desktopRelay('desktop_mouse_double_click_at', { x: action.x!, y: action.y! });
+      desktopRelay('desktop_cursor_glow_click', { x: action.x!, y: action.y! }).catch(() => {});
       break;
     case 'right_click':
-      await desktopRelay('desktop_mouse_move', { x: action.x!, y: action.y! });
       desktopRelay('desktop_cursor_glow_update', { x: action.x!, y: action.y! }).catch(() => {});
-      await sleep(80);
-      await desktopRelay('desktop_mouse_click', { button: 'right' });
+      await sleep(150);
+      await desktopRelay('desktop_mouse_right_click_at', { x: action.x!, y: action.y! });
+      desktopRelay('desktop_cursor_glow_click', { x: action.x!, y: action.y! }).catch(() => {});
       break;
     case 'type':
       await desktopRelay('desktop_keyboard_type', { text: action.text! });
