@@ -33,29 +33,29 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Fetch data
+  // Fetch data — parallel, no dependency between files and memory tree
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    try {
-      const res = await fetch('/api/files/list');
-      if (res.ok) {
-        const d = await res.json();
-        setFiles(d.files || []);
-      }
-    } catch (err) { console.warn('[KnowledgeBase] files fetch failed:', err); }
+    const [filesRes, treeRes] = await Promise.allSettled([
+      fetch('/api/files/list'),
+      fetch('/api/memory/tree'),
+    ]);
 
-    try {
-      const res = await fetch('/api/memory/tree');
-      if (res.ok) {
-        const d = await res.json();
+    if (filesRes.status === 'fulfilled' && filesRes.value.ok) {
+      try { const d = await filesRes.value.json(); setFiles(d.files || []); } catch {}
+    }
+
+    if (treeRes.status === 'fulfilled' && treeRes.value.ok) {
+      try {
+        const d = await treeRes.value.json();
         const flat: MemNode[] = [];
         const walk = (nodes: MemoryTree[]) => {
           for (const n of nodes) { flat.push(n.node); walk(n.children); }
         };
         walk(d.tree || []);
         setMemories(flat);
-      }
-    } catch (err) { console.warn('[KnowledgeBase] memories fetch failed:', err); }
+      } catch {}
+    }
 
     setLoading(false);
   }, []);
