@@ -19,6 +19,7 @@ import {
 import { usePlatform } from '@/hooks/usePlatform';
 import { useSocket } from '@/hooks/useSocket';
 import { GlassCard } from './SharedUI';
+import { RemoteMCPSettings } from './RemoteMCPSettings';
 
 const DEVICE_ICONS: Record<string, React.ReactNode> = {
   desktop: <Monitor size={20} />,
@@ -95,6 +96,16 @@ export function DeviceSyncCenter({ t }: { t: any }) {
     };
     socket.on('devices:update', handler);
     return () => { socket.off('devices:update', handler); };
+  }, [socket]);
+
+  // Listen for stale device cleanup (reconnect dedup)
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: { id: string }) => {
+      setDiscoveredDevices(prev => prev.filter(d => d.id !== data.id));
+    };
+    socket.on('device:removed', handler);
+    return () => { socket.off('device:removed', handler); };
   }, [socket]);
 
   // Listen for cross-device memory sync events
@@ -345,6 +356,11 @@ export function DeviceSyncCenter({ t }: { t: any }) {
           </div>
         </GlassCard>
       </div>
+
+      {/* Remote MCP Endpoints */}
+      <GlassCard className="p-8 space-y-6">
+        <RemoteMCPSettings t={t} />
+      </GlassCard>
     </div>
   );
 }

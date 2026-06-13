@@ -36,8 +36,6 @@ import {
   BrainCircuit,
   Sparkles,
   Box,
-  CheckCircle2,
-  XCircle,
   Wrench,
   MessageSquare,
   Crown,
@@ -51,6 +49,13 @@ import {
   MousePointer2,
   Music,
   Layers,
+  Bot,
+  Monitor,
+  HardDrive,
+  Trash2,
+  RefreshCw,
+  Circle,
+  Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -59,6 +64,7 @@ import { VoiceTrainingDialog } from './VoiceTrainingDialog';
 import { VoicePicker } from './VoicePicker';
 import { VoiceForge } from './VoiceForge';
 import { ToolPanel } from './ToolPanel';
+import { TeamHub } from './TeamHub';
 import { GitHubMCPBrowser } from './GitHubMCPBrowser';
 import { SkillCenter } from './SkillCenter';
 import { NotificationCenter } from './NotificationCenter';
@@ -504,8 +510,15 @@ function DesktopIcon({ label, icon, colorClass, onClick, onContextMenu }: Deskto
 
 function KernelMonitorApp({ t }: { t: any }) {
   const socket = useSocket();
+  const [tab, setTab] = useState<'monitor' | 'explore'>('monitor');
   const [data, setData] = useState<number[]>([]);
   const [stats, setStats] = useState({ cpu: 0, ram: { used: 0, total: 0, percent: 0 }, platform: '', release: '', arch: '', hostname: '', cpus: 0, uptime: 0, gpu: null as { name?: string; util?: number } | null });
+  // Explore tab state
+  const [explored, setExplored] = useState(false);
+  const [latest, setLatest] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -520,11 +533,37 @@ function KernelMonitorApp({ t }: { t: any }) {
         });
       } catch {}
     };
-
     fetchStats();
     const interval = setInterval(fetchStats, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const loadExplore = async () => {
+      try {
+        const [statusRes, historyRes, profRes] = await Promise.all([
+          fetch('/api/explore/status'),
+          fetch('/api/explore/history'),
+          fetch('/api/explore/profession'),
+        ]);
+        const s = await statusRes.json();
+        setExplored(s.explored);
+        setLatest(s.latest);
+        setHistory((await historyRes.json()).snapshots || []);
+        setProfiles((await profRes.json()).profiles || []);
+      } catch {}
+    };
+    loadExplore();
+  }, []);
+
+  const doScan = async () => {
+    setScanning(true);
+    try {
+      const res = await fetch('/api/explore/scan', { method: 'POST', credentials: 'include' });
+      const d = await res.json();
+      if (d.snapshot) { setLatest(d.snapshot); setHistory(prev => [d.snapshot, ...prev]); }
+    } catch {} finally { setScanning(false); }
+  };
 
   const chipLabel = stats.platform ? `${stats.platform.toUpperCase()}_${stats.arch.toUpperCase()}_NODE` : 'NEURAL_NODE';
   const uptimeFmt = stats.uptime ? `${Math.floor(stats.uptime / 3600)}h ${Math.floor((stats.uptime % 3600) / 60)}m` : '';
@@ -571,44 +610,123 @@ function KernelMonitorApp({ t }: { t: any }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: t.neuralThroughput || 'CPU Load', value: `${stats.cpu}%`, bar: stats.cpu, color: 'bg-celestial-saturn' },
-          { label: t.synapticLoad || 'Memory', value: `${stats.ram.used} / ${stats.ram.total} GB`, bar: stats.ram.percent, color: 'bg-emerald-500' },
-          { label: 'GPU', value: stats.gpu?.name || `${stats.cpus} Cores · ${stats.arch}`, bar: 0, color: 'bg-blue-500' }
-        ].map((stat, i) => (
-          <div key={i} className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-3 hover:bg-white/10 transition-colors cursor-default">
-            <div className="text-[12px] font-black text-white/45 uppercase tracking-[0.2em]">{stat.label}</div>
-            <div className="text-xl font-black text-white tracking-tighter">{stat.value}</div>
-            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-               <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${stat.bar}%` }}
-                className={`h-full ${stat.color}`}
-               />
-            </div>
-          </div>
+      {/* Tab bar */}
+      <div className="flex items-center gap-1">
+        {([
+          { id: 'monitor' as const, label: 'Monitor' },
+          { id: 'explore' as const, label: 'Explore' },
+        ]).map(tabItem => (
+          <button
+            key={tabItem.id}
+            onClick={() => setTab(tabItem.id)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
+              tab === tabItem.id ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            {tabItem.label}
+          </button>
         ))}
       </div>
 
-      <div className="flex-1 bg-black/40 rounded-[2.5rem] border border-white/5 p-6 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
-          <div className="w-full h-full" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-        </div>
-        <div className="relative h-full flex items-end gap-1">
-          {data.map((val, i) => (
-            <motion.div
-              key={i}
-              initial={{ height: 0 }}
-              animate={{ height: `${val}%` }}
-              className="flex-1 bg-gradient-to-t from-celestial-saturn/40 to-celestial-saturn rounded-t-sm"
-              style={{ minWidth: '4px' }}
-            />
-          ))}
-        </div>
-      </div>
+      {tab === 'monitor' && (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: t.neuralThroughput || 'CPU Load', value: `${stats.cpu}%`, bar: stats.cpu, color: 'bg-celestial-saturn' },
+              { label: t.synapticLoad || 'Memory', value: `${stats.ram.used} / ${stats.ram.total} GB`, bar: stats.ram.percent, color: 'bg-emerald-500' },
+              { label: 'GPU', value: stats.gpu?.name || `${stats.cpus} Cores · ${stats.arch}`, bar: 0, color: 'bg-blue-500' }
+            ].map((stat, i) => (
+              <div key={i} className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-3 hover:bg-white/10 transition-colors cursor-default">
+                <div className="text-[12px] font-black text-white/45 uppercase tracking-[0.2em]">{stat.label}</div>
+                <div className="text-xl font-black text-white tracking-tighter">{stat.value}</div>
+                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${stat.bar}%` }} className={`h-full ${stat.color}`} />
+                </div>
+              </div>
+            ))}
+          </div>
 
-      <AutonomousFeed />
+          <div className="flex-1 bg-black/40 rounded-[2.5rem] border border-white/5 p-6 relative overflow-hidden">
+            <div className="absolute inset-0 opacity-10">
+              <div className="w-full h-full" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+            </div>
+            <div className="relative h-full flex items-end gap-1">
+              {data.map((val, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ height: 0 }}
+                  animate={{ height: `${val}%` }}
+                  className="flex-1 bg-gradient-to-t from-celestial-saturn/40 to-celestial-saturn rounded-t-sm"
+                  style={{ minWidth: '4px' }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <AutonomousFeed />
+        </>
+      )}
+
+      {tab === 'explore' && (
+        <div className="flex-1 overflow-y-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black uppercase tracking-widest text-white/50">System Exploration</h3>
+            <button
+              onClick={doScan}
+              disabled={scanning}
+              className="px-3 py-1.5 bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-500/30 disabled:opacity-40 transition-colors flex items-center gap-1.5"
+            >
+              <RefreshCw size={12} className={scanning ? 'animate-spin' : ''} />
+              {scanning ? 'Scanning...' : 'Scan Now'}
+            </button>
+          </div>
+
+          {latest && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-white/5 border border-white/5 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-white/50 text-xs mb-2"><HardDrive size={14} />Hardware</div>
+                <p className="text-white text-sm">{latest.hardware?.cpus?.[0]?.model || 'Unknown'} · {latest.hardware?.totalMemoryGB || '?'} GB RAM</p>
+                <p className="text-white/35 text-xs mt-1">{latest.hardware?.gpus?.map((g: any) => g.model).join(', ') || 'No GPU data'}</p>
+              </div>
+              <div className="bg-white/5 border border-white/5 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-white/50 text-xs mb-2"><Monitor size={14} />Software</div>
+                <p className="text-white text-sm">{latest.software?.os || 'Unknown OS'}</p>
+                <p className="text-white/35 text-xs mt-1">{latest.software?.installedApps?.length || 0} apps detected</p>
+              </div>
+            </div>
+          )}
+
+          {profiles.length > 0 && (
+            <div className="bg-white/5 border border-white/5 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-white/70 text-sm font-medium mb-3"><Briefcase size={14} className="text-amber-400" />Detected Professions</div>
+              <div className="space-y-1.5">
+                {profiles.map((p: any) => (
+                  <div key={p.profession} className="flex items-center justify-between text-xs">
+                    <span className="text-white">{p.profession}</span>
+                    <span className="text-white/35">{Math.round(p.score * 100)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {history.length > 0 && (
+            <div>
+              <h4 className="text-white/45 text-xs mb-1.5">Scan History ({history.length})</h4>
+              <div className="space-y-0.5">
+                {history.slice(0, 10).map((s: any, i: number) => (
+                  <div key={i} className="text-white/30 text-xs">{s.timestamp ? new Date(s.timestamp).toLocaleString() : `#${history.length - i}`} — {s.hardware?.cpus?.[0]?.model || 'N/A'}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!latest && (
+            <div className="text-white/30 text-center py-12 text-sm">No scan data yet. Click "Scan Now" to start.</div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
@@ -679,69 +797,84 @@ function Spotlight({ isOpen, onClose, onSelect, apps, t }: { isOpen: boolean; on
   );
 }
 
-function DailyCapability({ t, onInstall }: { t: any; onInstall: (skillId: string) => void }) {
-  const [skill, setSkill] = useState<{ id: string; name: string; desc: string; iconColor: string } | null>(null);
-  const [installing, setInstalling] = useState(false);
+function DailyPlans({ t }: { t: any }) {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showNew, setShowNew] = useState(false);
+  const [newPlan, setNewPlan] = useState({ title: '', priority: 'medium' });
 
-  useEffect(() => {
-    const skills = [
-      { id: 'pixelle', name: 'Pixelle Studio', desc: t.pixelleDesc || 'AI image & video generation', iconColor: 'from-purple-500 to-pink-500' },
-      { id: 'minimax', name: 'MiniMax Studio', desc: t.minimaxDesc || 'Music, video, image & voice AI', iconColor: 'from-amber-400 to-yellow-500' },
-      { id: 'desktop-automation', name: 'Desktop Commander', desc: t.desktopCommanderDesc || 'Full desktop control via AI', iconColor: 'from-cyan-500 to-blue-500' },
-      { id: 'video-editor', name: 'Video Forge', desc: t.videoForgeDesc || 'Video & audio editing suite', iconColor: 'from-rose-500 to-orange-500' },
-      { id: 'fetcher', name: 'Web Fetcher Pro', desc: t.webFetcherProDesc || 'Smart web content extraction', iconColor: 'from-blue-500 to-cyan-400' },
-      { id: 'code-sandbox', name: 'Code Sandbox', desc: t.codeSandboxDesc || 'Run Python & JS in cloud sandbox', iconColor: 'from-green-500 to-emerald-400' },
-    ];
-    const idx = new Date().getDate() % skills.length;
-    fetch('/api/skills').then(r => r.json()).then(data => {
-      const installed = (data.skills || []).map((s: any) => s.name?.toLowerCase?.() || '');
-      const uninstalled = skills.filter(s => !installed.some((n: string) => n.includes(s.id)));
-      setSkill(uninstalled.length > 0 ? uninstalled[idx % uninstalled.length] : null);
-    }).catch(() => {});
-  }, []);
-
-  if (!skill) return null;
-
-  const handleInstall = async () => {
-    setInstalling(true);
+  const loadPlans = async () => {
     try {
-      await fetch('/api/marketplace/skills/acquire', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skillId: `skill-${skill.id}`, skillName: skill.name, installSource: 'bundled', installPath: `server/skills/bundled/${skill.id}` }),
+      const d = await (await fetch('/api/plans')).json();
+      setPlans((d.plans || []).filter((p: any) => p.status !== 'done').slice(0, 5));
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadPlans(); }, []);
+
+  const createPlan = async () => {
+    if (!newPlan.title.trim()) return;
+    try {
+      const res = await fetch('/api/plans', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newPlan.title, description: '', steps: [], tags: [], source: 'manual', priority: newPlan.priority }),
+        credentials: 'include',
       });
-      toast.success(`${skill.name} installed!`);
-      onInstall(skill.id);
-    } catch { toast.error(t.installFailed || 'Install failed'); }
-    finally { setInstalling(false); }
+      if (res.ok) {
+        const d = await res.json();
+        setPlans(prev => [d.plan, ...prev].slice(0, 5));
+        setNewPlan({ title: '', priority: 'medium' });
+        setShowNew(false);
+      }
+    } catch {}
+  };
+
+  const markDone = async (id: string) => {
+    try {
+      await fetch(`/api/plans/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'done' }), credentials: 'include' });
+      setPlans(prev => prev.filter(p => p.id !== id));
+    } catch {}
   };
 
   return (
     <GlassCard className="p-5 rounded-[2rem] border-white/5 bg-black/20 space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles size={12} className="text-celestial-saturn" />
-        <span className="text-[12px] font-black uppercase tracking-widest text-white/55">{t.dailyCapability || 'Daily Capability'}</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-black uppercase tracking-widest text-white/55 flex items-center gap-2">
+          <Calendar size={12} className="text-celestial-saturn" />
+          {t.plans || 'Plans'}
+        </span>
+        <button onClick={() => setShowNew(!showNew)} className="text-[11px] font-bold text-white/35 hover:text-white/70 transition-colors">{showNew ? '–' : '+'}</button>
       </div>
-      <div className="flex items-center gap-3">
-        <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${skill.iconColor} flex items-center justify-center shrink-0`}>
-          <Sparkles size={14} className="text-white" />
+
+      {showNew && (
+        <div className="flex gap-2">
+          <input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createPlan()} placeholder="New plan..." className="flex-1 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-xs placeholder:text-white/25" />
+          <select value={newPlan.priority} onChange={e => setNewPlan(p => ({ ...p, priority: e.target.value }))} className="w-16 bg-white/5 border border-white/10 rounded-lg text-white/70 text-xs">
+            <option value="high">H</option>
+            <option value="medium">M</option>
+            <option value="low">L</option>
+          </select>
+          <button onClick={createPlan} disabled={!newPlan.title.trim()} className="px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-xs font-bold disabled:opacity-30">Add</button>
         </div>
-        <div className="min-w-0 flex-1">
-          <h4 className="text-xs font-bold text-white/80">{skill.name}</h4>
-          <p className="text-xs text-white/55 truncate">{skill.desc}</p>
+      )}
+
+      {loading ? (
+        <div className="text-white/30 text-xs py-2">Loading...</div>
+      ) : plans.length === 0 ? (
+        <div className="text-white/25 text-xs py-2">No active plans</div>
+      ) : (
+        <div className="space-y-1.5">
+          {plans.map((plan: any) => (
+            <div key={plan.id} className="flex items-center gap-2 group">
+              <button onClick={() => markDone(plan.id)} className="p-0.5 text-white/20 hover:text-green-400 transition-colors">
+                <Circle size={12} />
+              </button>
+              <span className="flex-1 text-xs text-white/65 truncate">{plan.title}</span>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${plan.priority === 'high' ? 'bg-red-400' : plan.priority === 'medium' ? 'bg-amber-400' : 'bg-white/25'}`} />
+            </div>
+          ))}
         </div>
-      </div>
-      <button
-        onClick={handleInstall}
-        disabled={installing}
-        className="w-full h-9 rounded-xl bg-white/10 text-white/60 hover:bg-white/20 text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center"
-      >
-        {installing ? (
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-            <Activity size={14} />
-          </motion.div>
-        ) : 'Install'}
-      </button>
+      )}
     </GlassCard>
   );
 }
@@ -880,6 +1013,8 @@ export function DesktopUI({
     { id: 'memory-avatar', labelKey: 'memoryAvatars', icon: <Castle size={24} />, colorClass: 'from-fuchsia-500 to-purple-600', windowId: 'memory-avatar' },
     { id: 'avatar-studio', labelKey: 'avatarStudio', icon: <Brush size={24} />, colorClass: 'from-cyan-400 to-blue-600', windowId: 'avatar-studio' },
     { id: 'sound', labelKey: 'sound', icon: <Volume2 size={24} />, colorClass: 'from-sky-500 to-indigo-600', windowId: 'sound' },
+    { id: 'music', labelKey: 'music', icon: <Music size={24} />, colorClass: 'from-red-500 to-pink-600', windowId: 'music-center' },
+    { id: 'team', labelKey: 'team', icon: <Bot size={24} />, colorClass: 'from-cyan-500 to-blue-600', windowId: 'team' },
     { id: 'canvas', labelKey: 'canvasWorkbench', icon: <Layers size={24} />, colorClass: 'from-teal-500 to-cyan-600', windowId: 'canvas' },
   ];
 
@@ -1470,8 +1605,6 @@ export function DesktopUI({
     { id: 'kernel', label: t.kernelMonitor || 'Kernel Monitor', icon: <Activity size={24} />, color: 'from-orange-500 to-red-600' },
     { id: 'devices', label: t.devices || 'Devices', icon: <Cpu size={24} />, color: 'from-blue-600 to-cyan-400' },
     { id: 'settings', label: t.settings || 'OS Integrity', icon: <SettingsIcon size={24} />, color: 'from-gray-400 to-slate-600' },
-    { id: 'music-center', label: '音乐中心', icon: <Music size={24} />, color: 'from-red-500 to-pink-600' },
-    { id: 'canvas', label: t.canvasWorkbench || 'Canvas', icon: <Layers size={24} />, color: 'from-teal-500 to-cyan-600' },
   ];
 
   const sphereSentiment =
@@ -1487,6 +1620,7 @@ export function DesktopUI({
     if (windowId === 'music') return { w: '850px', h: '620px' };
     if (windowId === 'music-center') return { w: '420px', h: '520px' };
     if (windowId === 'tools') return { w: '850px', h: '620px' };
+    if (windowId === 'team') return { w: '900px', h: '700px' };
     if (windowId === 'github-mcp') return { w: '850px', h: '620px' };
     if (windowId === 'notifications') return { w: '700px', h: '550px' };
     if (windowId === 'reminders') return { w: '650px', h: '620px' };
@@ -1702,8 +1836,8 @@ export function DesktopUI({
 
       <div className="fixed inset-0 z-[100] pointer-events-none">
         {/* Top Status Bar */}
-        <div className={`absolute top-0 inset-x-0 h-10 glass-dark border-b border-white/5 flex items-center justify-between px-6 pointer-events-auto backdrop-blur-md transition-all duration-1000 ${isWallpaperMode || musicVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-          <div className="flex items-center gap-6">
+        <div className={`absolute top-0 inset-x-0 h-10 glass-dark border-b border-white/5 flex items-center px-6 pointer-events-auto backdrop-blur-md transition-all duration-1000 ${isWallpaperMode || musicVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className="flex items-center gap-6 flex-1">
             <button onClick={onExit} className="flex items-center gap-2 group transition-all">
                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-celestial-mars to-celestial-saturn flex items-center justify-center p-1 group-hover:rotate-12 transition-transform shadow-lg shadow-celestial-saturn/20">
                  <Rocket size={14} className="text-white" />
@@ -1742,7 +1876,13 @@ export function DesktopUI({
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
+          {orgConnection?.connected && (
+            <div className="flex items-center justify-center">
+              <WorkModeSwitch domain={workDomain} onToggle={() => switchDomain(workDomain === 'personal' ? 'work' : 'personal')} connected={orgConnection.connected} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-6 flex-1 justify-end">
             <div className="flex items-center gap-4 text-white/55">
                <div className="flex items-center gap-1" onClick={() => setIsSearchOpen(true)}><Search size={14} className="hover:text-white transition-colors cursor-pointer" /></div>
                <button onClick={() => toggleWindow('notifications')} className="flex items-center gap-1 relative hover:text-white transition-colors">
@@ -1777,12 +1917,6 @@ export function DesktopUI({
                  {isWallpaperMode ? 'Fusion' : 'Focus'}
                </button>
             </div>
-
-            {orgConnection?.connected && (
-              <div className="flex items-center gap-2">
-                <WorkModeSwitch domain={workDomain} onToggle={() => switchDomain(workDomain === 'personal' ? 'work' : 'personal')} connected={orgConnection.connected} />
-              </div>
-            )}
 
             <button
               onClick={() => setIsControlCenterOpen(!isControlCenterOpen)}
@@ -2212,8 +2346,8 @@ export function DesktopUI({
 
               <NeuralSynthesisMonitor t={t} onOpenTokens={() => toggleWindow('tokens')} />
 
-              {/* Daily Capability Widget */}
-              <DailyCapability t={t} onInstall={(skillId) => toggleWindow('skills')} />
+              {/* Daily Plans Widget */}
+              <DailyPlans t={t} />
 
               {/* Notification Preview */}
               {notifications.filter(n => !n.read).length > 0 && (
@@ -2365,6 +2499,8 @@ export function DesktopUI({
                     <PersonalityEditor t={t} />
                   ) : windowId === 'tools' ? (
                     <ToolPanel />
+                  ) : windowId === 'team' ? (
+                    <TeamHub t={t} />
                   ) : windowId === 'github-mcp' ? (
                     <GitHubMCPBrowser t={t} />
                   ) : windowId === 'notifications' ? (

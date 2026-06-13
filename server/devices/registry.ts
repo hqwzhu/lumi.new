@@ -12,11 +12,15 @@ class DeviceRegistry {
   register(
     userId: string,
     socketId: string,
-    info: { name?: string; type?: DeviceType; capabilities?: Partial<DeviceCapabilities>; ipAddress?: string; osInfo?: string },
+    info: { name?: string; type?: DeviceType; capabilities?: Partial<DeviceCapabilities>; ipAddress?: string; osInfo?: string; deviceFingerprint?: string },
   ): DeviceInfo {
     const now = new Date().toISOString();
-    const id = `dev_${userId}_${socketId}`;
 
+    // Use persistent fingerprint from client as dedup key, falling back to socketId
+    const fingerprint = info.deviceFingerprint || socketId;
+    const id = `dev_${userId}_${fingerprint}`;
+
+    // 1) Exact match — same device reconnected
     const existing = this.devices.get(id);
     if (existing) {
       existing.status = 'online';
@@ -24,15 +28,36 @@ class DeviceRegistry {
       existing.socketId = socketId;
       if (info.ipAddress) existing.ipAddress = info.ipAddress;
       if (info.osInfo) existing.osInfo = info.osInfo;
+      if (info.name) existing.name = info.name;
       this.broadcastCb?.('devices:update', existing);
       return existing;
+    }
+
+    // 2) Merge by name+type — same physical device with different key
+    // (happens when old clients without fingerprint reconnect with new socketId)
+    const deviceName = info.name || 'Unknown Device';
+    const deviceType = info.type || 'desktop';
+    for (const [key, dev] of this.devices) {
+      if (dev.userId === userId && dev.name === deviceName && dev.type === deviceType) {
+        // Reuse this entry, update id to new fingerprint
+        this.devices.delete(key);
+        dev.id = id;
+        dev.status = 'online';
+        dev.lastSeen = now;
+        dev.socketId = socketId;
+        if (info.ipAddress) dev.ipAddress = info.ipAddress;
+        if (info.osInfo) dev.osInfo = info.osInfo;
+        this.devices.set(id, dev);
+        this.broadcastCb?.('devices:update', dev);
+        return dev;
+      }
     }
 
     const device: DeviceInfo = {
       id,
       userId,
-      name: info.name || `${info.type || 'device'}_${socketId.slice(0, 6)}`,
-      type: info.type || 'desktop',
+      name: deviceName,
+      type: deviceType,
       status: 'online',
       capabilities: {
         audio: info.capabilities?.audio ?? true,

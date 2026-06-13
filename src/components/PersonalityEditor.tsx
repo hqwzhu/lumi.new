@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { User, ChevronDown, ChevronRight, Activity } from 'lucide-react';
+import { User, ChevronDown, ChevronRight, Activity, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersonalityEvolution } from './PersonalityEvolution';
+import { ContactsPanel } from './ContactsPanel';
 
 interface PersonalityConfig {
   id: string;
@@ -45,6 +46,7 @@ interface PersonalityConfig {
 }
 
 export function PersonalityEditor({ t }: { t?: any }) {
+  const [tab, setTab] = useState<'personality' | 'contacts'>('personality');
   const [config, setConfig] = useState<PersonalityConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -95,7 +97,30 @@ export function PersonalityEditor({ t }: { t?: any }) {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl border border-white/5">
+        {[
+          { id: 'personality' as const, label: t?.lumiCore || 'Personality', icon: <User size={14} /> },
+          { id: 'contacts' as const, label: t?.contacts || 'Contacts', icon: <Users size={14} /> },
+        ].map(item => (
+          <button
+            key={item.id}
+            onClick={() => setTab(item.id)}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+              tab === item.id ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'contacts' ? (
+        <ContactsPanel />
+      ) : (
+        <>
       <div className="flex items-center gap-3">
         <User className="text-celestial-saturn" />
         <h3 className="text-xl font-bold uppercase tracking-tighter text-white/90">{t?.lumiCore || 'Lumi Core Config'}</h3>
@@ -207,6 +232,8 @@ export function PersonalityEditor({ t }: { t?: any }) {
       <div className="rounded-2xl overflow-hidden">
         <PersonalityEvolution />
       </div>
+        </>
+      )}
     </div>
   );
 }

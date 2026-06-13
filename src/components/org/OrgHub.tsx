@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Building2, BookOpen, Package, Users, Settings,
   ClipboardCheck, ScrollText, MessageSquare, ArrowLeft,
-  Shield, User, Briefcase, Home, Scale, Palette,
+  Shield, User, Briefcase, Home, Scale, Palette, GitBranch,
 } from 'lucide-react';
 import { BranchDashboard } from './BranchDashboard';
 import { KnowledgeBaseBrowser } from './KnowledgeBaseBrowser';
@@ -16,10 +16,11 @@ import { OrgSettings } from './OrgSettings';
 import { AuditLogViewer } from './AuditLogViewer';
 import { LegalHub } from './LegalHub';
 import { DesignHub } from './DesignHub';
+import { OrgBranchPanel } from '../OrgBranchPanel';
 import { useApp } from '../../contexts/AppContext';
 import { useT } from '../../lib/useT';
 
-type SubView = 'dashboard' | 'kb' | 'kb-edit' | 'templates' | 'templates-create' | 'review' | 'chat' | 'members' | 'settings' | 'audit' | 'legal' | 'design';
+type SubView = 'dashboard' | 'kb' | 'kb-edit' | 'templates' | 'templates-create' | 'review' | 'chat' | 'members' | 'settings' | 'audit' | 'legal' | 'design' | 'branch';
 
 interface NavItem {
   id: SubView;
@@ -44,6 +45,7 @@ export function OrgHub() {
     { id: 'legal', label: t.legalHub || '律所', icon: <Scale size={16} />, roles: ['owner', 'admin', 'member', 'viewer'] },
     { id: 'design', label: t.designHub || '设计所', icon: <Palette size={16} />, roles: ['owner', 'admin', 'member', 'viewer'] },
     { id: 'settings', label: t.orgSettings, icon: <Settings size={16} />, roles: ['owner', 'admin'] },
+    { id: 'branch', label: t.branchTerminal || '分支终端', icon: <GitBranch size={16} />, roles: ['owner', 'admin', 'member', 'viewer'] },
   ], [t]);
 
   const roleLabel: Record<string, { label: string; icon: React.ReactNode; color: string }> = useMemo(() => ({
@@ -82,6 +84,7 @@ export function OrgHub() {
       case 'audit': return <AuditLogViewer />;
       case 'legal': return <LegalHub />;
       case 'design': return <DesignHub />;
+      case 'branch': return <OrgBranchPanel />;
       default: return <BranchDashboard />;
     }
   };

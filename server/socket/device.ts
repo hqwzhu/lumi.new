@@ -23,12 +23,14 @@ export function registerDeviceHandlers(socket: Socket, getUserId: (s: Socket) =>
     osInfo?: string;
   }) => {
     const uid = getUserId(socket);
+    const fingerprint = (socket.handshake.auth as any)?.fingerprint || socket.id;
     deviceRegistry.register(uid, socket.id, {
       name: data.name,
       type: data.type as any,
       capabilities: data.capabilities as any,
       osInfo: data.osInfo,
       ipAddress: socket.handshake.address,
+      deviceFingerprint: fingerprint,
     });
     registerUserSocket(uid, socket.id);
   }));

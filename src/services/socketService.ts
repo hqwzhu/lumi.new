@@ -2,6 +2,19 @@ import { io, Socket } from "socket.io-client";
 import { getSocketOrigin } from "./apiBridge";
 import { getStoredToken } from "./authService";
 
+function getDeviceFingerprint(): string {
+  const key = 'lumi_device_fingerprint';
+  let fp: string | null = null;
+  try { fp = localStorage.getItem(key); } catch {}
+  if (!fp) {
+    fp = `${navigator.platform || 'unknown'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    try { localStorage.setItem(key, fp); } catch {}
+  }
+  return fp;
+}
+
+const DEVICE_FINGERPRINT = getDeviceFingerprint();
+
 class SocketService {
   private socket: Socket | null = null;
   private token: string | null = null;
@@ -13,7 +26,7 @@ class SocketService {
       this.token = token;
       this.socket = io(getSocketOrigin(), {
         withCredentials: true,
-        auth: token ? { token } : undefined,
+        auth: { token, fingerprint: DEVICE_FINGERPRINT },
         reconnection: true,
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,
@@ -32,7 +45,7 @@ class SocketService {
       });
     } else if (token !== this.token) {
       this.token = token;
-      this.socket.auth = token ? { token } : {};
+      this.socket.auth = { token, fingerprint: DEVICE_FINGERPRINT };
       if (this.socket.connected) {
         this.socket.disconnect().connect();
       }

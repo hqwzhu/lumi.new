@@ -32,11 +32,7 @@ import { useApp } from '@/contexts/AppContext';
 import { VoiceForge } from './VoiceForge';
 import { VoiceProviderSwitch } from './VoiceProviderSwitch';
 import { MCPSettings } from './MCPSettings';
-import { RemoteMCPSettings } from './RemoteMCPSettings';
 import { MessagingHub } from './MessagingHub';
-import { SystemExplorer } from './SystemExplorer';
-import { ContactsPanel } from './ContactsPanel';
-import { OrgBranchPanel } from './OrgBranchPanel';
 
 function buildSidebarGroups(t: any) {
   return [
@@ -44,7 +40,6 @@ function buildSidebarGroups(t: any) {
       label: t.sidebarCore || 'Core',
       items: [
         { id: 'general', label: t.sidebarGeneral || 'General', icon: <Globe size={16} /> },
-        { id: 'personalization', label: t.personalization || 'Personalization', icon: <Sparkle size={16} /> },
       ],
     },
     {
@@ -59,14 +54,9 @@ function buildSidebarGroups(t: any) {
       label: t.sidebarSystem || 'System',
       items: [
         { id: 'security', label: t.settings || 'Security', icon: <Shield size={16} /> },
-        { id: 'biometrics', label: '生物特征', icon: <Shield size={16} /> },
         { id: 'hardware', label: t.settingsHardware || 'Hardware', icon: <Camera size={16} /> },
         { id: 'mcp', label: t.settingsMCP || 'MCP', icon: <Cpu size={16} /> },
-        { id: 'remote-mcp', label: t.remoteMCPSidebar || 'Remote MCP', icon: <Globe size={16} /> },
         { id: 'messaging', label: t.messaging || 'Messaging', icon: <MessagesSquare size={16} /> },
-        { id: 'explore', label: t.systemExplorer || 'System Explorer', icon: <Cpu size={16} /> },
-        { id: 'contacts', label: t.contacts || 'Contacts', icon: <Globe size={16} /> },
-        { id: 'branch', label: t.branchTerminal || 'Branch Terminal', icon: <Zap size={16} /> },
       ],
     },
   ];
@@ -135,11 +125,7 @@ export function Settings({
                 </div>
               </div>
             </SettingsSection>
-          </div>
-        );
-      case 'personalization':
-        return (
-          <div className="space-y-8">
+
             <SettingsSection title={t.appearanceThemes || "Appearance & Themes"} icon={<Sparkle size={18} className="text-celestial-saturn" />}>
               <div className="p-8 bg-white/5 rounded-[2.5rem] border border-white/5 space-y-8">
                 <div>
@@ -224,11 +210,7 @@ export function Settings({
                 <SettingsItem label={t.systemTrayMode || "System Tray Mode"} desc={t.systemTrayModeDesc || "Keep Lumi running in the background."} storageKey="lumi_sec_system_tray" t={t} />
               </SettingsSection>
             )}
-          </div>
-        );
-      case 'biometrics':
-        return (
-          <div className="space-y-8">
+
             <SettingsSection title="生物特征录入" icon={<Shield size={18} className="text-amber-400" />}>
               <div className="p-6 bg-white/5 rounded-[2.5rem] border border-white/5">
                 <BiometricsEnrollPanel />
@@ -240,16 +222,8 @@ export function Settings({
         return <HardwareSettings t={t} />;
       case 'mcp':
         return <MCPSettings t={t} />;
-      case 'remote-mcp':
-        return <RemoteMCPSettings t={t} />;
       case 'messaging':
         return <MessagingHub t={t} />;
-      case 'explore':
-        return <SystemExplorer />;
-      case 'contacts':
-        return <ContactsPanel />;
-      case 'branch':
-        return <OrgBranchPanel />;
       default:
         return null;
     }
