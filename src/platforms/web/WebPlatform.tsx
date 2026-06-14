@@ -22,7 +22,6 @@ interface WebPlatformProps {
   onLogout: () => void;
   renderTabContent: (tab: string) => React.ReactNode;
   isDesktop: boolean;
-  setUiMode: (mode: 'web' | 'desktop' | 'mobile') => void;
 }
 
 export function WebPlatform({ 
@@ -35,8 +34,7 @@ export function WebPlatform({
   onLogin, 
   onLogout, 
   renderTabContent,
-  isDesktop,
-  setUiMode
+  isDesktop
 }: WebPlatformProps) {
   const [introView, setIntroView] = useState<'none' | 'desktop' | 'mobile'>('none');
 
@@ -63,14 +61,14 @@ export function WebPlatform({
                 key="desktop-intro"
                 t={t} 
                 onBack={() => setIntroView('none')} 
-                onInitialize={() => setUiMode('desktop')} 
+                onInitialize={() => setIntroView('none')} 
               />
             ) : (
               <MobileIntro 
                 key="mobile-intro"
                 t={t} 
                 onBack={() => setIntroView('none')} 
-                onPreview={() => setUiMode('mobile')} 
+                onPreview={() => setIntroView('none')} 
               />
             )}
           </AnimatePresence>
@@ -179,7 +177,7 @@ export function WebPlatform({
               t={t} 
               onNavigateToSolutions={() => setActiveTab('solutions')} 
               onSelectDesktop={() => setIntroView('desktop')}
-              onSelectMobile={() => setUiMode('mobile')}
+              onSelectMobile={() => setIntroView('mobile')}
             />
           </div>
         ) : (

@@ -18,15 +18,13 @@ describe('DeviceRegistry', () => {
     expect(device.capabilities.video).toBe(false);
   });
 
-  it('re-registering the same device updates status and lastSeen', () => {
+  it('re-registering the same device updates metadata, status and lastSeen', () => {
     const first = deviceRegistry.register('user_rereg', 'sock_rereg', { name: 'First Name' });
     const second = deviceRegistry.register('user_rereg', 'sock_rereg', { name: 'Second Name' });
 
     expect(second.id).toBe(first.id);
-    // Name is preserved from first registration, not overwritten
-    expect(second.name).toBe('First Name');
+    expect(second.name).toBe('Second Name');
     expect(second.status).toBe('online');
-    // lastSeen is updated (>= original timestamp)
     expect(second.lastSeen >= first.lastSeen).toBe(true);
   });
 

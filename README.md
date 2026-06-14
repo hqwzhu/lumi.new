@@ -137,8 +137,8 @@ LumiOS 是这个愿景的第一个落地形态。
 | Windows 桌面（Tauri v2 + WebView2） | 主要目标，稳定运行 |
 | macOS 桌面（Tauri v2） | 支持 |
 | Linux 桌面（Tauri v2） | 支持 |
-| Web（React SPA） | [lumiai.asia](https://lumiai.asia) |
-| iOS / Android（Capacitor） | 实验阶段 |
+| Web（React SPA） | 官网独立发布，不随桌面安装包打包 |
+| iOS / Android（Capacitor） | 实验阶段，不随桌面安装包打包 |
 
 ---
 
@@ -194,13 +194,16 @@ cp .env.example .env
 bash scripts/deploy-linux.sh
 ```
 
-部署脚本会自动：检查环境 → 安装依赖 → 构建前后端 → 编译桌面壳 → 创建桌面快捷方式。完成后桌面上就有 Lumi OS 图标，双击启动。
+部署脚本会自动：检查环境 → 安装依赖 → 构建桌面端前后端 → 编译桌面壳 → 创建桌面快捷方式。完成后桌面上就有 Lumi OS 图标，双击启动。GitHub Actions 默认也只构建桌面客户端安装包。
 
-### 开发模式启动
+### 桌面开发与构建
 
 ```bash
-npm run dev              # Web 版 → http://localhost:3000
-npm run tauri dev        # 桌面版（需 Rust + Tauri CLI）
+npm run dev              # 启动本地服务
+npm run tauri:dev        # 启动桌面客户端开发模式（需 Rust + Tauri CLI）
+npm run build            # 构建桌面端 UI → dist/desktop
+npm run build:desktop    # 构建桌面端 UI + 服务端 + 桌面资源
+npm run tauri:build      # 编译桌面安装包
 ```
 
 ### 最简配置（3 分钟跑起来）
@@ -212,7 +215,7 @@ DEEPSEEK_API_KEY=sk-你的key
 JWT_SECRET=随便写一串随机字符
 ```
 
-然后 `npm install && npm run dev`，浏览器打开 `http://localhost:3000`。
+然后 `npm install && npm run tauri:dev` 启动桌面客户端开发模式。
 
 ### 更多配置
 

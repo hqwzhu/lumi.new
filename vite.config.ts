@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig, loadEnv } from 'vite';
@@ -9,8 +10,38 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  const target = env.LUMI_TARGET || (['desktop', 'web', 'mobile', 'all'].includes(mode) ? mode : 'desktop');
+  const inputs: Record<string, string> = target === 'web'
+    ? { web: 'index.web.html', org: 'index.org.html' }
+    : target === 'mobile'
+      ? { mobile: 'index.mobile.html' }
+      : target === 'all'
+        ? { desktop: 'index.html', web: 'index.web.html', mobile: 'index.mobile.html', org: 'index.org.html' }
+        : { desktop: 'index.html' };
+  const outDir = target === 'all' ? 'dist' : `dist/${target}`;
+
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'lumi-platform-html-output',
+        writeBundle() {
+          const htmlName = target === 'web'
+            ? 'index.web.html'
+            : target === 'mobile'
+              ? 'index.mobile.html'
+              : '';
+          if (!htmlName) return;
+          const source = path.join(__dirname, outDir, htmlName);
+          const dest = path.join(__dirname, outDir, 'index.html');
+          if (fs.existsSync(source)) {
+            fs.copyFileSync(source, dest);
+            fs.rmSync(source);
+          }
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -26,11 +57,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
+      outDir,
       rollupOptions: {
-        input: {
-          web: 'index.html',
-          org: 'index.org.html',
-        },
+        input: inputs,
         output: {
           manualChunks(id: string) {
             if (id.includes('node_modules/three') || id.includes('@react-three')) return 'vendor-three';

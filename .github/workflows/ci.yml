@@ -33,7 +33,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: Build frontend dist
-        run: npx vite build
+        run: npm run build:desktop-ui
       - name: Create stub resource dirs for CI
         run: |
           mkdir -p desktop-resources/dist-server
@@ -74,7 +74,7 @@ jobs:
           node-version: 20
           cache: 'npm'
       - run: npm ci
-      - run: npx vite build
+      - run: npm run build:desktop-ui
 
   # ── Cross-platform installer builds ──
 

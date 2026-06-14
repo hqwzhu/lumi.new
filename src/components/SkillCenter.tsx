@@ -62,7 +62,7 @@ interface ExternalResult {
   npmPackage?: string; repoUrl?: string;
 }
 
-type Tab = 'featured' | 'marketplace' | 'installed' | 'generate';
+export type SkillCenterTab = 'featured' | 'marketplace' | 'installed' | 'generate';
 type SortKey = 'downloads' | 'rating' | 'newest';
 
 const FEATURED_SKILLS = [
@@ -74,8 +74,8 @@ const FEATURED_SKILLS = [
   { id: 'code-sandbox', name: 'Code Sandbox', icon: 'Terminal', iconColor: 'from-green-500 to-emerald-400', desc: 'Secure cloud code execution. Run Python and JavaScript in isolated containers — safe, fast, unlimited.', prompt: '帮我写一段Python代码分析CSV数据并生成图表' },
 ];
 
-export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
-  const [activeTab, setActiveTab] = useState<Tab>('featured');
+export function SkillCenter({ t, lang, initialTab = 'featured' }: { t: any; lang: 'en' | 'zh'; initialTab?: SkillCenterTab }) {
+  const [activeTab, setActiveTab] = useState<SkillCenterTab>(initialTab);
   const [marketSkills, setMarketSkills] = useState<MarketplaceSkill[]>([]);
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -98,6 +98,10 @@ export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
   const socket = useSocket();
 
   const [translationReady, setTranslationReady] = useState(false);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const fetchMarketplace = useCallback(async () => {
     try {
@@ -327,7 +331,7 @@ export function SkillCenter({ t, lang }: { t: any; lang: 'en' | 'zh' }) {
     return 0;
   });
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: SkillCenterTab; label: string; icon: React.ReactNode }[] = [
     { id: 'featured', label: t.featuredTab || 'Featured', icon: <Sparkles size={14} /> },
     { id: 'marketplace', label: t.marketplaceTab || 'Marketplace', icon: <ShoppingBag size={14} /> },
     { id: 'installed', label: t.installedTab || 'Installed', icon: <Cpu size={14} /> },

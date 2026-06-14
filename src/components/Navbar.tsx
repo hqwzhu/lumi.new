@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { Rocket, MessageSquare, Globe, Users, User as UserIcon, BookOpen, Zap, ChevronDown, Database, ShoppingBag, Cloud, Network, Smartphone, Laptop, Handshake, Building2, Smile, Settings as SettingsIcon, Briefcase } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
-import { WorkModeSwitch } from './org/WorkModeSwitch';
-import { useApp } from '../contexts/AppContext';
 
 interface NavbarProps {
   user: any;
@@ -19,7 +17,6 @@ interface NavbarProps {
 export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang, setLang, t }: NavbarProps) {
   const [isProductsOpen, setIsProductsOpen] = useState(false);
   const [isEcoOpen, setIsEcoOpen] = useState(false);
-  const { workDomain, switchDomain, orgConnection } = useApp();
 
   const productCategories = [
     { id: 'core', label: t.coreDevices, desc: t.coreDevicesDesc, icon: <Laptop size={16} /> },
@@ -202,13 +199,6 @@ export function Navbar({ user, onLogin, onLogout, activeTab, setActiveTab, lang,
 
         {user ? (
           <div className="flex items-center gap-3">
-            {orgConnection && (
-              <WorkModeSwitch
-                domain={workDomain}
-                onToggle={() => switchDomain(workDomain === 'personal' ? 'work' : 'personal')}
-                connected={orgConnection.connected}
-              />
-            )}
             <button
               onClick={() => setActiveTab('settings')}
               className={`p-2 rounded-full transition-all ${activeTab === 'settings' ? 'text-celestial-saturn bg-celestial-saturn/10' : 'text-white/40 hover:text-white/60 hover:bg-white/5'}`}

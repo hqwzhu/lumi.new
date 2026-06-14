@@ -73,7 +73,7 @@ export function WebApp() {
       <ProactiveNotifications />
       <Toaster position="top-right" theme="dark" />
       <WebPlatform user={shell.user} activeTab={activeTab} setActiveTab={setActiveTab} lang={shell.lang} setLang={shell.setLang} t={shell.t}
-        onLogin={shell.handleLogin} onLogout={shell.handleLogout} renderTabContent={renderTabContent} isDesktop={isDesktop} setUiMode={() => {}} />
+        onLogin={shell.handleLogin} onLogout={shell.handleLogout} renderTabContent={renderTabContent} isDesktop={isDesktop} />
       <LoginModal t={shell.t} isOpen={shell.isLoginModalOpen} onClose={() => shell.setIsLoginModalOpen(false)} onLoginSuccess={() => shell.refreshUser()} onGoogleLogin={shell.handleLogin} />
       {!isDesktop && <FloatingAgent t={shell.t} />}
     </div>

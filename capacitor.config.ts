@@ -4,7 +4,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.lumiai.app',
   appName: 'LumiAI',
-  webDir: 'dist',
+  webDir: 'dist/mobile',
   server: {
     androidScheme: 'https'
   }
