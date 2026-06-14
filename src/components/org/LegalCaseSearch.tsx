@@ -36,7 +36,7 @@ export function LegalCaseSearch() {
         credentials: 'include',
       });
       const data = await res.json();
-      const text = data.response || data.message || '';
+      const text = data.text || data.response || data.reply || data.message || data.error || '';
 
       // Parse structured results from LLM output
       const lines = text.split('\n');

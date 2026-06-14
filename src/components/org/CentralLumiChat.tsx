@@ -61,7 +61,7 @@ export function CentralLumiChat() {
       });
 
       const data = await chatRes.json();
-      const reply = data.reply || data.message || "I'm having trouble processing that right now.";
+      const reply = data.text || data.response || data.reply || data.message || data.error || "I'm having trouble processing that right now.";
 
       setMessages(prev => [...prev, { role: 'assistant', content: reply, timestamp: Date.now() }]);
     } catch {

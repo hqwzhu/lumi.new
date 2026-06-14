@@ -56,6 +56,7 @@ import {
   RefreshCw,
   Circle,
   Calendar,
+  Camera,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { GlassCard } from './SharedUI';
@@ -142,6 +143,35 @@ const getParentNativePath = (path: string) => {
   if (/^[A-Za-z]:$/.test(parts[0]) && parts.length <= 2) return `${parts[0]}\\`;
   parts.pop();
   return parts.join(separator) || separator;
+};
+
+const joinNativePath = (base: string, child: string) => {
+  const trimmed = base.replace(/[\\/]+$/, '');
+  if (!trimmed) return child;
+  const separator = trimmed.includes('\\') ? '\\' : '/';
+  return `${trimmed}${separator}${child}`;
+};
+
+const getNativePathCrumbs = (path: string) => {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (!trimmed) return [];
+  const separator = path.includes('\\') ? '\\' : '/';
+  const isUnixRooted = trimmed.startsWith('/');
+  const parts = trimmed.split(/[\\/]/).filter(Boolean);
+  if (parts.length === 0 && isUnixRooted) return [{ label: '/', path: '/' }];
+
+  let cursor = isUnixRooted ? '/' : '';
+  return parts.map(part => {
+    if (/^[A-Za-z]:$/.test(part)) {
+      cursor = `${part}\\`;
+      return { label: part, path: cursor };
+    }
+    if (cursor && cursor !== '/' && !cursor.endsWith('\\') && !cursor.endsWith('/')) {
+      cursor += separator;
+    }
+    cursor = cursor === '/' ? `/${part}` : `${cursor}${part}`;
+    return { label: part, path: cursor };
+  });
 };
 
 declare global {
@@ -533,6 +563,7 @@ interface NativeFilesWindowProps {
   t: any;
   files: NativeFile[];
   currentPath: string;
+  homePath: string;
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
@@ -545,6 +576,7 @@ function NativeFilesWindow({
   t,
   files,
   currentPath,
+  homePath,
   isLoading,
   error,
   onRefresh,
@@ -554,6 +586,13 @@ function NativeFilesWindow({
 }: NativeFilesWindowProps) {
   const [query, setQuery] = useState('');
   const parentPath = getParentNativePath(currentPath);
+  const pathCrumbs = getNativePathCrumbs(currentPath);
+  const quickLocations = [
+    { id: 'home', label: t.home || 'Home', path: homePath, icon: <HardDrive size={15} /> },
+    { id: 'desktop', label: t.desktopFolder || 'Desktop', path: homePath ? joinNativePath(homePath, 'Desktop') : '', icon: <Monitor size={15} /> },
+    { id: 'documents', label: t.documentsFolder || 'Documents', path: homePath ? joinNativePath(homePath, 'Documents') : '', icon: <FileText size={15} /> },
+    { id: 'downloads', label: t.downloadsFolder || 'Downloads', path: homePath ? joinNativePath(homePath, 'Downloads') : '', icon: <Folder size={15} /> },
+  ].filter(location => location.id === 'home' || location.path);
   const visibleFiles = files.filter(file => file.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
@@ -593,9 +632,43 @@ function NativeFilesWindow({
         </button>
       </div>
 
+      <div className="grid gap-2 sm:grid-cols-4">
+        {quickLocations.map(location => (
+          <button
+            key={location.id}
+            onClick={() => location.id === 'home' ? onHome() : onNavigate(location.path)}
+            disabled={isLoading || (location.id !== 'home' && !location.path)}
+            className="flex h-10 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-bold text-white/55 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <span className="shrink-0 text-celestial-saturn">{location.icon}</span>
+            <span className="truncate">{location.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
         <Folder size={17} className="shrink-0 text-celestial-saturn" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white/72">{currentPath || 'Home'}</span>
+        <div className="min-w-0 flex-1 overflow-x-auto custom-scrollbar">
+          {pathCrumbs.length > 0 ? (
+            <div className="flex min-w-max items-center gap-1">
+              {pathCrumbs.map((crumb, index) => (
+                <React.Fragment key={`${crumb.path}-${index}`}>
+                  {index > 0 && <ChevronRight size={13} className="text-white/22" />}
+                  <button
+                    onClick={() => onNavigate(crumb.path)}
+                    disabled={isLoading || crumb.path === currentPath}
+                    className="max-w-[150px] truncate rounded-lg px-2 py-1 text-xs font-bold text-white/58 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-white/78"
+                    title={crumb.path}
+                  >
+                    {crumb.label}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <span className="text-sm font-semibold text-white/72">Home</span>
+          )}
+        </div>
         <span className="text-[11px] font-black uppercase tracking-[0.18em] text-white/28">{visibleFiles.length} items</span>
       </div>
 
@@ -627,12 +700,15 @@ function NativeFilesWindow({
         ) : (
           <div className="h-full overflow-y-auto custom-scrollbar">
             {visibleFiles.map(file => (
-              <button
+              <div
                 key={file.path}
-                onClick={() => file.isDirectory ? onNavigate(file.path) : onOpenItem(file.path)}
-                className="group grid w-full grid-cols-[minmax(0,1fr)_96px] items-center gap-3 border-b border-white/[0.04] px-4 py-3 text-left transition-colors hover:bg-white/[0.05]"
+                className="group grid w-full grid-cols-[minmax(0,1fr)_88px_72px] items-center gap-3 border-b border-white/[0.04] px-4 py-2.5 text-left transition-colors hover:bg-white/[0.05]"
               >
-                <span className="flex min-w-0 items-center gap-3">
+                <button
+                  onClick={() => file.isDirectory ? onNavigate(file.path) : onOpenItem(file.path)}
+                  className="flex min-w-0 items-center gap-3 rounded-lg py-1 text-left"
+                  title={file.path}
+                >
                   {file.isDirectory ? (
                     <Folder size={18} className="shrink-0 text-celestial-saturn" />
                   ) : (
@@ -641,16 +717,105 @@ function NativeFilesWindow({
                   <span className="min-w-0 truncate text-sm font-semibold text-white/68 group-hover:text-white">
                     {file.name}
                   </span>
-                </span>
+                </button>
                 <span className="justify-self-end rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">
                   {file.isDirectory ? (t.folder || 'Folder') : (t.file || 'File')}
                 </span>
-              </button>
+                <button
+                  onClick={() => onOpenItem(file.path)}
+                  className="justify-self-end rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/40 transition-colors hover:border-celestial-saturn/30 hover:bg-celestial-saturn/10 hover:text-celestial-saturn"
+                  title={file.path}
+                >
+                  {t.open || 'Open'}
+                </button>
+              </div>
             ))}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function SensorPrimer({ isOpen, onContinue, t }: { isOpen: boolean; onContinue: () => void; t: any }) {
+  if (!isOpen) return null;
+
+  const items = [
+    {
+      icon: <Camera size={18} />,
+      title: t.visualAwareness || 'Visual awareness',
+      desc: t.visualAwarenessDesc || 'Camera access powers presence, face recognition, and gesture-aware desktop behavior.',
+    },
+    {
+      icon: <Mic size={18} />,
+      title: t.voiceAwareness || 'Voice awareness',
+      desc: t.voiceAwarenessDesc || 'Microphone access powers voice calls, wake word detection, and optional voiceprint enrollment.',
+    },
+    {
+      icon: <Shield size={18} />,
+      title: t.localSensorProcessing || 'Local-first processing',
+      desc: t.localSensorProcessingDesc || 'Sensor streams are used for the desktop client experience and biometric checks. You can review permissions in Settings.',
+    },
+  ];
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 pointer-events-auto">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 bg-black/82 backdrop-blur-2xl"
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 18, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 18, scale: 0.96 }}
+          className="relative w-full max-w-xl rounded-3xl border border-white/10 bg-[#080a10]/95 p-7 shadow-2xl"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-celestial-saturn/25 bg-celestial-saturn/12 text-celestial-saturn">
+              <Shield size={22} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black uppercase tracking-[0.24em] text-white/35">
+                {t.sensorPermissionIntro || 'Sensor permissions'}
+              </div>
+              <h2 className="mt-2 text-2xl font-black tracking-normal text-white">
+                {t.sensorPrimerTitle || 'Enable Lumi desktop awareness'}
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-white/56">
+                {t.sensorPrimerDesc || 'Lumi uses local camera and microphone signals for presence, voice, and biometric features. The feature stays part of the desktop experience; this notice explains what will request permission first.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            {items.map(item => (
+              <div key={item.title} className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-white/70">
+                  {item.icon}
+                </div>
+                <div>
+                  <div className="text-sm font-black text-white/85">{item.title}</div>
+                  <p className="mt-1 text-xs leading-5 text-white/45">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-7 flex justify-end">
+            <button
+              onClick={onContinue}
+              className="flex h-11 items-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-black transition-transform hover:scale-[1.02] active:scale-95"
+            >
+              {t.continueToDesktop || 'Continue'}
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 }
 
@@ -1138,6 +1303,7 @@ export function DesktopUI({
   }, [isLightMode]);
   const [nativeFiles, setNativeFiles] = useState<NativeFile[]>([]);
   const [nativePath, setNativePath] = useState('');
+  const [nativeHomePath, setNativeHomePath] = useState('');
   const [nativeFilesLoading, setNativeFilesLoading] = useState(false);
   const [nativeFilesError, setNativeFilesError] = useState<string | null>(null);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
@@ -1193,6 +1359,7 @@ export function DesktopUI({
       if (!targetPath) {
         const info: any = await invoke('get_system_info');
         targetPath = String(info?.home_dir || '');
+        setNativeHomePath(targetPath);
       }
       const files = targetPath
         ? await invoke('list_directory', { path: targetPath })
@@ -1241,6 +1408,13 @@ export function DesktopUI({
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return localStorage.getItem('lumi_onboarding_seen') !== 'true';
   });
+  const [sensorPrimerSeen, setSensorPrimerSeen] = useState(() => {
+    return localStorage.getItem('lumi_sensor_primer_seen') === 'true';
+  });
+  const finishSensorPrimer = useCallback(() => {
+    localStorage.setItem('lumi_sensor_primer_seen', 'true');
+    setSensorPrimerSeen(true);
+  }, []);
   const [mcpActivities, setMcpActivities] = useState<Array<{
     id: string; device: string; action: string; status: string;
     message?: string; title?: string; path?: string; slidesCount?: number; toolCalls?: number; error?: string;
@@ -1249,6 +1423,7 @@ export function DesktopUI({
   const [showMcpPanel, setShowMcpPanel] = useState(false);
   const [agentStatus, setAgentStatus] = useState<'idle' | 'thinking' | 'executing' | 'done' | 'error'>('idle');
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const seenWorkflowToolEvents = useRef<Set<string>>(new Set());
 
   const socket = useSocket();
   const musicVisible = useMusicVisible();
@@ -1265,6 +1440,24 @@ export function DesktopUI({
   // Wake word detection — server-side Qwen ASR (DASHSCOPE_API_KEY), falls back to Picovoice
   // Default off — user must explicitly enable in Settings to avoid continuous ASR charges
   const [wakeEnabled, setWakeEnabled] = useState(() => localStorage.getItem('lumi_wake_word_enabled') === 'true');
+  useEffect(() => {
+    const syncWakeSetting = () => {
+      setWakeEnabled(localStorage.getItem('lumi_wake_word_enabled') === 'true');
+    };
+    const onSettingChanged = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.key === 'lumi_wake_word_enabled') setWakeEnabled(detail.value === true || detail.value === 'true');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'lumi_wake_word_enabled') syncWakeSetting();
+    };
+    window.addEventListener('lumi:setting-changed', onSettingChanged);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('lumi:setting-changed', onSettingChanged);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
   const wakeWord = useWakeWord({
     socket,
     startCallRef,
@@ -1279,11 +1472,11 @@ export function DesktopUI({
   });
 
   // Gesture detection via webcam
-  const { facePresent } = useGestureDetector({ enabled: true });
+  const { facePresent } = useGestureDetector({ enabled: sensorPrimerSeen });
 
   // ── Biometrics: voiceprint + face recognition + presence ──
   const voiceprint = useVoiceprint({ socket });
-  const faceRecognition = useFaceRecognition({ enabled: true, socket });
+  const faceRecognition = useFaceRecognition({ enabled: sensorPrimerSeen, socket });
   const presence = usePresence({
     socket,
     faceResult: faceRecognition.result,
@@ -1416,7 +1609,14 @@ export function DesktopUI({
       }
     };
 
-    const onToolCall = (data: { correlationId?: string; name: string; arguments?: any; result?: string; error?: string }) => {
+    const onToolCall = (data: { correlationId?: string; name: string; arguments?: any; args?: any; result?: string; error?: string }) => {
+      const toolArgs = data.arguments ?? data.args;
+      const phase = data.error !== undefined ? 'error' : data.result !== undefined ? 'result' : 'start';
+      if (data.correlationId) {
+        const eventKey = `${data.correlationId}:${phase}`;
+        if (seenWorkflowToolEvents.current.has(eventKey)) return;
+        seenWorkflowToolEvents.current.add(eventKey);
+      }
       if (data.result !== undefined) {
         setAgentStatus('executing');
         triggerPetReaction('jump', 1200);
@@ -1439,8 +1639,8 @@ export function DesktopUI({
         }]);
       } else {
         setAgentStatus('executing');
-        const argsSummary = data.arguments
-          ? Object.entries(data.arguments).map(([k, v]) => `${k}=${typeof v === 'string' ? v.slice(0, 30) : String(v).slice(0, 30)}`).join(', ')
+        const argsSummary = toolArgs
+          ? Object.entries(toolArgs).map(([k, v]) => `${k}=${typeof v === 'string' ? v.slice(0, 30) : String(v).slice(0, 30)}`).join(', ')
           : '';
         setWorkflowSteps(prev => [...prev, {
           id: `tool-start-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
@@ -1503,6 +1703,7 @@ export function DesktopUI({
 
     socket.on('agent:status', onStatus);
     socket.on('agent:tool_call', onToolCall);
+    socket.on('agent:tool', onToolCall);
     socket.on('agent:response', onResponse);
     socket.on('agent:error', onError);
     socket.on('agent:proactive', onProactive);
@@ -1578,6 +1779,7 @@ export function DesktopUI({
     return () => {
       socket.off('agent:status', onStatus);
       socket.off('agent:tool_call', onToolCall);
+      socket.off('agent:tool', onToolCall);
       socket.off('agent:response', onResponse);
       socket.off('agent:error', onError);
       socket.off('agent:proactive', onProactive);
@@ -1872,6 +2074,7 @@ export function DesktopUI({
       label: t.modeMouse || '键鼠',
       title: t.modeMouseTitle || '键鼠模式',
       description: t.modeMouseDesc || '适合打开软件、点击界面、读屏并操作当前桌面。',
+      hint: t.modeMouseHint || 'Visible UI control',
       icon: <MousePointer2 size={16} />,
     },
     {
@@ -1879,6 +2082,7 @@ export function DesktopUI({
       label: t.modeTerminal || '命令',
       title: t.modeTerminalTitle || '命令模式',
       description: t.modeTerminalDesc || '优先用终端命令处理文件、系统、开发和批量任务。',
+      hint: t.modeTerminalHint || 'Files, code, and shell tasks',
       icon: <TerminalIcon size={16} />,
     },
     {
@@ -1886,6 +2090,7 @@ export function DesktopUI({
       label: t.modeAutonomous || '自由',
       title: t.modeAutonomousTitle || '自由模式',
       description: t.modeAutonomousDesc || '适合多步后台任务；高风险操作仍会请求确认。',
+      hint: t.modeAutonomousHint || 'Multi-step background work',
       icon: <Zap size={16} />,
     },
   ];
@@ -1912,8 +2117,12 @@ export function DesktopUI({
         ))}
       </div>
       <div className={`rounded-2xl border border-cyan-500/15 bg-black/35 backdrop-blur-xl text-center ${compact ? 'max-w-[260px] px-3 py-1.5' : 'max-w-[360px] px-4 py-2'}`}>
-        <div className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-400">{currentOperationMode.title}</div>
-        <p className={`${compact ? 'text-[11px]' : 'text-[12px]'} leading-relaxed text-white/55`}>{currentOperationMode.description}</p>
+        <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400">
+          <Circle size={7} fill="currentColor" />
+          <span>{t.currentMode || 'Current mode'} · {currentOperationMode.title}</span>
+        </div>
+        <div className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/32">{currentOperationMode.hint}</div>
+        <p className={`${compact ? 'text-[11px]' : 'text-[12px]'} mt-1 leading-relaxed text-white/55`}>{currentOperationMode.description}</p>
       </div>
     </div>
   );
@@ -2434,19 +2643,24 @@ export function DesktopUI({
               <div className="mt-2">
                 {renderOperationModeSelector(true)}
               </div>
-              {wakeWord.isListening && callState === 'idle' && (
+              {wakeEnabled && wakeWord.isListening && callState === 'idle' && (
                 <div className="mt-2 text-xs text-white/45 uppercase tracking-[0.25em] font-mono">
                   Listening for &ldquo;Lumi&rdquo;
                 </div>
               )}
-              {wakeWord.error && (
+              {wakeEnabled && wakeWord.error && (
                 <div className="mt-2 text-xs text-red-400/60 font-mono max-w-[200px] text-center leading-relaxed">
                   Wake: {wakeWord.error}
                 </div>
               )}
-              {!wakeWord.isListening && !wakeWord.error && callState === 'idle' && (
+              {wakeEnabled && !wakeWord.isListening && !wakeWord.error && callState === 'idle' && (
                 <div className="mt-2 text-xs text-yellow-400/40 font-mono">
                   Wake word initializing...
+                </div>
+              )}
+              {!wakeEnabled && callState === 'idle' && (
+                <div className="mt-2 text-xs text-white/30 font-mono">
+                  Wake word off
                 </div>
               )}
               </>
@@ -2640,12 +2854,18 @@ export function DesktopUI({
 
       {/* Workflow Status Panel — breathing lights + step log */}
       <WorkflowPanel
-        visible={isWallpaperMode && (agentStatus !== 'idle' || workflowSteps.length > 0)}
+        visible={agentStatus !== 'idle' || workflowSteps.length > 0}
         agentStatus={agentStatus}
         steps={workflowSteps}
         t={t}
+        placement={isWallpaperMode ? 'center' : 'corner'}
       />
       <div className="absolute inset-0 z-[20] pointer-events-none">
+        <SensorPrimer
+          isOpen={!sensorPrimerSeen}
+          onContinue={finishSensorPrimer}
+          t={t}
+        />
         <DesktopOnboarding 
           isOpen={showOnboarding} 
           onFinish={() => {
@@ -2720,6 +2940,7 @@ export function DesktopUI({
                       t={t}
                       files={nativeFiles}
                       currentPath={nativePath}
+                      homePath={nativeHomePath}
                       isLoading={nativeFilesLoading}
                       error={nativeFilesError}
                       onRefresh={() => void loadNativeFiles(nativePath)}

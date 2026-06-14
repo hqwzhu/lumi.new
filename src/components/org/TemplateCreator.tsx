@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Package, Send, Loader2, ArrowLeft } from 'lucide-react';
+import { Package, Send, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useT } from '../../lib/useT';
 
@@ -18,13 +18,22 @@ export function TemplateCreator() {
   }, null, 2));
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async () => {
-    if (!name.trim() || !description.trim()) return;
+    if (!name.trim() || !description.trim()) {
+      setError(t.templateRequiredFields || 'Name and description are required');
+      return;
+    }
     setSubmitting(true);
+    setError('');
     try {
       let config: any;
-      try { config = JSON.parse(configStr); } catch { config = {}; }
+      try {
+        config = JSON.parse(configStr);
+      } catch (err: any) {
+        throw new Error(`${t.invalidJSON || 'Invalid JSON'}: ${err.message}`);
+      }
 
       const res = await fetch('/api/org/templates', {
         method: 'POST',
@@ -32,17 +41,19 @@ export function TemplateCreator() {
         body: JSON.stringify({ name, description, category, config, icon }),
         credentials: 'include',
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `${t.templateSubmitFailed || 'Template submit failed'} (${res.status})`);
 
-      if (res.ok) {
-        const t = await res.json();
-        // Submit for review immediately
-        await fetch(`/api/org/templates/${t.id}/submit`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        setDone(true);
-      }
-    } catch {} finally { setSubmitting(false); }
+      const submitRes = await fetch(`/api/org/templates/${data.id}/submit`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const submitData = await submitRes.json().catch(() => ({}));
+      if (!submitRes.ok) throw new Error(submitData.error || `${t.templateSubmitFailed || 'Template submit failed'} (${submitRes.status})`);
+      setDone(true);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally { setSubmitting(false); }
   };
 
   if (done) {
@@ -78,6 +89,13 @@ export function TemplateCreator() {
         </h2>
       </div>
       <p className="text-white/40 text-sm">{t.templateDesc || 'Create a template from one of your agents to share with the organization'}</p>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <input

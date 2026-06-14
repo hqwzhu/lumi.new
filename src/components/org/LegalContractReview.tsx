@@ -44,7 +44,7 @@ export function LegalContractReview() {
         credentials: 'include',
       });
       const data = await res.json();
-      const text = data.response || data.message || '';
+      const text = data.text || data.response || data.reply || data.message || data.error || '';
       setResult(text);
       setRisks(parseRisks(text));
     } catch (e: any) {

@@ -66,6 +66,7 @@ export function registerChatHandler(
   socket.on("agent:chat", async (data: { text: string; history: any[]; personalityId?: string; category?: string; agentId?: string; domain?: string; orgId?: string | null; mode?: string; source?: string }) => {
     console.log('[ChatHandler] agent:chat RECEIVED:', JSON.stringify(data).slice(0, 300));
     const { text, history, personalityId = "lumi", category, agentId, mode: payloadMode, source } = data;
+    const conversationAgentId = agentId || 'lumi';
     const uid = userIdFn(socket);
     console.log('[ChatHandler] uid:', uid, 'agentId:', agentId, 'source:', source);
 
@@ -146,9 +147,7 @@ export function registerChatHandler(
       const isNovel = relevantMemories.length < 2;
 
       // ── Conversation mode: get/create conversation, apply mode from payload ──
-      const conversation = agentId
-        ? getOrCreateActiveConversation(uid, agentId, resolvedDomain, resolvedOrgId)
-        : null;
+      const conversation = getOrCreateActiveConversation(uid, conversationAgentId, resolvedDomain, resolvedOrgId);
       const conversationId = conversation?.id;
       // Cross-session continuity: inject previous conversation context if starting fresh
       let previousSessionContext: string | null = null;
@@ -384,12 +383,12 @@ export function registerChatHandler(
           }
           socket.emit("agent:response", { text: quickResult.responseText, agentName: personality.name, source: "quick_command" });
           if (conversationId) {
-            addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
+            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id });
             if (quickResult.toolCall) {
-              addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'tool', content: `[Tool: ${quickResult.toolCall.name}] Called` });
+              addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: `[Tool: ${quickResult.toolCall.name}] Called` });
             }
-            addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id });
-            socket.emit('chat:conversation_updated', { conversationId, agentId: agentId || '' });
+            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id });
+            socket.emit('chat:conversation_updated', { conversationId, agentId: conversationAgentId });
           }
           socket.emit("agent:status", { status: "idle" });
           // Track topics for quick commands too
@@ -461,7 +460,23 @@ export function registerChatHandler(
         // Path A: Lumi handled this directly — no LLM needed
         responseText = cognition.responseText;
         console.log(`[Cognition] Direct tool '${cognition.intent.directToolCall?.name}' handled without LLM`);
-      } else if (!isSanctuary && (cognition.intent.category === 'command' || cognition.intent.category === 'code' || cognition.intent.category === 'question')) {
+      }
+
+      // Path A2: Music intent — detect and handle BEFORE orchestrator (so LLM doesn't use desktop_open)
+      if (!responseText && /放.*歌|放.*音乐|来首歌|播放|听.*歌|来点音乐|给我放|随便放点|我想听|搜.*歌|换.*歌|切.*歌/.test(text)) {
+        try {
+          const { searchAndPlay } = await import('../music/search_play');
+          const result = await searchAndPlay(uid, socket, text);
+          if (result.success && result.text) {
+            responseText = result.text;
+            llmWasCalled = true;
+          }
+        } catch (musicErr: any) {
+          console.warn('[Music Intent] Failed:', musicErr.message);
+        }
+      }
+
+      if (!responseText && !isSanctuary && (cognition.intent.category === 'command' || cognition.intent.category === 'code' || cognition.intent.category === 'question')) {
         // Path B: Orchestrator — decompose tasks into sub-tasks for worker agents
         // (Skipped for sanctuary agents — they stay in their territory)
         try {
@@ -497,20 +512,6 @@ export function registerChatHandler(
 
       const allToolRecords: { name: string; args: string; result?: string; error?: string }[] = [];
 
-      // Path B1.5: Music intent — detect "放歌/放音乐/来首歌" and trigger atmosphere layer
-      if (!responseText && /放.*歌|放.*音乐|来首歌|播放|听.*歌|来点音乐|给我放|随便放点|我想听|搜.*歌|换.*歌|切.*歌/.test(text)) {
-        try {
-          const { searchAndPlay } = await import('../music/search_play');
-          const result = await searchAndPlay(uid, socket, text);
-          if (result.success && result.text) {
-            responseText = result.text;
-            llmWasCalled = true;
-          }
-        } catch (musicErr: any) {
-          console.warn('[Music Intent] Failed:', musicErr.message);
-        }
-      }
-
       // Path B2: NL Task Chainer — for office workflows that chain tools (search→read→create etc.)
       if (!responseText && shouldChainTask(text)) {
         // Pre-flight: auto-install any matching uninstalled/outdated skills
@@ -541,8 +542,8 @@ export function registerChatHandler(
 
         // Load conversation history from persistence (survives page reload / reconnect)
         let persistedHistory: NormalizedMessage[] = [];
-        if (agentId) {
-          const conv = getOrCreateActiveConversation(uid, agentId, resolvedDomain, resolvedOrgId);
+        if (conversationAgentId) {
+          const conv = getOrCreateActiveConversation(uid, conversationAgentId, resolvedDomain, resolvedOrgId);
           const msgs = getMessagesByTokenBudget(conv.id);
           persistedHistory = msgs
             .filter((m: any) => m.message || m.response)
@@ -585,7 +586,16 @@ export function registerChatHandler(
             { provider: activeProvider, model: activeModel, userId: uid },
             isSanctuary ? undefined : (record) => {
               allToolRecords.push({ name: record.name, args: JSON.stringify(record.arguments || {}), result: record.result?.slice(0, 500), error: record.error });
-              socket.emit("agent:tool", { name: record.name, args: record.arguments, result: record.result?.slice(0, 200), error: record.error });
+              const toolPayload = {
+                correlationId: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                name: record.name,
+                arguments: record.arguments,
+                args: record.arguments,
+                result: record.result?.slice(0, 500),
+                error: record.error,
+              };
+              socket.emit("agent:tool_call", toolPayload);
+              socket.emit("agent:tool", toolPayload);
             },
             maxIterations,
             llmGetters.getDeepSeek, llmGetters.getGemini, llmGetters.getOpenAI, llmGetters.getAnthropic, llmGetters.getQwen,
@@ -688,15 +698,15 @@ export function registerChatHandler(
       // Save to conversation via conversation manager (reuse conversationId from setup)
 
       if (conversationId) {
-        addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'user', content: text, personality: personality.id });
+        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id });
         // Persist tool calls interleaved before the assistant response
         for (const tc of allToolRecords) {
           const tcSummary = tc.error
             ? `[Tool: ${tc.name}] Error: ${tc.error}`
             : `[Tool: ${tc.name}] Done`;
-          addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'tool', content: tcSummary });
+          addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: tcSummary });
         }
-        addMessage({ userId: uid, agentId: agentId || '', conversationId, role: 'assistant', content: responseText, personality: personality.id });
+        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: responseText, personality: personality.id });
         // (conversation_updated NOW emitted AFTER agent:response — see below)
 
         // Topic tracking — extract and record topics for cross-session continuity
@@ -731,7 +741,7 @@ export function registerChatHandler(
       socket.emit("agent:response", { text: responseText, agentName: personality.name, source: "chat" });
       // Re-emit conversation_updated AFTER response so the client syncs from API with complete data
       if (conversationId) {
-        socket.emit('chat:conversation_updated', { conversationId, agentId: agentId || '' });
+        socket.emit('chat:conversation_updated', { conversationId, agentId: conversationAgentId });
       }
       socket.emit("agent:status", { status: "idle" });
 

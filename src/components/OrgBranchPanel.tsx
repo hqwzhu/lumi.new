@@ -1,106 +1,264 @@
-import React, { useState, useEffect } from 'react';
-import { GitBranch, Link, Unlink, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2, GitBranch, Link, RefreshCw, Server, Shield, Unlink, XCircle } from 'lucide-react';
+
+type BranchStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 interface BranchState {
-  connected: boolean; orgId?: string; orgName?: string;
-  lastSync?: string; status?: string;
+  orgId: string | null;
+  companyUrl: string | null;
+  status: BranchStatus;
+  currentDomain: 'personal' | 'work';
+  lastSyncAt: string | null;
+  lastHeartbeatAt: string | null;
+  connected?: boolean;
+  tokenConfigured?: boolean;
+}
+
+const emptyState: BranchState = {
+  orgId: null,
+  companyUrl: null,
+  status: 'disconnected',
+  currentDomain: 'personal',
+  lastSyncAt: null,
+  lastHeartbeatAt: null,
+  connected: false,
+  tokenConfigured: false,
+};
+
+function normalizeState(payload: any): BranchState {
+  const raw = payload?.state || payload || {};
+  const status = (raw.status || (raw.connected ? 'connected' : 'disconnected')) as BranchStatus;
+  return {
+    orgId: raw.orgId || null,
+    companyUrl: raw.companyUrl || null,
+    status,
+    currentDomain: raw.currentDomain || 'personal',
+    lastSyncAt: raw.lastSyncAt || raw.lastSync || null,
+    lastHeartbeatAt: raw.lastHeartbeatAt || null,
+    connected: raw.connected ?? status === 'connected',
+    tokenConfigured: raw.tokenConfigured ?? false,
+  };
+}
+
+function statusLabel(status: BranchStatus) {
+  switch (status) {
+    case 'connected': return '已连接';
+    case 'connecting': return '连接中';
+    case 'reconnecting': return '重连中';
+    case 'error': return '连接异常';
+    default: return '未连接';
+  }
+}
+
+function formatTime(value: string | null) {
+  return value ? new Date(value).toLocaleString() : '暂无';
 }
 
 export function OrgBranchPanel() {
-  const [state, setState] = useState<BranchState>({ connected: false });
+  const [state, setState] = useState<BranchState>(emptyState);
   const [loading, setLoading] = useState(true);
-  const [orgCode, setOrgCode] = useState('');
+  const [form, setForm] = useState(() => ({
+    orgId: '',
+    companyUrl: 'http://127.0.0.1:3000',
+    token: (() => {
+      try { return localStorage.getItem('lumi_auth_token') || ''; } catch { return ''; }
+    })(),
+  }));
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
-  useEffect(() => { loadState(); }, []);
+  const connected = state.connected || state.status === 'connected';
 
   const loadState = async () => {
     try {
       const res = await fetch('/api/branch/state', { credentials: 'include' });
-      if (res.ok) setState(await res.json());
-    } catch {} finally { setLoading(false); }
+      if (!res.ok) throw new Error(`状态读取失败 (${res.status})`);
+      const next = normalizeState(await res.json());
+      setState(next);
+      setForm(prev => ({
+        ...prev,
+        orgId: prev.orgId || next.orgId || '',
+        companyUrl: prev.companyUrl || next.companyUrl || 'http://127.0.0.1:3000',
+      }));
+    } catch (err: any) {
+      setError(err.message || '状态读取失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => { loadState(); }, []);
+
   const connect = async () => {
-    if (!orgCode.trim()) return;
+    setError('');
+    setMessage('');
+    if (!form.orgId.trim() || !form.companyUrl.trim() || !form.token.trim()) {
+      setError('请填写组织 ID、公司服务地址和连接令牌');
+      return;
+    }
+
     setConnecting(true);
     try {
       const res = await fetch('/api/branch/connect', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: orgCode }), credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orgId: form.orgId.trim(),
+          companyUrl: form.companyUrl.trim(),
+          token: form.token.trim(),
+        }),
+        credentials: 'include',
       });
-      if (res.ok) {
-        const d = await res.json();
-        setState(d);
-        setOrgCode('');
-      }
-    } catch {} finally { setConnecting(false); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) throw new Error(data.error || `连接失败 (${res.status})`);
+      setState(normalizeState(data));
+      setForm(prev => ({ ...prev, token: '' }));
+      setMessage('分支终端已连接到组织服务器');
+    } catch (err: any) {
+      setError(err.message || '连接失败');
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const disconnect = async () => {
+    setError('');
+    setMessage('');
     try {
-      await fetch('/api/branch/disconnect', { method: 'POST', credentials: 'include' });
-      setState({ connected: false });
-    } catch {}
+      const res = await fetch('/api/branch/disconnect', { method: 'POST', credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `断开失败 (${res.status})`);
+      setState(normalizeState(data));
+      setMessage('已断开组织分支连接');
+    } catch (err: any) {
+      setError(err.message || '断开失败');
+    }
   };
 
   const sync = async () => {
+    setError('');
+    setMessage('');
     setSyncing(true);
     try {
       const res = await fetch('/api/branch/sync', { method: 'POST', credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setState(d);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `同步失败 (${res.status})`);
+      if (data.state) setState(normalizeState(data));
+      if (Array.isArray(data.errors) && data.errors.length > 0) {
+        setError(data.errors.join('；'));
+      } else {
+        setMessage(`同步完成：${data.synced || 0} 条工作域数据`);
       }
-    } catch {} finally { setSyncing(false); }
+    } catch (err: any) {
+      setError(err.message || '同步失败');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   if (loading) return <div className="p-6 text-white/40">Loading...</div>;
 
   return (
-    <div className="p-6 max-w-lg mx-auto space-y-6">
-      <h2 className="text-lg font-bold text-white flex items-center gap-2"><GitBranch size={20} className="text-purple-400" />分支终端</h2>
+    <div className="p-6 max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <GitBranch size={20} className="text-purple-400" />
+          分支终端
+        </h2>
+        <span className={`text-xs px-3 py-1 rounded-full border ${
+          connected
+            ? 'text-green-400 bg-green-500/10 border-green-500/20'
+            : state.status === 'error'
+              ? 'text-red-400 bg-red-500/10 border-red-500/20'
+              : 'text-white/45 bg-white/5 border-white/10'
+        }`}>
+          {statusLabel(state.status)}
+        </span>
+      </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+      <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
         <div className="flex items-center gap-2">
-          {state.connected ? (
+          {connected ? (
             <>
               <CheckCircle2 size={16} className="text-green-400" />
-              <span className="text-white text-sm">已连接到 <span className="text-purple-400">{state.orgName || state.orgId}</span></span>
+              <span className="text-white text-sm">
+                已连接到 <span className="text-purple-400">{state.orgId}</span>
+              </span>
             </>
           ) : (
             <>
               <XCircle size={16} className="text-white/30" />
-              <span className="text-white/40 text-sm">未连接到任何组织</span>
+              <span className="text-white/45 text-sm">未连接到公司组织服务器</span>
             </>
           )}
         </div>
-        {state.lastSync && <p className="text-white/25 text-xs mt-2">上次同步: {new Date(state.lastSync).toLocaleString()}</p>}
 
-        <div className="flex gap-2 mt-4">
-          {state.connected ? (
-            <>
-              <button onClick={sync} disabled={syncing} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm flex items-center gap-1">
-                <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 同步
-              </button>
-              <button onClick={disconnect} className="px-4 py-2 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg text-sm flex items-center gap-1">
-                <Unlink size={14} /> 断开
-              </button>
-            </>
-          ) : (
-            <div className="flex w-full gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-white/45">
+          <div className="bg-black/20 rounded-lg p-3">
+            <div className="flex items-center gap-1.5 text-white/60 mb-1"><Server size={12} /> 公司服务地址</div>
+            <div className="font-mono truncate">{state.companyUrl || '未配置'}</div>
+          </div>
+          <div className="bg-black/20 rounded-lg p-3">
+            <div className="flex items-center gap-1.5 text-white/60 mb-1"><Shield size={12} /> 当前域</div>
+            <div>{state.currentDomain === 'work' ? '工作域' : '个人域'}</div>
+          </div>
+          <div className="bg-black/20 rounded-lg p-3">
+            <div className="text-white/60 mb-1">上次心跳</div>
+            <div>{formatTime(state.lastHeartbeatAt)}</div>
+          </div>
+          <div className="bg-black/20 rounded-lg p-3">
+            <div className="text-white/60 mb-1">上次同步</div>
+            <div>{formatTime(state.lastSyncAt)}</div>
+          </div>
+        </div>
+
+        {message && <div className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">{message}</div>}
+        {error && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
+
+        {connected ? (
+          <div className="flex gap-2 pt-1">
+            <button onClick={sync} disabled={syncing} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm flex items-center gap-1">
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> {syncing ? '同步中...' : '同步工作数据'}
+            </button>
+            <button onClick={disconnect} className="px-4 py-2 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg text-sm flex items-center gap-1">
+              <Unlink size={14} /> 断开
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input
-                value={orgCode} onChange={e => setOrgCode(e.target.value)}
-                placeholder="输入组织邀请码..."
-                className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 text-sm"
+                value={form.companyUrl}
+                onChange={e => setForm(prev => ({ ...prev, companyUrl: e.target.value }))}
+                placeholder="公司服务地址，例如 http://192.168.1.10:3000"
+                className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 text-sm"
               />
-              <button onClick={connect} disabled={!orgCode.trim() || connecting} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-sm flex items-center gap-1 whitespace-nowrap">
+              <input
+                value={form.orgId}
+                onChange={e => setForm(prev => ({ ...prev, orgId: e.target.value }))}
+                placeholder="组织 ID"
+                className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 text-sm"
+              />
+            </div>
+            <input
+              type="password"
+              value={form.token}
+              onChange={e => setForm(prev => ({ ...prev, token: e.target.value }))}
+              placeholder="连接令牌 / 公司服务器登录 token"
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/30 text-sm"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-white/35">
+                分支终端会把工作域数据同步到公司服务器，个人域数据仍保留在本机。
+              </p>
+              <button onClick={connect} disabled={connecting} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-sm flex items-center gap-1 whitespace-nowrap">
                 <Link size={14} /> {connecting ? '连接中...' : '连接'}
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

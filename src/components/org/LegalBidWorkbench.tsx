@@ -36,7 +36,7 @@ export function LegalBidWorkbench({ onSwitchView }: { onSwitchView?: (v: any) =>
         credentials: 'include',
       });
       const data = await res.json();
-      setResult(data.response || data.message || JSON.stringify(data));
+      setResult(data.text || data.response || data.reply || data.message || data.error || JSON.stringify(data));
     } catch (e: any) {
       setResult('Error: ' + e.message);
     } finally {

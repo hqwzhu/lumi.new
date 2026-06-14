@@ -99,7 +99,7 @@ function LegalStrategyView() {
         credentials: 'include',
       });
       const data = await res.json();
-      setResult(data.response || data.message || JSON.stringify(data));
+      setResult(data.text || data.response || data.reply || data.message || data.error || JSON.stringify(data));
     } catch (e: any) {
       setResult('Error: ' + e.message);
     } finally {
@@ -155,7 +155,7 @@ function LegalVerifyView() {
         credentials: 'include',
       });
       const data = await res.json();
-      setResults([{ content: data.response || data.message || 'Verification complete' }]);
+      setResults([{ content: data.text || data.response || data.reply || data.message || data.error || 'Verification complete' }]);
     } catch (e: any) {
       setResults([{ error: e.message }]);
     } finally {
@@ -214,7 +214,7 @@ function LegalImportView() {
         credentials: 'include',
       });
       const data = await res.json();
-      setStatus(data.response || data.message || 'Import request sent');
+      setStatus(data.text || data.response || data.reply || data.message || data.error || 'Import request sent');
     } catch (e: any) {
       setStatus('Error: ' + e.message);
     } finally {

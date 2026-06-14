@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, BookOpen, Tag, Clock, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Search, BookOpen, Tag, Clock, ChevronRight, Loader2, Plus, ArrowLeft } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useT } from '../../lib/useT';
 
@@ -178,9 +178,9 @@ export function KnowledgeBaseBrowser() {
           >
             <button
               onClick={() => setSelectedArticle(null)}
-              className="text-white/40 hover:text-white mb-4 text-sm"
+              className="mb-4 flex items-center gap-2 text-sm text-white/40 hover:text-white"
             >
-              {'← '}{t.back}
+              <ArrowLeft size={14} /> {t.back || 'Back'}
             </button>
             <h3 className="text-lg font-bold text-white mb-2">{selectedArticle.title}</h3>
             <div className="flex items-center gap-2 mb-4">

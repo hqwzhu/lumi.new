@@ -5,6 +5,7 @@ import {
   Clock, Wifi, WifiOff, RefreshCw, ArrowRight,
 } from 'lucide-react';
 import { useT } from '../../lib/useT';
+import { useApp } from '../../contexts/AppContext';
 
 interface DashboardStats {
   memberCount: number;
@@ -17,6 +18,7 @@ interface DashboardStats {
 
 export function BranchDashboard() {
   const t = useT();
+  const { orgConnection } = useApp();
   const [stats, setStats] = useState<DashboardStats>({
     memberCount: 0,
     kbArticleCount: 0,
@@ -36,10 +38,15 @@ export function BranchDashboard() {
       const res = await fetch('/api/org/status', { credentials: 'include' });
       if (!res.ok) return;
       const status = await res.json();
+      let orgId = orgConnection?.orgId || status.orgId || '';
+      if (!orgId) {
+        const orgs = await fetch('/api/org/org', { credentials: 'include' }).then(r => r.ok ? r.json() : []);
+        orgId = Array.isArray(orgs) ? (orgs[0]?.id || orgs[0]?.orgId || '') : '';
+      }
 
       // Load org-specific stats
       const [membersRes, kbRes, templatesRes] = await Promise.all([
-        fetch('/api/org/org', { credentials: 'include' }).then(r => r.json()),
+        orgId ? fetch(`/api/org/org/${orgId}/members`, { credentials: 'include' }).then(r => r.ok ? r.json() : []) : Promise.resolve([]),
         fetch('/api/org/kb/articles?status=published', { credentials: 'include' }).then(r => r.json()),
         fetch('/api/org/templates?status=published', { credentials: 'include' }).then(r => r.json()),
       ]);

@@ -14,8 +14,9 @@ export function mountChatRoutes(router: Router, _jwtSecret: string, llm: {
   const asyncHandler = (fn: (req: any, res: any, next?: any) => Promise<any>) =>
     (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
 
-  router.post("/ai/chat", optionalAuth, asyncHandler(async (req, res) => {
-    const { provider = "gemini", model, messages, prompt } = req.body;
+  const handleChat = asyncHandler(async (req, res) => {
+    const { provider = "gemini", model, messages, prompt: rawPrompt, message } = req.body;
+    const prompt = rawPrompt ?? message;
     const userKey = req.headers["x-api-key"] as string;
     const userId = req.user?.uid || 'anonymous';
 
@@ -116,5 +117,8 @@ export function mountChatRoutes(router: Router, _jwtSecret: string, llm: {
       console.error("AI Proxy Error:", error);
       res.status(500).json({ error: error.message });
     }
-  }));
+  });
+
+  router.post("/ai/chat", optionalAuth, handleChat);
+  router.post("/chat", optionalAuth, handleChat);
 }

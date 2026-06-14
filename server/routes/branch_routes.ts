@@ -3,11 +3,21 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { connectToOrg, disconnectFromOrg, getBranchState, syncWorkData } from "../org/branch";
 
+function publicBranchState() {
+  const state: any = getBranchState();
+  const { connectionToken, ...safeState } = state;
+  return {
+    ...safeState,
+    connected: state.status === 'connected',
+    tokenConfigured: Boolean(connectionToken),
+  };
+}
+
 export function mountBranchConnectionRoutes(router: Router, _jwtSecret: string) {
   // Get current branch connection state
   router.get("/branch/state", (req, res) => {
     try {
-      res.json(getBranchState());
+      res.json(publicBranchState());
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -16,13 +26,15 @@ export function mountBranchConnectionRoutes(router: Router, _jwtSecret: string) 
   // Connect to org — employee joins a company
   router.post("/branch/connect", requireAuth, async (req, res) => {
     try {
-      const { orgId, companyUrl, token } = req.body;
-      if (!orgId || !companyUrl) {
-        return res.status(400).json({ error: 'orgId and companyUrl are required' });
+      const orgId = String(req.body?.orgId || '').trim();
+      const companyUrl = String(req.body?.companyUrl || '').trim().replace(/\/+$/, '');
+      const token = String(req.body?.token || '').trim();
+      if (!orgId || !companyUrl || !token) {
+        return res.status(400).json({ error: 'orgId, companyUrl and token are required' });
       }
       const result = await connectToOrg(orgId, companyUrl, token);
       if (result.success) {
-        res.json({ success: true, state: getBranchState() });
+        res.json({ success: true, state: publicBranchState() });
       } else {
         res.status(400).json(result);
       }
@@ -35,7 +47,7 @@ export function mountBranchConnectionRoutes(router: Router, _jwtSecret: string) 
   router.post("/branch/disconnect", requireAuth, (req, res) => {
     try {
       disconnectFromOrg();
-      res.json({ success: true, state: getBranchState() });
+      res.json({ success: true, state: publicBranchState() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -45,7 +57,7 @@ export function mountBranchConnectionRoutes(router: Router, _jwtSecret: string) 
   router.post("/branch/sync", requireAuth, async (req, res) => {
     try {
       const result = await syncWorkData();
-      res.json(result);
+      res.json({ ...result, state: publicBranchState() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -15,6 +15,7 @@ interface WorkflowPanelProps {
   agentStatus: 'idle' | 'thinking' | 'executing' | 'done' | 'error';
   steps: WorkflowStep[];
   t?: any;
+  placement?: 'center' | 'corner';
 }
 
 function StatusLights({ status }: { status: WorkflowPanelProps['agentStatus'] }) {
@@ -81,8 +82,13 @@ function StepIcon({ type }: { type: WorkflowStep['type'] }) {
   }
 }
 
-export default function WorkflowPanel({ visible, agentStatus, steps, t }: WorkflowPanelProps) {
+export default function WorkflowPanel({ visible, agentStatus, steps, t, placement = 'center' }: WorkflowPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const isCorner = placement === 'corner';
+  const verticalOffset = isCorner ? 20 : -20;
+  const positionClass = isCorner
+    ? 'fixed right-4 bottom-28 sm:right-6 z-[70] w-[360px] max-w-[calc(100vw-2rem)] pointer-events-auto'
+    : 'fixed top-24 left-1/2 -translate-x-1/2 z-[70] w-[380px] max-w-[calc(100vw-2rem)] pointer-events-auto';
 
   useEffect(() => {
     if (listRef.current) {
@@ -94,11 +100,11 @@ export default function WorkflowPanel({ visible, agentStatus, steps, t }: Workfl
     <AnimatePresence>
       {visible && (
         <motion.div
-          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          initial={{ opacity: 0, y: verticalOffset, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          exit={{ opacity: 0, y: verticalOffset, scale: 0.95 }}
           transition={{ duration: 0.3 }}
-          className="fixed top-24 left-1/2 -translate-x-1/2 z-[70] w-[380px] max-w-[calc(100vw-2rem)] pointer-events-auto"
+          className={positionClass}
         >
           <div className="p-4 rounded-2xl bg-black/80 backdrop-blur-2xl border border-white/10 space-y-3">
             {/* Header with breathing lights */}

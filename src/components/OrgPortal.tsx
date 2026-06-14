@@ -3,7 +3,7 @@
 // or open the Org workbench if already connected.
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Building2, Plus, Users, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Briefcase, Building2, Plus, Users, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { JoinOrgPage } from './org/JoinOrgPage';
 import { OrgHub } from './org/OrgHub';
 import { useApp } from '../contexts/AppContext';
@@ -17,9 +17,11 @@ interface OrgStatus {
 
 export function OrgPortal({ onBack }: { onBack?: () => void }) {
   const t = useT();
-  const { user, refreshUser, orgConnection } = useApp();
+  const { user, refreshUser, orgConnection, workDomain, switchDomain } = useApp();
   const [status, setStatus] = useState<OrgStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [switchingWork, setSwitchingWork] = useState(false);
+  const [switchMsg, setSwitchMsg] = useState('');
   const [mode, setMode] = useState<'select' | 'join' | 'create'>('select');
   const [orgForm, setOrgForm] = useState({ name: '', slug: '' });
   const [creating, setCreating] = useState(false);
@@ -103,6 +105,50 @@ export function OrgPortal({ onBack }: { onBack?: () => void }) {
   }
 
   // Already connected to an org — show full org workbench inline
+  if ((status?.connected || orgConnection?.orgId) && workDomain !== 'work') {
+    return (
+      <div className="flex items-center justify-center p-8 h-full">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="max-w-md w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto">
+            <Briefcase size={26} className="text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">{t.orgWorkSpace || 'Organization Workspace'}</h2>
+            <p className="text-white/45 text-sm mt-2">已加入组织。进入组织工作台前，需要先切换到工作域。</p>
+          </div>
+          {switchMsg && <p className="text-red-400 text-sm">{switchMsg}</p>}
+          <button
+            onClick={async () => {
+              setSwitchMsg('');
+              setSwitchingWork(true);
+              const result = await switchDomain('work');
+              if (result.success) {
+                setStatus({
+                  connected: true,
+                  orgId: result.connection?.orgId || orgConnection?.orgId || null,
+                  orgRole: result.connection?.orgRole || orgConnection?.orgRole || null,
+                });
+              } else {
+                setSwitchMsg(result.message || '工作域切换失败');
+              }
+              setSwitchingWork(false);
+            }}
+            disabled={switchingWork}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors"
+          >
+            {switchingWork ? <Loader2 size={18} className="animate-spin" /> : <Briefcase size={18} />}
+            {switchingWork ? '切换中...' : '切换到工作域'}
+          </button>
+          {onBack && (
+            <button onClick={onBack} className="text-white/50 text-sm hover:text-white/70">
+              {t.back || 'Back'}
+            </button>
+          )}
+        </motion.div>
+      </div>
+    );
+  }
+
   if (status?.connected || orgConnection?.orgId) {
     return <OrgHub />;
   }

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Users, UserPlus, Shield, UserMinus, Loader2, Crown, User } from 'lucide-react';
+import { Users, UserPlus, Shield, UserMinus, Loader2, Crown, User, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useT } from '../../lib/useT';
+import { useApp } from '../../contexts/AppContext';
 
 interface Member {
   id: string;
@@ -15,29 +16,39 @@ interface Member {
 
 export function OrgMembers() {
   const t = useT();
+  const { orgConnection } = useApp();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [orgId, setOrgId] = useState('');
   const [inviteUserId, setInviteUserId] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [inviting, setInviting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadOrgAndMembers();
   }, []);
 
   const loadOrgAndMembers = async () => {
+    setError('');
     try {
-      const orgsRes = await fetch('/api/org/org', { credentials: 'include' });
-      if (!orgsRes.ok) return;
-      const orgs = await orgsRes.json();
-      if (orgs.length === 0) return;
-      const orgIdVal = orgs[0].id || orgs[0].orgId;
+      let orgIdVal = orgConnection?.orgId || '';
+      if (!orgIdVal) {
+        const orgsRes = await fetch('/api/org/org', { credentials: 'include' });
+        if (!orgsRes.ok) throw new Error(`Failed to load organizations (${orgsRes.status})`);
+        const orgs = await orgsRes.json();
+        if (orgs.length === 0) throw new Error('No organization found');
+        orgIdVal = orgs[0].id || orgs[0].orgId;
+      }
       setOrgId(orgIdVal);
 
       const membersRes = await fetch(`/api/org/org/${orgIdVal}/members`, { credentials: 'include' });
-      if (membersRes.ok) setMembers(await membersRes.json());
-    } catch {} finally { setLoading(false); }
+      const data = await membersRes.json().catch(() => []);
+      if (!membersRes.ok) throw new Error(data.error || `Failed to load members (${membersRes.status})`);
+      setMembers(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally { setLoading(false); }
   };
 
   const handleInvite = async () => {
@@ -53,18 +64,29 @@ export function OrgMembers() {
       if (res.ok) {
         setInviteUserId('');
         loadOrgAndMembers();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || `Invite failed (${res.status})`);
       }
-    } catch {} finally { setInviting(false); }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally { setInviting(false); }
   };
 
   const handleRemove = async (userId: string) => {
     try {
-      await fetch(`/api/org/org/${orgId}/members/${userId}`, {
+      const res = await fetch(`/api/org/org/${orgId}/members/${userId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Remove failed (${res.status})`);
+      }
       loadOrgAndMembers();
-    } catch {}
+    } catch (err: any) {
+      setError(err.message || String(err));
+    }
   };
 
   const roleBadge = (role: string) => {
@@ -91,6 +113,13 @@ export function OrgMembers() {
         </h2>
         <p className="text-white/40 text-sm">{members.length} member(s)</p>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Invite */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-end gap-3">

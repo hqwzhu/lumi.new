@@ -53,6 +53,13 @@ export interface OrgConnection {
   connected: boolean;
 }
 
+export interface DomainSwitchResult {
+  success: boolean;
+  domain: 'personal' | 'work';
+  message?: string;
+  connection?: OrgConnection | null;
+}
+
 interface AppContextType {
   user: UserProfile | null;
   loading: boolean;
@@ -75,7 +82,7 @@ interface AppContextType {
   // Org
   orgConnection: OrgConnection | null;
   workDomain: 'personal' | 'work';
-  switchDomain: (domain: 'personal' | 'work') => void;
+  switchDomain: (domain: 'personal' | 'work') => Promise<DomainSwitchResult>;
   // Operation mode
   operationMode: 'desktop_control' | 'terminal' | 'autonomous';
   setOperationMode: (mode: 'desktop_control' | 'terminal' | 'autonomous') => void;
@@ -125,10 +132,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try { return (localStorage.getItem('lumi_work_domain') as 'personal' | 'work') || 'personal'; } catch { return 'personal'; }
   });
 
-  const switchDomain = async (domain: 'personal' | 'work') => {
+  const switchDomain = async (domain: 'personal' | 'work'): Promise<DomainSwitchResult> => {
     if (domain === 'personal') {
-      setWorkDomain('personal');
-      localStorage.setItem('lumi_work_domain', 'personal');
       try {
         const res = await fetch('/api/auth/switch-org', {
           method: 'POST',
@@ -137,15 +142,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           credentials: 'include',
         });
         if (res.ok) {
-          setOrgConnection(null);
-          localStorage.removeItem('lumi_org_connection');
+          const data = await res.json().catch(() => ({}));
+          if (data.token) localStorage.setItem('lumi_auth_token', data.token);
+          setWorkDomain('personal');
+          localStorage.setItem('lumi_work_domain', 'personal');
+          return { success: true, domain: 'personal', message: '已切换到个人域', connection: orgConnection };
         }
-      } catch {}
-      return;
+        const data = await res.json().catch(() => ({}));
+        return { success: false, domain: 'personal', message: data.error || '切换个人域失败', connection: orgConnection };
+      } catch (err: any) {
+        return { success: false, domain: 'personal', message: err.message || '切换个人域失败', connection: orgConnection };
+      }
     }
     // Switch to work: use known org or auto-discover
     let orgId = orgConnection?.orgId || null;
     let orgRole = orgConnection?.orgRole || 'member';
+    let orgName = orgConnection?.orgName || '';
     if (!orgId) {
       try {
         const orgsRes = await fetch('/api/auth/orgs', { credentials: 'include' });
@@ -154,13 +166,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (orgs && orgs.length > 0) {
             orgId = orgs[0].id;
             orgRole = orgs[0].role || 'member';
+            orgName = orgs[0].name || orgs[0].orgName || '';
           }
         }
-      } catch {}
+      } catch (err: any) {
+        return { success: false, domain: 'work', message: err.message || '组织列表读取失败', connection: orgConnection };
+      }
     }
-    if (!orgId) return;
-    setWorkDomain('work');
-    localStorage.setItem('lumi_work_domain', 'work');
+    if (!orgId) {
+      return { success: false, domain: 'work', message: '当前账号还没有可切换的组织', connection: orgConnection };
+    }
     try {
       const res = await fetch('/api/auth/switch-org', {
         method: 'POST',
@@ -168,15 +183,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ orgId, orgRole }),
         credentials: 'include',
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         if (data.orgId) {
-          const conn = { orgId: data.orgId, orgRole: data.orgRole, orgName: '', connected: true };
+          const conn = { orgId: data.orgId, orgRole: data.orgRole, orgName, connected: true };
+          if (data.token) localStorage.setItem('lumi_auth_token', data.token);
           setOrgConnection(conn);
+          setWorkDomain('work');
+          localStorage.setItem('lumi_work_domain', 'work');
           localStorage.setItem('lumi_org_connection', JSON.stringify(conn));
+          return { success: true, domain: 'work', message: '已切换到工作域', connection: conn };
         }
       }
-    } catch {}
+      return { success: false, domain: 'work', message: data.error || '切换工作域失败', connection: orgConnection };
+    } catch (err: any) {
+      return { success: false, domain: 'work', message: err.message || '切换工作域失败', connection: orgConnection };
+    }
   };
 
   const [operationMode, setOperationModeState] = useState<'desktop_control' | 'terminal' | 'autonomous'>(() => {

@@ -105,6 +105,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
   const recognition = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const agentNameRef = useRef<string>('Lumi');
+  const seenToolEventIds = useRef<Set<string>>(new Set());
 
   // Escape to close panels
   useEffect(() => {
@@ -249,19 +250,34 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       }
     };
 
-    const onTool = (data: { name: string; args: any; result?: string; error?: string }) => {
-      setMessages(prev => [...prev, {
-        id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    const onTool = (data: { correlationId?: string; name: string; args?: any; arguments?: any; result?: string; error?: string }) => {
+      const eventId = data.correlationId || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const args = data.arguments ?? data.args;
+      const status = data.error ? 'error' : (data.result !== undefined ? 'done' : 'running');
+      const nextMessage = {
+        id: eventId,
         userName: data.name,
         text: data.error || data.result || '',
         timestamp: new Date().toISOString(),
         type: 'tool',
         toolName: data.name,
-        toolArgs: data.args,
+        toolArgs: args,
         toolResult: data.result,
         toolError: data.error,
-        toolStatus: data.error ? 'error' : 'done',
-      }]);
+        toolStatus: status,
+      };
+
+      setMessages(prev => {
+        const existingIndex = prev.findIndex(m => m.id === eventId);
+        if (existingIndex !== -1) {
+          const updated = [...prev];
+          updated[existingIndex] = { ...updated[existingIndex], ...nextMessage };
+          return updated;
+        }
+        if (seenToolEventIds.current.has(eventId)) return prev;
+        seenToolEventIds.current.add(eventId);
+        return [...prev, nextMessage];
+      });
     };
 
     const onResponse = (data: { text: string; agentName: string; source?: string }) => {
@@ -338,6 +354,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     socket.on("agent:proactive", onProactive);
     socket.on("agent:chunk", onChunk);
     socket.on("agent:tool", onTool);
+    socket.on("agent:tool_call", onTool);
     socket.on("agent:response", onResponse);
     socket.on("agent:status", onStatus);
     socket.on("agent:error", onError);
@@ -347,6 +364,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       socket.off("agent:proactive", onProactive);
       socket.off("agent:chunk", onChunk);
       socket.off("agent:tool", onTool);
+      socket.off("agent:tool_call", onTool);
       socket.off("agent:response", onResponse);
       socket.off("agent:status", onStatus);
       socket.off("agent:error", onError);
@@ -792,11 +810,15 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                     <div className={`relative max-w-[85%] p-4 rounded-2xl text-xs ${
                       msg.toolStatus === 'error'
                         ? 'bg-red-500/10 border border-red-500/20 text-red-400'
+                        : msg.toolStatus === 'done'
+                          ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
                         : 'bg-amber-500/5 border border-amber-500/20 text-amber-400'
                     }`}>
                       <div className="flex items-center gap-2 mb-1">
                         {msg.toolStatus === 'error' ? (
                           <XCircle size={14} />
+                        ) : msg.toolStatus === 'done' ? (
+                          <CheckCircle2 size={14} />
                         ) : (
                           <Loader2 size={14} className="animate-spin" />
                         )}

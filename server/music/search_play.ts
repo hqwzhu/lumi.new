@@ -4,7 +4,7 @@
  * Playback via ncm-cli mpv (authenticated stream).
  * Frontend syncs state via WebSocket poller.
  */
-import { exec } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { loadEmotionalState } from '../personality/state';
 import { emitMusicAtmosphere } from '../socket/music';
 import { getFallbackScene, MusicScene } from './scene_generator';
@@ -22,32 +22,63 @@ const moodReasonMap: Record<string, string> = {
   focused: '你在专注工作呢', melancholic: '有点怀旧的感觉', warm: '感觉挺温暖的',
 };
 
-function ncmExec(args: string, timeout = 15000): Promise<string> {
-  return new Promise((resolve) => {
-    exec(`npx @music163/ncm-cli ${args} --output json`, { timeout }, (err, stdout) => {
-      resolve(stdout || '');
+function quoteCmdArg(value: string): string {
+  const raw = String(value);
+  if (/^[A-Za-z0-9_./:=@-]+$/.test(raw)) return raw;
+  return `"${raw.replace(/"/g, '\\"').replace(/([&|<>^%])/g, '^$1')}"`;
+}
+
+function runNcmCli(args: string[], timeout = 15000): string {
+  try {
+    if (process.platform === 'win32') {
+      const cmdline = ['npx.cmd', '@music163/ncm-cli', ...args, '--output', 'json']
+        .map(quoteCmdArg)
+        .join(' ');
+      return execFileSync('cmd.exe', ['/d', '/c', cmdline], {
+        timeout,
+        windowsHide: true,
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+      });
+    }
+    return execFileSync('npx', ['@music163/ncm-cli', ...args, '--output', 'json'], {
+      timeout,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
     });
-  });
+  } catch (e: any) {
+    if (e.stdout) return e.stdout;
+    console.warn('[Music] ncm-cli error:', e.stderr || e.message);
+    return '';
+  }
+}
+
+function ncmExec(args: string[], timeout = 15000): string {
+  return runNcmCli(args, timeout);
 }
 
 function tryParse(text: string): any {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-/** Fire-and-forget ncm-cli play — mpv handles audio, frontend syncs via poller */
+/** Fire-and-forget ncm-cli play: mpv handles authenticated audio playback. */
 function ncmFirePlay(encryptedId: string, originalId: string): void {
-  exec(`npx @music163/ncm-cli play --song --encrypted-id "${encryptedId}" --original-id "${originalId}" --output json`, {
-    timeout: 30000,
-  }, (err, stdout) => {
-    if (err?.killed) {
-      // OK — long-running play, daemon/mpv continue independently
-    }
+  const args = ['play', '--song', '--encrypted-id', encryptedId, '--original-id', originalId, '--output', 'json'];
+  if (process.platform === 'win32') {
+    const cmdline = ['npx.cmd', '@music163/ncm-cli', ...args].map(quoteCmdArg).join(' ');
+    execFile('cmd.exe', ['/d', '/c', cmdline], { timeout: 30000, windowsHide: true }, (err) => {
+      if (err && !(err as any).killed) console.warn('[Music] ncm-cli play error:', err.message);
+    });
+    return;
+  }
+  execFile('npx', ['@music163/ncm-cli', ...args], { timeout: 30000 }, (err) => {
+    if (err && !(err as any).killed) console.warn('[Music] ncm-cli play error:', err.message);
   });
 }
 
 /** Get encrypted ID of the user's liked-songs playlist (specialType 5) */
 async function getLikedPlaylistEncId(): Promise<string | null> {
-  const raw = await ncmExec('playlist created');
+  const raw = ncmExec(['playlist', 'created']);
   const data = tryParse(raw);
   const records = data?.data?.records || [];
   const liked = records.find((r: any) => r.specialType === 5);
@@ -57,7 +88,7 @@ async function getLikedPlaylistEncId(): Promise<string | null> {
 /** Get playable tracks from a playlist with random offset for variety */
 async function getPlaylistSongs(encId: string, limit = 50): Promise<any[]> {
   const offset = Math.floor(Math.random() * 200);
-  const raw = await ncmExec(`playlist tracks --playlistId ${encId} --limit ${limit} --offset ${offset}`);
+  const raw = ncmExec(['playlist', 'tracks', '--playlistId', encId, '--limit', String(limit), '--offset', String(offset)]);
   const data = tryParse(raw);
   const tracks = data?.data || [];
   return tracks.filter((s: any) => s.playFlag !== false);
@@ -75,7 +106,7 @@ function isRecommendRequest(text: string): boolean {
 
 /** Get playable songs from daily recommend */
 async function getDailySongs(limit = 30): Promise<any[]> {
-  const raw = await ncmExec(`recommend daily --limit ${limit}`);
+  const raw = ncmExec(['recommend', 'daily', '--limit', String(limit)]);
   const data = tryParse(raw);
   const tracks = data?.data || [];
   return tracks.filter((s: any) => s.playFlag !== false);
@@ -122,7 +153,7 @@ async function pickAndPlay(
   // Lyrics via ncm-cli (authenticated)
   let lyricsData: any[] = [];
   try {
-    const lyricRaw = await ncmExec(`song lyric --songId ${pick.id}`, 10000);
+    const lyricRaw = ncmExec(['song', 'lyric', '--songId', pick.id], 10000);
     const lyricJson = tryParse(lyricRaw);
     const lrcText = lyricJson?.data?.lyric || '';
     for (const line of lrcText.split('\n')) {
@@ -185,7 +216,7 @@ export async function searchAndPlay(
     const target = extractTarget(userText);
     if (target) {
       console.log(`[Music] User target: "${target}"`);
-      const searchRaw = await ncmExec(`search song --keyword "${target}" --limit 5`);
+      const searchRaw = ncmExec(['search', 'song', '--keyword', target, '--limit', '5']);
       const searchData = tryParse(searchRaw);
       const songs = searchData?.data?.records || [];
       if (songs.length > 0) return pickAndPlay(socket, userId, mood, songs, 'search');
@@ -201,7 +232,7 @@ export async function searchAndPlay(
 
   // Fallback: mood-based search
   const keyword = moodSearchMap[mood] || '推荐 热门';
-  const searchRaw = await ncmExec(`search song --keyword "${keyword}" --limit 5`);
+  const searchRaw = ncmExec(['search', 'song', '--keyword', keyword, '--limit', '5']);
   const searchData = tryParse(searchRaw);
   const songs = searchData?.data?.records || [];
   if (songs.length > 0) return pickAndPlay(socket, userId, mood, songs, 'search');

@@ -218,7 +218,7 @@ export function mountAuthRoutes(router: Router, jwtSecret: string, getCookieOpti
           { expiresIn: "24h" }
         );
         res.cookie("token", personalToken, getCookieOptions());
-        return res.json({ success: true, orgId: null, orgRole: null });
+        return res.json({ success: true, orgId: null, orgRole: null, token: personalToken });
       }
 
       const membership = getMember(orgId, decoded.uid);
@@ -243,6 +243,7 @@ export function mountAuthRoutes(router: Router, jwtSecret: string, getCookieOpti
         success: true,
         orgId: membership.orgId,
         orgRole: membership.role,
+        token: orgToken,
       });
     } catch (e) {
       res.status(401).json({ error: "Invalid token" });

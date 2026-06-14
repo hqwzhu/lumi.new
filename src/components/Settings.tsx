@@ -582,6 +582,9 @@ function ProactiveVoiceToggle() {
     const next = !enabled;
     setEnabled(next);
     localStorage.setItem(storageKey, String(next));
+    window.dispatchEvent(new CustomEvent('lumi:setting-changed', {
+      detail: { key: storageKey, value: next },
+    }));
   };
 
   return (
@@ -606,6 +609,9 @@ function WakeWordToggle() {
     const next = !enabled;
     setEnabled(next);
     localStorage.setItem(storageKey, String(next));
+    window.dispatchEvent(new CustomEvent('lumi:setting-changed', {
+      detail: { key: storageKey, value: next },
+    }));
   };
 
   return (

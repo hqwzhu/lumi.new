@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Package, Search, Download, Star, Clock, Tag,
-  Loader2, ExternalLink, CheckCircle,
+  Loader2, ExternalLink, CheckCircle, AlertCircle,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useT } from '../../lib/useT';
@@ -31,6 +31,7 @@ export function TemplateMarketplace() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Template | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => { loadTemplates(); }, []);
 
@@ -65,12 +66,18 @@ export function TemplateMarketplace() {
         const data = await res.json();
         setTemplates(data);
         setFiltered(data);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: 'error', text: data.error || `${t.templateLoadFailed || 'Failed to load templates'} (${res.status})` });
       }
-    } catch {} finally { setLoading(false); }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || String(err) });
+    } finally { setLoading(false); }
   };
 
   const handleInstall = async (templateId: string) => {
     setInstalling(templateId);
+    setFeedback(null);
     try {
       const res = await fetch(`/api/org/templates/${templateId}/install`, {
         method: 'POST',
@@ -81,9 +88,14 @@ export function TemplateMarketplace() {
         const data = await res.json();
         // Refresh list to update download count
         loadTemplates();
-        alert(`${t.templateAdded || 'Template added to your agents'}: ${data.template.name}`);
+        setFeedback({ type: 'success', text: `${t.templateAdded || 'Template added to your agents'}: ${data.template.name}` });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: 'error', text: data.error || `${t.templateInstallFailed || 'Template install failed'} (${res.status})` });
       }
-    } catch {} finally { setInstalling(null); }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || String(err) });
+    } finally { setInstalling(null); }
   };
 
   const categories = [...new Set(templates.map(t => t.category))];
@@ -97,6 +109,17 @@ export function TemplateMarketplace() {
         </h2>
         <p className="text-white/40 text-sm">{t.templateMarketplaceDesc || 'Discover and install agent templates from your organization'}</p>
       </div>
+
+      {feedback && (
+        <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+          feedback.type === 'success'
+            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+            : 'border-red-500/20 bg-red-500/10 text-red-300'
+        }`}>
+          {feedback.type === 'success' ? <CheckCircle size={16} className="mt-0.5 shrink-0" /> : <AlertCircle size={16} className="mt-0.5 shrink-0" />}
+          <span>{feedback.text}</span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3">
@@ -205,9 +228,9 @@ export function TemplateMarketplace() {
               {installing === selected.id ? (t.installingTemplate || 'Installing...') : (t.installTemplate || 'Install Template')}
             </Button>
 
-            {installing === selected.id && (
+            {feedback?.type === 'success' && (
               <p className="text-center text-green-400 text-xs mt-2 flex items-center justify-center gap-1">
-                <CheckCircle size={12} /> {t.templateAdded || 'Template added to your agents'}
+                <CheckCircle size={12} /> {feedback.text}
               </p>
             )}
           </motion.div>
