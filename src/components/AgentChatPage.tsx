@@ -323,7 +323,20 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
         setMessages(prev => prev.filter(m => m.id !== sid));
         streamingMsgId.current = null;
       }
-      toast.error(data.message);
+      const message = data.message || (t.failedToRouteNeuralMesh || 'Failed to route through Neural Mesh.');
+      setMessages(prev => {
+        const text = `${t.requestFailed || 'Request failed'}\n\n${message}`;
+        if (prev.some(m => m.type === 'agent' && m.text === text)) return prev;
+        return [...prev, {
+          id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          text,
+          userName: agentNameRef.current || 'Lumi',
+          timestamp: new Date().toISOString(),
+          type: 'agent',
+          source: 'error',
+        }];
+      });
+      toast.error(message);
     };
 
     // conversation_updated: only reload for non-text-chat channels (voice, etc.)
@@ -456,7 +469,16 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
         }]);
       } catch (err) {
         resolve();
-        toast.error(t.failedToRouteNeuralMesh || "Failed to route through Neural Mesh.");
+        const message = t.failedToRouteNeuralMesh || "Failed to route through Neural Mesh.";
+        setMessages(prev => [...prev, {
+          id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          text: `${t.requestFailed || 'Request failed'}\n\n${message}`,
+          userName: agentName,
+          timestamp: new Date().toISOString(),
+          type: 'agent',
+          source: 'error',
+        }]);
+        toast.error(message);
       }
     }, 5000);
   };

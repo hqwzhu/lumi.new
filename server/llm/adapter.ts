@@ -157,6 +157,10 @@ export async function runWithTools(
       let error: string | undefined;
 
       try {
+        context?.onToolStart?.({ id: tc.id, name: tc.name, arguments: tc.arguments });
+      } catch {}
+
+      try {
         result = await toolRegistry.execute(tc.name, tc.arguments, context);
       } catch (e: any) {
         result = '';
@@ -164,6 +168,7 @@ export async function runWithTools(
       }
 
       const record: ToolExecutionRecord = {
+        id: tc.id,
         name: tc.name,
         arguments: tc.arguments,
         result,

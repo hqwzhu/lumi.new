@@ -17,6 +17,8 @@ export interface ToolContext {
   isCancelled?: () => boolean;
   /** Progress callback for long-running tools (computer_use) — reports each step */
   onProgress?: (step: string) => void;
+  /** Lifecycle callback fired immediately before an LLM-selected tool begins. */
+  onToolStart?: (call: { id?: string; name: string; arguments: Record<string, any> }) => void;
   /** LLM provider getters for tools that need to call vision/text models internally */
   llmGetters?: {
     getDeepSeek: () => any;
@@ -60,6 +62,7 @@ export interface NormalizedLLMResponse {
 }
 
 export interface ToolExecutionRecord {
+  id?: string;
   name: string;
   arguments: Record<string, any>;
   result: string;

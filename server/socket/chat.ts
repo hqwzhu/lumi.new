@@ -236,16 +236,57 @@ export function registerChatHandler(
 
       const interactionId = crypto.randomUUID();
 
+      const emitToolLifecycle = (payload: {
+        correlationId: string;
+        name: string;
+        arguments: Record<string, any>;
+        args?: Record<string, any>;
+        result?: string;
+        error?: string;
+      }) => {
+        const normalized = { ...payload, args: payload.args ?? payload.arguments };
+        socket.emit("agent:tool_call", normalized);
+        socket.emit("agent:tool", normalized);
+      };
+
+      const isDirectDesktopTool = (toolName: string) => toolName.startsWith('desktop_');
+
       // ── Desktop relay: enables 15 tools (mouse/keyboard/clipboard/screenshot/etc) in chat ──
       const desktopRelay = ((toolName: string, args: Record<string, any>): Promise<string> => {
         return new Promise((resolve, reject) => {
           const cid = crypto.randomUUID();
-          const timeout = setTimeout(() => reject(new Error(`Desktop tool "${toolName}" timed out (30s)`)), 30000);
-          socket.once(`tool:desktop_result:${cid}`, (data: { output?: string; error?: string }) => {
-            clearTimeout(timeout);
-            if (data.error) reject(new Error(data.error));
-            else resolve(data.output || '');
-          });
+          const uiCid = `desktop-${cid}`;
+          const eventName = `tool:desktop_result:${cid}`;
+          let settled = false;
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+
+          emitToolLifecycle({ correlationId: uiCid, name: toolName, arguments: args });
+
+          const finishWithError = (message: string) => {
+            if (settled) return;
+            settled = true;
+            if (timeout) clearTimeout(timeout);
+            socket.off(eventName, onResult);
+            emitToolLifecycle({ correlationId: uiCid, name: toolName, arguments: args, error: message });
+            reject(new Error(message));
+          };
+
+          const onResult = (data: { output?: string; error?: string }) => {
+            if (settled) return;
+            settled = true;
+            if (timeout) clearTimeout(timeout);
+            if (data.error) {
+              emitToolLifecycle({ correlationId: uiCid, name: toolName, arguments: args, error: data.error });
+              reject(new Error(data.error));
+              return;
+            }
+            const output = data.output || '';
+            emitToolLifecycle({ correlationId: uiCid, name: toolName, arguments: args, result: output.slice(0, 500) });
+            resolve(output);
+          };
+
+          timeout = setTimeout(() => finishWithError(`Desktop tool "${toolName}" timed out (30s)`), 30000);
+          socket.once(eventName, onResult);
           socket.emit('tool:desktop_exec', { correlationId: cid, name: toolName, arguments: args });
         });
       });
@@ -374,11 +415,34 @@ export function registerChatHandler(
         if (quickResult?.matched) {
           console.log('[ChatHandler] Quick command:', text.slice(0, 60));
           if (quickResult.toolCall) {
+            const toolCid = `qc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const shouldEmitQuickTool = !isDirectDesktopTool(quickResult.toolCall.name);
+            if (shouldEmitQuickTool) {
+              emitToolLifecycle({
+                correlationId: toolCid,
+                name: quickResult.toolCall.name,
+                arguments: quickResult.toolCall.arguments,
+              });
+            }
             try {
               const tcResult = await toolRegistry.execute(quickResult.toolCall.name, quickResult.toolCall.arguments, { userId: uid, desktopRelay, llmGetters });
-              socket.emit("agent:tool_call", { correlationId: `qc-${Date.now()}`, name: quickResult.toolCall.name, arguments: quickResult.toolCall.arguments, result: tcResult?.slice(0, 500) || '' });
+              if (shouldEmitQuickTool) {
+                emitToolLifecycle({
+                  correlationId: toolCid,
+                  name: quickResult.toolCall.name,
+                  arguments: quickResult.toolCall.arguments,
+                  result: tcResult?.slice(0, 500) || '',
+                });
+              }
             } catch (toolErr: any) {
-              socket.emit("agent:tool_call", { correlationId: `qc-${Date.now()}`, name: quickResult.toolCall.name, arguments: quickResult.toolCall.arguments, error: toolErr.message });
+              if (shouldEmitQuickTool) {
+                emitToolLifecycle({
+                  correlationId: toolCid,
+                  name: quickResult.toolCall.name,
+                  arguments: quickResult.toolCall.arguments,
+                  error: toolErr.message,
+                });
+              }
             }
           }
           socket.emit("agent:response", { text: quickResult.responseText, agentName: personality.name, source: "quick_command" });
@@ -586,8 +650,9 @@ export function registerChatHandler(
             { provider: activeProvider, model: activeModel, userId: uid },
             isSanctuary ? undefined : (record) => {
               allToolRecords.push({ name: record.name, args: JSON.stringify(record.arguments || {}), result: record.result?.slice(0, 500), error: record.error });
+              if (isDirectDesktopTool(record.name)) return;
               const toolPayload = {
-                correlationId: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                correlationId: record.id || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 name: record.name,
                 arguments: record.arguments,
                 args: record.arguments,
@@ -604,6 +669,14 @@ export function registerChatHandler(
               desktopRelay,
               llmGetters,
               isCancelled: () => abortController.signal.aborted,
+              onToolStart: (call) => {
+                if (isDirectDesktopTool(call.name)) return;
+                emitToolLifecycle({
+                  correlationId: call.id || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  name: call.name,
+                  arguments: call.arguments,
+                });
+              },
               onProgress: (step: string) => {
                 socket.emit("agent:chunk", { text: `[${step}]\n`, agentName: "Lumi" });
               },
@@ -666,7 +739,17 @@ export function registerChatHandler(
               const fallback = await runWithTools(
                 messages, toolRegistry,
                 { provider: 'gemini', model: DEFAULT_MODELS.gemini, userId: uid },
-                (record) => { allToolRecords.push({ name: record.name, args: JSON.stringify(record.arguments || {}), result: record.result?.slice(0, 500), error: record.error }); },
+                (record) => {
+                  allToolRecords.push({ name: record.name, args: JSON.stringify(record.arguments || {}), result: record.result?.slice(0, 500), error: record.error });
+                  if (isDirectDesktopTool(record.name)) return;
+                  emitToolLifecycle({
+                    correlationId: record.id || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    name: record.name,
+                    arguments: record.arguments,
+                    result: record.result?.slice(0, 500),
+                    error: record.error,
+                  });
+                },
                 1,
                 llmGetters.getDeepSeek, llmGetters.getGemini, llmGetters.getOpenAI, llmGetters.getAnthropic, llmGetters.getQwen,
                 undefined,
@@ -674,6 +757,14 @@ export function registerChatHandler(
                   desktopRelay,
                   llmGetters,
                   isCancelled: () => abortController.signal.aborted,
+                  onToolStart: (call) => {
+                    if (isDirectDesktopTool(call.name)) return;
+                    emitToolLifecycle({
+                      correlationId: call.id || `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                      name: call.name,
+                      arguments: call.arguments,
+                    });
+                  },
                   ...(opModeConfig ? { toolPolicy: opModeConfig.toolPolicy } : {}),
                 },
               );
