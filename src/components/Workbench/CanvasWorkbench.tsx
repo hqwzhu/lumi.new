@@ -13,9 +13,10 @@ interface CanvasWorkbenchProps {
   onClose: () => void;
   t: any;
   user: any;
+  domain?: 'personal' | 'work';
 }
 
-export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchProps) {
+export function CanvasWorkbench({ isOpen, onClose, t, user, domain = 'personal' }: CanvasWorkbenchProps) {
   const socket = socketService.connect();
   const [sessions, setSessions] = useState<CanvasSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -29,6 +30,10 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
 
   useEffect(() => { cardsRef.current = cards; }, [cards]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  const scopedCanvasUrl = useCallback((path: string) => {
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}domain=${encodeURIComponent(domain)}`;
+  }, [domain]);
 
   const onCardsReceived = useCallback((newCards: CanvasCard[]) => {
     setCards(newCards);
@@ -46,18 +51,25 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
 
   const { submitTask, clearCards, retryFromCard } = useCanvasSocket({
     socket,
+    cards,
+    edges,
+    domain,
     onCards: onCardsReceived,
     onEdges: onEdgesReceived,
     onStatusChange,
   });
 
-  // Load session list
-  useEffect(() => {
-    fetch('/api/canvas/sessions')
+  const loadSessions = useCallback(() => {
+    fetch(scopedCanvasUrl('/api/canvas/sessions'))
       .then(r => r.json())
       .then(data => setSessions(data.sessions || []))
       .catch(() => {});
-  }, []);
+  }, [scopedCanvasUrl]);
+
+  // Load session list
+  useEffect(() => {
+    if (isOpen) loadSessions();
+  }, [isOpen, loadSessions]);
 
   // Auto-save
   const autoSave = useCallback(() => {
@@ -65,22 +77,29 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await fetch(`/api/canvas/sessions/${currentSessionId}`, {
+        const res = await fetch(scopedCanvasUrl(`/api/canvas/sessions/${currentSessionId}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cards: cardsRef.current }),
+          body: JSON.stringify({ cards: cardsRef.current, edges: edgesRef.current }),
         });
+        if (res.ok) {
+          setSessions(prev => prev.map(s =>
+            s.id === currentSessionId
+              ? { ...s, cardCount: cardsRef.current.length, updatedAt: new Date().toISOString() }
+              : s
+          ));
+        }
       } catch {}
     }, 2000);
-  }, [currentSessionId]);
+  }, [currentSessionId, scopedCanvasUrl]);
 
   useEffect(() => {
-    if (currentSessionId && cards.length > 0) autoSave();
-  }, [cards, currentSessionId, autoSave]);
+    if (currentSessionId) autoSave();
+  }, [cards, edges, currentSessionId, autoSave]);
 
   const handleNewSession = useCallback(async () => {
     try {
-      const res = await fetch('/api/canvas/sessions', {
+      const res = await fetch(scopedCanvasUrl('/api/canvas/sessions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -95,22 +114,22 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
       ]);
       setShowSessionPanel(false);
     } catch {}
-  }, []);
+  }, [scopedCanvasUrl]);
 
   const handleLoadSession = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/canvas/sessions/${id}`);
+      const res = await fetch(scopedCanvasUrl(`/api/canvas/sessions/${id}`));
       const session = await res.json();
       setCurrentSessionId(session.id);
       setCards(session.cards || []);
-      setEdges([]); // edges recomputed from cards
+      setEdges(session.edges || []);
       setShowSessionPanel(false);
     } catch {}
-  }, []);
+  }, [scopedCanvasUrl]);
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
-      await fetch(`/api/canvas/sessions/${id}`, { method: 'DELETE' });
+      await fetch(scopedCanvasUrl(`/api/canvas/sessions/${id}`), { method: 'DELETE' });
       setSessions(prev => prev.filter(s => s.id !== id));
       if (currentSessionId === id) {
         setCurrentSessionId(null);
@@ -118,7 +137,7 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
         setEdges([]);
       }
     } catch {}
-  }, [currentSessionId]);
+  }, [currentSessionId, scopedCanvasUrl]);
 
   const handleClearCanvas = useCallback(() => {
     clearCards();
@@ -127,7 +146,7 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
   const handleTaskSubmit = useCallback(async (text: string) => {
     if (!currentSessionId) {
       try {
-        const res = await fetch('/api/canvas/sessions', {
+        const res = await fetch(scopedCanvasUrl('/api/canvas/sessions'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ taskText: text, title: text.slice(0, 60) }),
@@ -138,7 +157,7 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
           { id: session.id, title: session.title, taskText: session.taskText, status: session.status, cardCount: 0, createdAt: session.createdAt, updatedAt: session.updatedAt },
           ...prev,
         ]);
-        fetch(`/api/canvas/sessions/${session.id}`, {
+        fetch(scopedCanvasUrl(`/api/canvas/sessions/${session.id}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: text.slice(0, 60), taskText: text }),
@@ -147,7 +166,7 @@ export function CanvasWorkbench({ isOpen, onClose, t, user }: CanvasWorkbenchPro
     }
 
     submitTask(text);
-  }, [currentSessionId, submitTask]);
+  }, [currentSessionId, submitTask, scopedCanvasUrl]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

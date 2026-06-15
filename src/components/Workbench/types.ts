@@ -34,7 +34,10 @@ export interface CanvasSession {
   title: string;
   taskText: string;
   cards: CanvasCard[];
+  edges?: CanvasEdge[];
   status: 'active' | 'completed' | 'archived';
+  domain?: 'personal' | 'work';
+  orgId?: string;
   createdAt: string;
   updatedAt: string;
 }

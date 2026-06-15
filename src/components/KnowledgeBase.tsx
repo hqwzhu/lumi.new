@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Loader2, Search, Sparkles, TrendingUp, Network, GitMerge, Upload, ArrowRight, File, FileText, Trash2, Download, Eye, ChevronRight } from 'lucide-react';
+import { X, Loader2, Search, Sparkles, TrendingUp, Network, GitMerge, Upload, ArrowRight, File, FileText, Trash2, Download, Eye, ChevronRight, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSocket } from '@/hooks/useSocket';
 import { NodeDetailPanel } from './NodeDetailPanel';
@@ -13,9 +13,10 @@ interface KnowledgeBaseProps {
   t?: any;
   isOpen: boolean;
   onClose: () => void;
+  domain?: 'personal' | 'work';
 }
 
-export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
+export function KnowledgeBase({ t, isOpen, onClose, domain = 'personal' }: KnowledgeBaseProps) {
   const socket = useSocket();
 
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -23,6 +24,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const [treeNodes, setTreeNodes] = useState<TreeNode3D[]>([]);
   const [branchCurves, setBranchCurves] = useState<BranchCurve3D[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [cardPos, setCardPos] = useState<{ x: number; y: number } | null>(null);
@@ -32,17 +34,36 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const [analyzing, setAnalyzing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const lastLoadErrorRef = React.useRef<string | null>(null);
+
+  const reportLoadError = useCallback((message: string) => {
+    setLoadError(message);
+    if (lastLoadErrorRef.current !== message) {
+      toast.error(message);
+      lastLoadErrorRef.current = message;
+    }
+  }, []);
+
+  const scopedMemoryUrl = useCallback((path: string) => {
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}domain=${encodeURIComponent(domain)}`;
+  }, [domain]);
 
   // Fetch data — parallel, no dependency between files and memory tree
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     const [filesRes, treeRes] = await Promise.allSettled([
       fetch('/api/files/list'),
-      fetch('/api/memory/tree'),
+      fetch(scopedMemoryUrl('/api/memory/tree')),
     ]);
+    const errors: string[] = [];
 
     if (filesRes.status === 'fulfilled' && filesRes.value.ok) {
       try { const d = await filesRes.value.json(); setFiles(d.files || []); } catch {}
+    } else {
+      const status = filesRes.status === 'fulfilled' ? filesRes.value.status : 'network';
+      errors.push(`${t.kbFilesLoadFailed || 'Files failed to load'} (${status})`);
     }
 
     if (treeRes.status === 'fulfilled' && treeRes.value.ok) {
@@ -55,10 +76,18 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
         walk(d.tree || []);
         setMemories(flat);
       } catch {}
+    } else {
+      const status = treeRes.status === 'fulfilled' ? treeRes.value.status : 'network';
+      errors.push(`${t.kbMemoriesLoadFailed || 'Memories failed to load'} (${status})`);
     }
 
+    if (errors.length > 0) {
+      reportLoadError(errors.join(' / '));
+    } else {
+      lastLoadErrorRef.current = null;
+    }
     setLoading(false);
-  }, []);
+  }, [reportLoadError, scopedMemoryUrl, t.kbFilesLoadFailed, t.kbMemoriesLoadFailed]);
 
   useEffect(() => { if (isOpen) fetchAll(); }, [isOpen, fetchAll]);
 
@@ -96,7 +125,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
     const n = treeNodes.find(nd => nd.id === id);
     if (!n || !confirm(`${t.kbDeleteConfirm || 'Delete'} "${n.title}"?`)) return;
     try {
-      const endpoint = n.type === 'file' ? `/api/files/delete/${encodeURIComponent(id)}` : `/api/memories/${id}`;
+      const endpoint = n.type === 'file' ? `/api/files/delete/${encodeURIComponent(id)}` : scopedMemoryUrl(`/api/memories/${id}`);
       const res = await fetch(endpoint, { method: 'DELETE' });
       if (res.ok) { toast.success(t.kbDeleted || 'Deleted'); fetchAll(); setSelectedId(null); }
       else toast.error(t.kbDeleteFailed || 'Delete failed');
@@ -131,7 +160,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
 
   const handleToggleProtect = async (id: string) => {
     try {
-      const res = await fetch(`/api/memory/${id}/protect`, { method: 'PUT' });
+      const res = await fetch(scopedMemoryUrl(`/api/memory/${id}/protect`), { method: 'PUT' });
       const d = await res.json();
       toast.success(d.protected ? (t.kbProtected || 'Protected') : (t.kbUnprotected || 'Unprotected'));
       fetchAll();
@@ -140,7 +169,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
 
   const handleChangeTier = async (id: string, tier: string, confirmed = false) => {
     try {
-      const res = await fetch(`/api/memory/${id}/tier`, {
+      const res = await fetch(scopedMemoryUrl(`/api/memory/${id}/tier`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier, confirmed }),
       });
@@ -158,7 +187,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
 
   const handleEdit = async (id: string, content: string) => {
     try {
-      const res = await fetch(`/api/memories/${id}`, {
+      const res = await fetch(scopedMemoryUrl(`/api/memories/${id}`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
@@ -190,7 +219,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const handleAutoOrganize = async () => {
     setOrganizing(true);
     try {
-      const res = await fetch('/api/memory/auto-organize', { method: 'POST' });
+      const res = await fetch(scopedMemoryUrl('/api/memory/auto-organize'), { method: 'POST' });
       const d = await res.json();
       if (d.success) { toast.success(`Organized: ${d.branchesCreated} branches, ${d.memoriesAssigned} memories`); fetchAll(); }
       else toast.info(d.reason || (t.kbNotEnoughMemories || 'Not enough unorganized memories'));
@@ -201,7 +230,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const handleConsolidate = async () => {
     setConsolidating(true);
     try {
-      const res = await fetch('/api/memory/consolidate', { method: 'POST' });
+      const res = await fetch(scopedMemoryUrl('/api/memory/consolidate'), { method: 'POST' });
       const d = await res.json();
       if (d.success) { toast.success(t.kbConsolidated || 'Consolidated'); fetchAll(); }
       else toast.info(d.reason || `${t.kbNeedMemories || 'Need'} ${d.threshold || 10} ${t.kbMem || 'memories'}`);
@@ -212,7 +241,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const handleSelfReflect = async () => {
     setReflecting(true);
     try {
-      const res = await fetch('/api/memory/self-reflect', { method: 'POST' });
+      const res = await fetch(scopedMemoryUrl('/api/memory/self-reflect'), { method: 'POST' });
       const d = await res.json();
       if (d.success) { toast.success(t.kbReflectionComplete || 'Reflection complete'); fetchAll(); }
       else toast.info(d.reason || 'Nothing to reflect on');
@@ -223,7 +252,7 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
   const handleAnalyze = async () => {
     setAnalyzing(true);
     try {
-      const res = await fetch('/api/memory/analyze-behavior', { method: 'POST' });
+      const res = await fetch(scopedMemoryUrl('/api/memory/analyze-behavior'), { method: 'POST' });
       const d = await res.json();
       if (d.patternsFound > 0) { toast.success(`${t.kbPatternsFound || 'Found'} ${d.patternsFound} ${t.kbPatterns || 'patterns'}`); fetchAll(); }
       else toast.info(t.kbNoNewPatterns || 'No new patterns');
@@ -283,6 +312,13 @@ export function KnowledgeBase({ t, isOpen, onClose }: KnowledgeBaseProps) {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {loadError && !loading && (
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 flex max-w-[520px] items-center gap-2 rounded-xl border border-red-400/20 bg-red-950/70 px-4 py-2 text-xs text-red-100 shadow-2xl backdrop-blur-xl">
+              <AlertCircle size={14} className="shrink-0 text-red-300" />
+              <span className="truncate">{loadError}</span>
+            </div>
+          )}
 
           {/* Left: File browser */}
           <div className="absolute left-6 top-32 bottom-20 z-20 flex flex-col">

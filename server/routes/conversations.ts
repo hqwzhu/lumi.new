@@ -8,16 +8,38 @@ import {
   getActiveConversation,
 } from "../conversation/manager";
 
+type ConversationScope = { domain: 'personal' | 'work'; orgId: string };
+
+function getConversationScope(req: any): ConversationScope {
+  const requestedDomain = (req.query?.domain ?? req.body?.domain) as string | undefined;
+  if (requestedDomain === 'personal') return { domain: 'personal', orgId: '' };
+  if (requestedDomain === 'work') return { domain: 'work', orgId: req.user?.orgId || '' };
+  return {
+    domain: req.user?.orgId ? 'work' : 'personal',
+    orgId: req.user?.orgId || '',
+  };
+}
+
+function conversationMatchesScope(conv: any, scope: ConversationScope): boolean {
+  if (scope.domain === 'work') return !!scope.orgId && conv.orgId === scope.orgId;
+  return !conv.orgId || conv.orgId === '';
+}
+
 export function mountConversationRoutes(router: Router, _jwtSecret: string) {
   router.get("/conversations", requireAuth, (req, res) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
-    const conversations = getUserConversations(req.user!.uid, limit, offset, req.user!.orgId);
+    const scope = getConversationScope(req);
+    if (scope.domain === 'work' && !scope.orgId) return res.json({ conversations: [], limit, offset });
+    const conversations = getUserConversations(req.user!.uid, limit, offset, scope.domain, scope.orgId);
     res.json({ conversations, limit, offset });
   });
 
   router.get("/conversations/active", requireAuth, (req, res) => {
-    const activeConversation = getActiveConversation(req.user!.uid, undefined, req.user!.orgId);
+    const scope = getConversationScope(req);
+    if (scope.domain === 'work' && !scope.orgId) return res.json({ activeConversation: null });
+    const agentId = (req.query.agentId as string | undefined) || undefined;
+    const activeConversation = getActiveConversation(req.user!.uid, agentId, scope.domain, scope.orgId);
     res.json({ activeConversation });
   });
 
@@ -28,11 +50,8 @@ export function mountConversationRoutes(router: Router, _jwtSecret: string) {
     // Ownership check
     if (conv.userId !== req.user!.uid) return res.status(403).json({ error: "Unauthorized" });
     // Domain check
-    if (req.user!.orgId) {
-      if (conv.orgId !== req.user!.orgId) return res.status(403).json({ error: "Unauthorized" });
-    } else {
-      if (conv.orgId && conv.orgId !== '') return res.status(403).json({ error: "Unauthorized" });
-    }
+    const scope = getConversationScope(req);
+    if (!conversationMatchesScope(conv, scope)) return res.status(403).json({ error: "Unauthorized" });
     const limit = parseInt(req.query.limit as string) || 50;
     const messages = getMessages(req.params.id, limit);
     res.json({ messages });
@@ -43,11 +62,8 @@ export function mountConversationRoutes(router: Router, _jwtSecret: string) {
     const conv = (db.conversations || []).find((c: any) => c.id === req.params.id);
     if (!conv) return res.status(404).json({ error: "Conversation not found" });
     if (conv.userId !== req.user!.uid) return res.status(403).json({ error: "Unauthorized" });
-    if (req.user!.orgId) {
-      if (conv.orgId !== req.user!.orgId) return res.status(403).json({ error: "Unauthorized" });
-    } else {
-      if (conv.orgId && conv.orgId !== '') return res.status(403).json({ error: "Unauthorized" });
-    }
+    const scope = getConversationScope(req);
+    if (!conversationMatchesScope(conv, scope)) return res.status(403).json({ error: "Unauthorized" });
     const { summary } = req.body || {};
     const closed = closeConversation(req.params.id, summary);
     if (!closed) return res.status(404).json({ error: "Conversation not found" });
@@ -61,11 +77,8 @@ export function mountConversationRoutes(router: Router, _jwtSecret: string) {
     if (!conv) return res.status(404).json({ error: "Not found" });
     // Ownership + domain check
     if (conv.userId !== req.user!.uid) return res.status(403).json({ error: "Unauthorized" });
-    if (req.user!.orgId) {
-      if (conv.orgId !== req.user!.orgId) return res.status(403).json({ error: "Unauthorized" });
-    } else {
-      if (conv.orgId && conv.orgId !== '') return res.status(403).json({ error: "Unauthorized" });
-    }
+    const scope = getConversationScope(req);
+    if (!conversationMatchesScope(conv, scope)) return res.status(403).json({ error: "Unauthorized" });
     const idx = db.conversations.findIndex((c: any) => c.id === req.params.id);
     db.conversations.splice(idx, 1);
     if (db.interactions) {

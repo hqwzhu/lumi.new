@@ -4,12 +4,15 @@ import { CanvasCard, CanvasEdge } from './types';
 
 interface UseCanvasSocketOptions {
   socket: Socket | null;
+  cards?: CanvasCard[];
+  edges?: CanvasEdge[];
+  domain?: 'personal' | 'work';
   onCards: (cards: CanvasCard[]) => void;
   onEdges: (edges: CanvasEdge[]) => void;
   onStatusChange: (status: string) => void;
 }
 
-export function useCanvasSocket({ socket, onCards, onEdges, onStatusChange }: UseCanvasSocketOptions) {
+export function useCanvasSocket({ socket, cards, edges, domain = 'personal', onCards, onEdges, onStatusChange }: UseCanvasSocketOptions) {
   const cardsRef = useRef<CanvasCard[]>([]);
   const edgesRef = useRef<CanvasEdge[]>([]);
   const groupIdRef = useRef<string>('');
@@ -18,6 +21,9 @@ export function useCanvasSocket({ socket, onCards, onEdges, onStatusChange }: Us
   const lastCardIdRef = useRef<string | null>(null);
   const rafRef = useRef<number>(0);
   const pendingRef = useRef(false);
+
+  useEffect(() => { if (cards) cardsRef.current = cards; }, [cards]);
+  useEffect(() => { if (edges) edgesRef.current = edges; }, [edges]);
 
   const flush = useCallback(() => {
     if (!pendingRef.current) return;
@@ -249,7 +255,7 @@ export function useCanvasSocket({ socket, onCards, onEdges, onStatusChange }: Us
       personalityId: 'lumi',
       category: undefined,
       agentId: undefined,
-      domain: undefined,
+      domain,
       orgId: null,
       source: 'canvas',
     });
@@ -319,10 +325,11 @@ export function useCanvasSocket({ socket, onCards, onEdges, onStatusChange }: Us
         text: userRequest.text,
         history: [],
         personalityId: 'lumi',
+        domain,
         source: 'canvas',
       });
     }
-  }, [socket, updateCard, scheduleFlush]);
+  }, [socket, updateCard, scheduleFlush, domain]);
 
   return { submitTask, clearCards, retryFromCard };
 }

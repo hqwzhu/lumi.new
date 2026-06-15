@@ -121,6 +121,10 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
   const agentName = agent?.name || (t.lumiEssence || 'Lumi Essence');
   const agentCategory = agent?.category || (t.friend || 'friend');
   const agentId = agent?.id || 'lumi';
+  const scopedConversationUrl = useCallback((path: string) => {
+    const separator = path.includes('?') ? '&' : '?';
+    return `${path}${separator}domain=${encodeURIComponent(workDomain)}&agentId=${encodeURIComponent(agentId)}`;
+  }, [workDomain, agentId]);
 
   const isFounder = agentId === 'founder' || agentCategory === 'founder' || agentName.includes('Founder') || agentName.includes('创始人');
 
@@ -161,6 +165,56 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     } catch {}
   }, []);
 
+  const normalizePersistedMessages = useCallback((rawMessages: any[]) => {
+    const normalized: any[] = [];
+    const userName = user?.displayName || user?.username || (t.chatUserFallback || 'User');
+    const agentDisplayName = agentNameRef.current || 'Lumi';
+
+    const pushMessage = (message: any) => {
+      if (!message.text || !String(message.text).trim()) return;
+      normalized.push(message);
+    };
+
+    rawMessages.forEach((m: any, index: number) => {
+      const baseId = m.id || `persisted-${index}`;
+      const timestamp = m.timestamp || m.createdAt || new Date().toISOString();
+      const role = m.role || '';
+      const userText = role === 'assistant' ? '' : (m.content || m.message || '');
+      const assistantText = role === 'assistant'
+        ? (m.content || m.message || m.response || '')
+        : (m.response || '');
+
+      if (role !== 'tool' && userText) {
+        pushMessage({
+          id: `${baseId}-user`,
+          text: userText,
+          userName,
+          timestamp,
+          type: 'user',
+          mode: m.mode,
+        });
+      }
+
+      if (assistantText) {
+        pushMessage({
+          id: `${baseId}-assistant`,
+          text: assistantText,
+          userName: agentDisplayName,
+          timestamp,
+          type: 'agent',
+          mode: m.mode,
+        });
+      }
+    });
+
+    const seen = new Set<string>();
+    return normalized.filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  }, [user?.displayName, user?.username, t.chatUserFallback]);
+
   useEffect(() => {
     if (!agentId || isFounder) return;
 
@@ -176,39 +230,20 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
     initialLoadDoneRef.current = true;
 
     // Load the single active conversation messages
-    fetch('/api/conversations/active')
+    fetch(scopedConversationUrl('/api/conversations/active'))
         .then(r => r.json())
         .then(async (data) => {
           const conv = data.activeConversation;
           if (conv) {
-            const msgRes = await fetch(`/api/conversations/${conv.id}/messages?limit=500`);
+            const msgRes = await fetch(scopedConversationUrl(`/api/conversations/${conv.id}/messages?limit=500`));
             const msgData = await msgRes.json();
             if (msgData.messages && Array.isArray(msgData.messages)) {
-              // Filter tool messages and keep only user + assistant
-              const cleaned = msgData.messages.filter((m: any) =>
-                m.role === 'user' || m.role === 'assistant'
-              );
-              // Deduplicate by content+role to prevent double-display if a message
-              // was already added locally before the API response arrived
-              const seen = new Set<string>();
-              const deduped = cleaned.filter((m: any) => {
-                const key = `${m.role}|${(m.content || m.message || '').slice(0, 80)}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-              });
-              setMessages(deduped.map((m: any) => ({
-                id: m.id || crypto.randomUUID(),
-                text: m.content || m.message || m.response || '',
-                userName: m.role === 'assistant' ? (agentNameRef.current || 'Lumi') : (user?.displayName || user?.username || (t.chatUserFallback || 'User')),
-                timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
-                type: m.role === 'assistant' ? 'agent' : 'user',
-              })));
+              setMessages(normalizePersistedMessages(msgData.messages));
             }
           }
         })
         .catch(() => {});
-  }, [agentId, isFounder]);
+  }, [agentId, isFounder, normalizePersistedMessages, scopedConversationUrl]);
 
   const streamingMsgId = useRef<string | null>(null);
   const textChatActiveRef = useRef(false);
@@ -347,18 +382,11 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       if (textChatActiveRef.current) return;
       if (!streamingMsgId.current) return;
       streamingMsgId.current = null;
-      fetch(`/api/conversations/${data.conversationId}/messages?limit=100`)
+      fetch(scopedConversationUrl(`/api/conversations/${data.conversationId}/messages?limit=100`))
         .then(r => r.json())
         .then(result => {
           if (result.messages && Array.isArray(result.messages)) {
-            setMessages(result.messages.map((m: any) => ({
-              id: m.id || crypto.randomUUID(),
-              text: m.content || m.message || m.response || '',
-              userName: m.role === 'assistant' ? (agentNameRef.current || 'Lumi') : (user?.displayName || 'You'),
-              timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
-              type: m.role === 'assistant' ? 'agent' : 'user',
-              mode: m.mode,
-            })));
+            setMessages(normalizePersistedMessages(result.messages));
           }
         })
         .catch(() => {});
@@ -384,7 +412,7 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
       socket.off("chat:conversation_updated", onConversationUpdated);
       stop();
     };
-  }, [speak, stop, isFounder, socket]);
+  }, [speak, stop, isFounder, socket, normalizePersistedMessages, scopedConversationUrl]);
 
   useEffect(() => {
     // Scroll to bottom when messages change (new messages, initial load)
@@ -765,10 +793,14 @@ export function AgentChatPage({ t, user, agent, isOpen, onClose, prefillMessage,
                 onClick={async () => {
                   setMessages([]);
                   try {
-                    const r = await fetch('/api/conversations/active');
+                    const r = await fetch(scopedConversationUrl('/api/conversations/active'));
                     const d = await r.json();
                     if (d.activeConversation) {
-                      await fetch(`/api/conversations/${d.activeConversation.id}/close`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ summary: '' }) });
+                      await fetch(scopedConversationUrl(`/api/conversations/${d.activeConversation.id}/close`), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ summary: '', domain: workDomain }),
+                      });
                     }
                   } catch {}
                 }}

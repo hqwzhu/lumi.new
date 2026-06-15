@@ -3022,6 +3022,7 @@ export function DesktopUI({
           t={t}
           isOpen={knowledgeOpen}
           onClose={() => setKnowledgeOpen(false)}
+          domain={workDomain}
         />
       </Suspense>
 
@@ -3042,6 +3043,7 @@ export function DesktopUI({
         onClose={() => setCanvasOpen(false)}
         t={t}
         user={user}
+        domain={workDomain}
       />
 
       {/* Org Workbench fullscreen overlay — available to all logged-in users */}

@@ -12,6 +12,26 @@ import { consolidateEpisodic, selfReflect, ConsolidationContext } from "../memor
 import { buildNarrativeChain } from "../memory/narrative";
 import { makeLLMCall } from "../llm/providers";
 
+function getAuthToken(req: any): string | undefined {
+  let token = req.cookies?.token;
+  if (!token && req.headers.authorization?.startsWith('Bearer ')) {
+    token = req.headers.authorization.slice(7);
+  }
+  return token;
+}
+
+type MemoryScope = { domain: 'personal' | 'work'; orgId: string };
+
+function getMemoryScope(req: any, decoded: any): MemoryScope {
+  const requestedDomain = (req.query?.domain ?? req.body?.domain) as string | undefined;
+  if (requestedDomain === 'personal') return { domain: 'personal', orgId: '' };
+  if (requestedDomain === 'work') return { domain: 'work', orgId: decoded.orgId || '' };
+  return {
+    domain: decoded.orgId ? 'work' : 'personal',
+    orgId: decoded.orgId || '',
+  };
+}
+
 export function mountMemoryRoutes(
   router: Router,
   jwtSecret: string,
@@ -25,7 +45,7 @@ export function mountMemoryRoutes(
 ) {
   // Memory CRUD
   router.get("/memories", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -33,6 +53,7 @@ export function mountMemoryRoutes(
       const type = req.query.type as string | undefined;
       const search = req.query.search as string | undefined;
       const limit = parseInt(req.query.limit as string) || 50;
+      const scope = getMemoryScope(req, decoded);
 
       const memories = queryMemories({
         userId: decoded.uid,
@@ -40,8 +61,8 @@ export function mountMemoryRoutes(
         query: search,
         limit,
         minConfidence: 0,
-        domain: decoded.orgId ? 'work' : 'personal',
-        orgId: decoded.orgId || '',
+        domain: scope.domain,
+        orgId: scope.orgId,
       });
       res.json(memories);
     } catch (e) {
@@ -50,12 +71,13 @@ export function mountMemoryRoutes(
   });
 
   router.post("/memories", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
       const { type, content, keywords, confidence } = req.body;
+      const scope = getMemoryScope(req, decoded);
 
       if (!type || !content) {
         return res.status(400).json({ error: "type and content are required" });
@@ -68,7 +90,7 @@ export function mountMemoryRoutes(
         keywords: keywords || [],
         confidence: confidence || 0.5,
         sourceInteractionId: 'manual',
-      }, { domain: decoded.orgId ? 'work' : 'personal', orgId: decoded.orgId || '' });
+      }, { domain: scope.domain, orgId: scope.orgId });
       broadcastMemoryChange(decoded.uid, 'added', memory.id);
       res.json(memory);
     } catch (e: any) {
@@ -77,7 +99,7 @@ export function mountMemoryRoutes(
   });
 
   router.put("/memories/:id", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -109,7 +131,7 @@ export function mountMemoryRoutes(
   });
 
   router.delete("/memories/:id", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -135,7 +157,7 @@ export function mountMemoryRoutes(
   // Behavioral analysis
   router.post("/memory/analyze-behavior", (req, res) => {
     try {
-      const token = req.cookies.token;
+      const token = getAuthToken(req);
       let uid = 'anonymous';
       if (token) {
         try { const decoded: any = jwt.verify(token, jwtSecret); uid = decoded.uid; } catch {}
@@ -149,7 +171,7 @@ export function mountMemoryRoutes(
 
   // Reminders CRUD
   router.get("/reminders", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
@@ -162,7 +184,7 @@ export function mountMemoryRoutes(
   });
 
   router.post("/reminders", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
@@ -183,7 +205,7 @@ export function mountMemoryRoutes(
   });
 
   router.put("/reminders/:id", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
@@ -212,7 +234,7 @@ export function mountMemoryRoutes(
   });
 
   router.delete("/reminders/:id", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
@@ -232,18 +254,18 @@ export function mountMemoryRoutes(
   // Memory consolidation
   router.post("/memory/consolidate", async (req, res) => {
     try {
-      const token = req.cookies.token;
+      const token = getAuthToken(req);
       if (!token) return res.status(401).json({ error: 'Authentication required' });
-      let userId = 'anonymous';
-      try { const decoded: any = jwt.verify(token, jwtSecret); userId = decoded.uid; } catch { return res.status(401).json({ error: 'Invalid token' }); }
-      let orgIdCtx = '', domainCtx = 'personal';
-      try { const dc: any = jwt.verify(token, jwtSecret); orgIdCtx = dc.orgId || ''; domainCtx = dc.orgId ? 'work' : 'personal'; } catch {}
+      let decoded: any;
+      try { decoded = jwt.verify(token, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
+      const userId = decoded.uid || 'anonymous';
+      const scope = getMemoryScope(req, decoded);
       const ctx: ConsolidationContext = {
         userId,
         provider: (req.body.provider as any) || 'deepseek',
         model: (req.body.model as any) || 'deepseek-chat',
-        domain: domainCtx,
-        orgId: orgIdCtx,
+        domain: scope.domain,
+        orgId: scope.orgId,
       };
       const minCount = Number(req.body.minCount) || 10;
       const result = await consolidateEpisodic(
@@ -254,7 +276,7 @@ export function mountMemoryRoutes(
         broadcastMemoryChange(userId, 'updated', result.id);
         res.json({ success: true, memory: result });
       } else {
-        const unconsolidated = getUnconsolidatedEpisodic(userId);
+        const unconsolidated = getUnconsolidatedEpisodic(userId, scope.domain, scope.orgId);
         res.json({ success: false, reason: 'Not enough unconsolidated episodic memories', unconsolidatedCount: unconsolidated.length, threshold: minCount });
       }
     } catch (err: any) {
@@ -265,18 +287,18 @@ export function mountMemoryRoutes(
   // Self-reflection
   router.post("/memory/self-reflect", async (req, res) => {
     try {
-      const token = req.cookies.token;
+      const token = getAuthToken(req);
       if (!token) return res.status(401).json({ error: 'Authentication required' });
-      let userId = 'anonymous';
-      try { const decoded: any = jwt.verify(token, jwtSecret); userId = decoded.uid; } catch { return res.status(401).json({ error: 'Invalid token' }); }
-      let orgIdCtx2 = '', domainCtx2 = 'personal';
-      try { const dc: any = jwt.verify(token, jwtSecret); orgIdCtx2 = dc.orgId || ''; domainCtx2 = dc.orgId ? 'work' : 'personal'; } catch {}
+      let decoded: any;
+      try { decoded = jwt.verify(token, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
+      const userId = decoded.uid || 'anonymous';
+      const scope = getMemoryScope(req, decoded);
       const ctx: ConsolidationContext = {
         userId,
         provider: (req.body.provider as any) || 'deepseek',
         model: (req.body.model as any) || 'deepseek-chat',
-        domain: domainCtx2,
-        orgId: orgIdCtx2,
+        domain: scope.domain,
+        orgId: scope.orgId,
       };
       const result = await selfReflect(
         ctx,
@@ -295,31 +317,35 @@ export function mountMemoryRoutes(
 
   // Growth timeline
   router.get("/memory/growth", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: 'Authentication required' });
-    let userId = 'anonymous'; let orgId = ''; let domain = 'personal';
-    try { const decoded: any = jwt.verify(token, jwtSecret); userId = decoded.uid; orgId = decoded.orgId || ''; domain = decoded.orgId ? 'work' : 'personal'; } catch { return res.status(401).json({ error: 'Invalid token' }); }
-    const growth = queryMemories({ userId, tier: 'growth', limit: Number(req.query.limit) || 50, minConfidence: 0.4, domain, orgId });
-    const core = queryMemories({ userId, tier: 'core_identity', limit: 10, domain, orgId });
+    let decoded: any;
+    try { decoded = jwt.verify(token, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
+    const userId = decoded.uid || 'anonymous';
+    const scope = getMemoryScope(req, decoded);
+    const growth = queryMemories({ userId, tier: 'growth', limit: Number(req.query.limit) || 50, minConfidence: 0.4, domain: scope.domain, orgId: scope.orgId });
+    const core = queryMemories({ userId, tier: 'core_identity', limit: 10, domain: scope.domain, orgId: scope.orgId });
     res.json({ growth, coreIdentity: core });
   });
 
   // Memory tiers
   router.get("/memory/tiers", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: 'Authentication required' });
-    let userId = 'anonymous'; let orgId = ''; let domain = 'personal';
-    try { const decoded: any = jwt.verify(token, jwtSecret); userId = decoded.uid; orgId = decoded.orgId || ''; domain = decoded.orgId ? 'work' : 'personal'; } catch { return res.status(401).json({ error: 'Invalid token' }); }
+    let decoded: any;
+    try { decoded = jwt.verify(token, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
+    const userId = decoded.uid || 'anonymous';
+    const scope = getMemoryScope(req, decoded);
     const tiers: Record<string, any[]> = {};
     for (const tier of ['core_identity', 'growth', 'internalized', 'episodic']) {
-      tiers[tier] = queryMemories({ userId, tier: tier as any, limit: Number(req.query.limit) || 100, domain, orgId });
+      tiers[tier] = queryMemories({ userId, tier: tier as any, limit: Number(req.query.limit) || 100, domain: scope.domain, orgId: scope.orgId });
     }
     res.json({ tiers });
   });
 
   // Change memory tier
   router.put("/memory/:id/tier", (req, res) => {
-    const token2 = req.cookies.token;
+    const token2 = getAuthToken(req);
     if (!token2) return res.status(401).json({ error: 'Authentication required' });
     let decoded: any;
     try { decoded = jwt.verify(token2, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
@@ -328,9 +354,8 @@ export function mountMemoryRoutes(
     if (!tier || !validTiers.includes(tier)) {
       return res.status(400).json({ error: `Invalid tier. Must be one of: ${validTiers.join(', ')}` });
     }
-    const orgId = decoded.orgId || '';
-    const domain = decoded.orgId ? 'work' : 'personal';
-    const all = queryMemories({ limit: 9999, domain, orgId });
+    const scope = getMemoryScope(req, decoded);
+    const all = queryMemories({ userId: decoded.uid, limit: 9999, domain: scope.domain, orgId: scope.orgId });
     const mem = all.find(m => m.id === req.params.id);
     if (!mem) return res.status(404).json({ error: 'Memory not found' });
 
@@ -348,7 +373,7 @@ export function mountMemoryRoutes(
         confidence: tier === 'core_identity' ? 1.0 : mem.confidence,
         sourceInteractionId: mem.sourceInteractionId,
       },
-      { tier, perspective: mem.perspective, importance: tier === 'core_identity' ? Math.max(0.9, mem.importance) : mem.importance, parentId: mem.parentId },
+      { tier, perspective: mem.perspective, importance: tier === 'core_identity' ? Math.max(0.9, mem.importance) : mem.importance, parentId: mem.parentId, agentId: mem.agentId, nodeType: mem.nodeType, domain: mem.domain || scope.domain, orgId: mem.orgId || scope.orgId },
     );
     broadcastMemoryChange(mem.userId, 'updated', updated.id);
     res.json({ success: true, memory: updated });
@@ -356,13 +381,14 @@ export function mountMemoryRoutes(
 
   // Memory tree — returns full nested tree structure
   router.get("/memory/tree", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
       const agentId = (req.query.agentId as string) || '';
       const before = (req.query.before as string) || undefined;
-      const all = queryMemories({ userId: decoded.uid, agentId, limit: 9999, minConfidence: 0, before, domain: decoded.orgId ? 'work' : 'personal', orgId: decoded.orgId || '' });
+      const scope = getMemoryScope(req, decoded);
+      const all = queryMemories({ userId: decoded.uid, agentId, limit: 9999, minConfidence: 0, before, domain: scope.domain, orgId: scope.orgId });
       const tree = buildTree(all);
       res.json({ tree });
     } catch (e: any) {
@@ -372,7 +398,7 @@ export function mountMemoryRoutes(
 
   // Move a memory node to a new parent
   router.put("/memory/:id/move", (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
@@ -391,24 +417,34 @@ export function mountMemoryRoutes(
 
   // LLM auto-organize — group unorganized leaf memories into topic branches
   router.post("/memory/auto-organize", async (req, res) => {
-    const token = req.cookies.token;
+    const token = getAuthToken(req);
     if (!token) return res.status(401).json({ error: "Unauthorized" });
     try {
       const decoded: any = jwt.verify(token, jwtSecret);
       const userId = decoded.uid;
+      const scope = getMemoryScope(req, decoded);
       const db = readDB();
       const allMemories: any[] = db.memories || [];
 
       // Find unorganized leaf memories (no parent, not branches)
       const orphans = allMemories.filter(
-        (m: any) => m.userId === userId && m.nodeType !== 'branch' && !m.parentId,
+        (m: any) =>
+          m.userId === userId &&
+          m.nodeType !== 'branch' &&
+          !m.parentId &&
+          (m.domain || 'personal') === scope.domain &&
+          (m.orgId || '') === scope.orgId,
       );
 
       if (orphans.length < 3) {
         return res.json({ success: false, reason: 'Need at least 3 unorganized memories', count: orphans.length });
       }
 
-      const tree = buildTree(allMemories.filter((m: any) => m.userId === userId));
+      const tree = buildTree(allMemories.filter((m: any) =>
+        m.userId === userId &&
+        (m.domain || 'personal') === scope.domain &&
+        (m.orgId || '') === scope.orgId,
+      ));
       const treeSummary = tree.map(t => `- ${t.node.content} [${t.node.nodeType}] (${t.children.length} children)`).join('\n');
 
       const prompt = `You are organizing a memory tree. Below is the current tree structure and a list of unorganized memories.
@@ -455,7 +491,7 @@ Rules:
       let assignedCount = 0;
       for (const branch of plan.branches) {
         if (!branch.title || !Array.isArray(branch.memoryIds)) continue;
-        const branchNode = ensureBranch(userId, branch.title, '', null);
+        const branchNode = ensureBranch(userId, branch.title, '', null, { domain: scope.domain, orgId: scope.orgId });
         branchCount++;
         for (const memId of branch.memoryIds) {
           const ok = moveNode(memId, branchNode.id);
@@ -472,13 +508,12 @@ Rules:
 
   // Toggle core identity protection
   router.put("/memory/:id/protect", (req, res) => {
-    const token3 = req.cookies.token;
+    const token3 = getAuthToken(req);
     if (!token3) return res.status(401).json({ error: 'Authentication required' });
     let decoded3: any;
     try { decoded3 = jwt.verify(token3, jwtSecret); } catch { return res.status(401).json({ error: 'Invalid token' }); }
-    const orgId3 = decoded3.orgId || '';
-    const domain3 = decoded3.orgId ? 'work' : 'personal';
-    const all = queryMemories({ limit: 9999, domain: domain3, orgId: orgId3 });
+    const scope = getMemoryScope(req, decoded3);
+    const all = queryMemories({ userId: decoded3.uid, limit: 9999, domain: scope.domain, orgId: scope.orgId });
     const mem = all.find(m => m.id === req.params.id);
     if (!mem) return res.status(404).json({ error: 'Memory not found' });
 
@@ -486,7 +521,7 @@ Rules:
       removeMemory(mem.id);
       const updated = addMemory(
         { userId: mem.userId, type: mem.type, content: mem.content, keywords: mem.keywords, confidence: mem.confidence, sourceInteractionId: mem.sourceInteractionId },
-        { tier: 'growth', perspective: mem.perspective, importance: Math.min(0.8, mem.importance), parentId: mem.parentId },
+        { tier: 'growth', perspective: mem.perspective, importance: Math.min(0.8, mem.importance), parentId: mem.parentId, agentId: mem.agentId, nodeType: mem.nodeType, domain: mem.domain || scope.domain, orgId: mem.orgId || scope.orgId },
       );
       broadcastMemoryChange(mem.userId, 'updated', updated.id);
       res.json({ success: true, protected: false, memory: updated });
@@ -494,7 +529,7 @@ Rules:
       removeMemory(mem.id);
       const updated = addMemory(
         { userId: mem.userId, type: mem.type, content: mem.content, keywords: mem.keywords, confidence: 1.0, sourceInteractionId: mem.sourceInteractionId },
-        { tier: 'core_identity', perspective: mem.perspective, importance: Math.max(0.9, mem.importance), parentId: mem.parentId },
+        { tier: 'core_identity', perspective: mem.perspective, importance: Math.max(0.9, mem.importance), parentId: mem.parentId, agentId: mem.agentId, nodeType: mem.nodeType, domain: mem.domain || scope.domain, orgId: mem.orgId || scope.orgId },
       );
       broadcastMemoryChange(mem.userId, 'updated', updated.id);
       res.json({ success: true, protected: true, memory: updated });
@@ -504,7 +539,7 @@ Rules:
   // Memory narrative chain — weave related memories into a chronological story
   router.get("/memory/narrative", async (req, res) => {
     try {
-      const token = req.cookies.token;
+      const token = getAuthToken(req);
       if (!token) return res.status(401).json({ error: "Unauthorized" });
       const decoded: any = jwt.verify(token, jwtSecret);
       const userId = decoded.uid;
@@ -529,10 +564,11 @@ Rules:
   // Memory timeline — returns chronological memory timeline view grouped by date
   router.get("/memory/timeline", (req, res) => {
     try {
-      const token = req.cookies.token;
+      const token = getAuthToken(req);
       if (!token) return res.status(401).json({ error: "Unauthorized" });
       const decoded: any = jwt.verify(token, jwtSecret);
       const userId = decoded.uid;
+      const scope = getMemoryScope(req, decoded);
 
       const start = (req.query.start as string) || undefined;
       const end = (req.query.end as string) || undefined;
@@ -544,8 +580,8 @@ Rules:
         before: end,
         limit,
         minConfidence: 0,
-        domain: decoded.orgId ? 'work' : 'personal',
-        orgId: decoded.orgId || '',
+        domain: scope.domain,
+        orgId: scope.orgId,
       });
 
       // Group by date

@@ -110,9 +110,12 @@ export function ensureBranch(
   title: string,
   agentId: string = '',
   parentId: string | null = null,
+  scope: { domain?: string; orgId?: string } = {},
 ): Memory {
   const db = readDB();
   if (!db.memories) db.memories = [];
+  const domain = scope.domain || 'personal';
+  const orgId = scope.orgId || '';
 
   // Check if branch already exists
   const existing = db.memories.find(
@@ -120,7 +123,9 @@ export function ensureBranch(
       m.userId === userId &&
       m.nodeType === 'branch' &&
       m.content === title &&
-      m.parentId === parentId,
+      m.parentId === parentId &&
+      (m.domain || 'personal') === domain &&
+      (m.orgId || '') === orgId,
   );
   if (existing) return existing;
 
@@ -144,6 +149,8 @@ export function ensureBranch(
     parentId,
     agentId,
     nodeType: 'branch',
+    domain,
+    orgId,
   };
   db.memories.push(branch);
   writeDB(db);

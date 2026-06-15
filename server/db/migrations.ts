@@ -62,9 +62,14 @@ export const MIGRATIONS: Migration[] = [
   )` },
   { version: 32, description: 'Create canvas_sessions table', sql: `CREATE TABLE IF NOT EXISTS canvas_sessions (
     id TEXT PRIMARY KEY, userId TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
-    cards TEXT NOT NULL DEFAULT '[]', taskText TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'active', createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+    cards TEXT NOT NULL DEFAULT '[]', edges TEXT NOT NULL DEFAULT '[]',
+    taskText TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+    domain TEXT DEFAULT 'personal', orgId TEXT DEFAULT '',
+    createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
   )` },
+  { version: 33, description: 'Add edges to canvas_sessions', sql: `ALTER TABLE canvas_sessions ADD COLUMN edges TEXT NOT NULL DEFAULT '[]'` },
+  { version: 34, description: 'Add domain to canvas_sessions', sql: `ALTER TABLE canvas_sessions ADD COLUMN domain TEXT DEFAULT 'personal'` },
+  { version: 35, description: 'Add orgId to canvas_sessions', sql: `ALTER TABLE canvas_sessions ADD COLUMN orgId TEXT DEFAULT ''` },
 ];
 
 // Indexes are safe to create repeatedly
@@ -83,6 +88,8 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_agents_user_domain ON agents(userId, domain)`,
   `CREATE INDEX IF NOT EXISTS idx_agents_org ON agents(orgId, userId)`,
   `CREATE INDEX IF NOT EXISTS idx_canvas_sessions_user ON canvas_sessions(userId)`,
+  `CREATE INDEX IF NOT EXISTS idx_canvas_sessions_user_domain ON canvas_sessions(userId, domain)`,
+  `CREATE INDEX IF NOT EXISTS idx_canvas_sessions_org ON canvas_sessions(orgId, userId)`,
 ];
 
 export function runMigrations(db: sqlite3.Database): Promise<number[]> {

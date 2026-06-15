@@ -39,12 +39,34 @@ export interface MessageRecord {
   timestamp: string;
 }
 
+function resolveConversationScope(domainOrOrgId?: string, orgIdMaybe?: string): { domain: string; orgId: string } {
+  if (domainOrOrgId === 'personal') return { domain: 'personal', orgId: '' };
+  if (domainOrOrgId === 'work') return { domain: 'work', orgId: orgIdMaybe || '' };
+  return {
+    domain: domainOrOrgId ? 'work' : 'personal',
+    orgId: domainOrOrgId || '',
+  };
+}
+
+function conversationMatchesScope(c: Conversation, domainOrOrgId?: string, orgIdMaybe?: string): boolean {
+  const scope = resolveConversationScope(domainOrOrgId, orgIdMaybe);
+  if (scope.domain === 'work') {
+    return !!scope.orgId && c.orgId === scope.orgId;
+  }
+  return !c.orgId || c.orgId === '';
+}
+
 export function getOrCreateActiveConversation(userId: string, agentId?: string, domain?: string, orgId?: string): Conversation {
   const db = readDB();
   if (!db.conversations) db.conversations = [];
+  const scope = resolveConversationScope(domain, orgId);
 
   const active = db.conversations.find(
-    (c: Conversation) => c.userId === userId && c.agentId === agentId && c.status === 'active'
+    (c: Conversation) =>
+      c.userId === userId &&
+      c.agentId === (agentId || '') &&
+      c.status === 'active' &&
+      conversationMatchesScope(c, scope.domain, scope.orgId)
   );
   if (active) return active;
 
@@ -60,8 +82,8 @@ export function getOrCreateActiveConversation(userId: string, agentId?: string, 
     messageCount: 0,
     lastActiveAt: now,
     createdAt: now,
-    domain: domain || 'personal',
-    orgId: orgId || '',
+    domain: scope.domain,
+    orgId: scope.orgId,
   };
   db.conversations.push(conv);
   writeDB(db);
@@ -81,7 +103,7 @@ export function closeConversation(conversationId: string, summary?: string, user
   return conv;
 }
 
-export function getActiveConversation(userId: string, agentId?: string, orgId?: string): Conversation | null {
+export function getActiveConversation(userId: string, agentId?: string, domainOrOrgId?: string, orgIdMaybe?: string): Conversation | null {
   const db = readDB();
   if (!db.conversations) return null;
   return db.conversations.find(
@@ -89,8 +111,7 @@ export function getActiveConversation(userId: string, agentId?: string, orgId?: 
       if (c.userId !== userId) return false;
       if (agentId && c.agentId !== agentId) return false;
       if (c.status !== 'active') return false;
-      if (orgId) return c.orgId === orgId;
-      return (!c.orgId || c.orgId === '');
+      return conversationMatchesScope(c, domainOrOrgId, orgIdMaybe);
     }
   ) || null;
 }
@@ -105,14 +126,13 @@ export function setConversationMode(conversationId: string, mode: string): void 
   writeDB(db);
 }
 
-export function getUserConversations(userId: string, limit = 20, offset = 0, orgId?: string): Conversation[] {
+export function getUserConversations(userId: string, limit = 20, offset = 0, domainOrOrgId?: string, orgIdMaybe?: string): Conversation[] {
   const db = readDB();
   if (!db.conversations) return [];
   return db.conversations
     .filter((c: Conversation) => {
       if (c.userId !== userId) return false;
-      if (orgId) return c.orgId === orgId;
-      return (!c.orgId || c.orgId === '');
+      return conversationMatchesScope(c, domainOrOrgId, orgIdMaybe);
     })
     .sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime())
     .slice(offset, offset + limit);

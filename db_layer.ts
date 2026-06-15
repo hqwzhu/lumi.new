@@ -98,6 +98,23 @@ function migrateSchema(): Promise<void> {
     // Add domain + orgId to conversations for personal/work isolation
     db!.run("ALTER TABLE conversations ADD COLUMN domain TEXT DEFAULT 'personal'", onAlter);
     db!.run("ALTER TABLE conversations ADD COLUMN orgId TEXT DEFAULT ''", onAlter);
+    // Canvas sessions: persisted workbench state with personal/work isolation
+    db!.run(`CREATE TABLE IF NOT EXISTS canvas_sessions (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      cards TEXT NOT NULL DEFAULT '[]',
+      edges TEXT NOT NULL DEFAULT '[]',
+      taskText TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      domain TEXT DEFAULT 'personal',
+      orgId TEXT DEFAULT '',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`, onAlter);
+    db!.run("ALTER TABLE canvas_sessions ADD COLUMN edges TEXT NOT NULL DEFAULT '[]'", onAlter);
+    db!.run("ALTER TABLE canvas_sessions ADD COLUMN domain TEXT DEFAULT 'personal'", onAlter);
+    db!.run("ALTER TABLE canvas_sessions ADD COLUMN orgId TEXT DEFAULT ''", onAlter);
     // Add memories table if it doesn't exist
     db!.run(`CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
@@ -169,6 +186,8 @@ function migrateSchema(): Promise<void> {
     db!.run(`CREATE INDEX IF NOT EXISTS idx_agents_org ON agents(orgId, userId)`, onAlter);
     db!.run(`CREATE INDEX IF NOT EXISTS idx_conversations_user_domain ON conversations(userId, domain)`, onAlter);
     db!.run(`CREATE INDEX IF NOT EXISTS idx_conversations_org ON conversations(orgId, userId)`, onAlter);
+    db!.run(`CREATE INDEX IF NOT EXISTS idx_canvas_sessions_user_domain ON canvas_sessions(userId, domain)`, onAlter);
+    db!.run(`CREATE INDEX IF NOT EXISTS idx_canvas_sessions_org ON canvas_sessions(orgId, userId)`, onAlter);
     resolve();
   });
 }
@@ -400,8 +419,11 @@ function createTables(): Promise<void> {
       userId TEXT NOT NULL,
       title TEXT NOT NULL DEFAULT '',
       cards TEXT NOT NULL DEFAULT '[]',
+      edges TEXT NOT NULL DEFAULT '[]',
       taskText TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'active',
+      domain TEXT DEFAULT 'personal',
+      orgId TEXT DEFAULT '',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     )`);
@@ -483,6 +505,7 @@ async function loadMemoryDB(): Promise<void> {
 
   // Load conversations
   const conversationsRaw = await query<any>('SELECT * FROM conversations');
+  const canvasSessionsRaw = await query<any>('SELECT * FROM canvas_sessions');
 
   // Load token usage
   const tokenUsageRaw = await query<any>('SELECT * FROM token_usage');
@@ -557,6 +580,7 @@ async function loadMemoryDB(): Promise<void> {
     memories: (memories || []).map((m: any) => ({ ...m, domain: m.domain || 'personal', orgId: m.orgId || '' })),
     reminders: remindersRaw || [],
     conversations: (conversationsRaw || []).map((c: any) => ({ ...c, domain: c.domain || 'personal', orgId: c.orgId || '' })),
+    canvas_sessions: (canvasSessionsRaw || []).map((s: any) => ({ ...s, edges: s.edges || '[]', domain: s.domain || 'personal', orgId: s.orgId || '' })),
     settings: settings || [],
     voiceProfiles: voiceProfiles || {},
     tokenUsage: tokenUsageRaw || [],
@@ -719,6 +743,12 @@ async function persistMemoryDB(): Promise<void> {
       createSQL: `CREATE TABLE _temp_conversations (id TEXT PRIMARY KEY, userId TEXT NOT NULL, agentId TEXT, title TEXT DEFAULT '', status TEXT DEFAULT 'active', summary TEXT DEFAULT '', messageCount INTEGER DEFAULT 0, lastActiveAt TEXT NOT NULL, createdAt TEXT NOT NULL, domain TEXT DEFAULT 'personal', orgId TEXT DEFAULT '')`,
       insertSQL: `INSERT INTO _temp_conversations (id, userId, agentId, title, status, summary, messageCount, lastActiveAt, createdAt, domain, orgId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       rows: () => (memoryDB.conversations || []).map((c: any) => [c.id, c.userId, c.agentId || '', c.title || '', c.status || 'active', c.summary || '', c.messageCount || 0, c.lastActiveAt, c.createdAt, c.domain || 'personal', c.orgId || '']),
+    },
+    {
+      name: 'canvas_sessions',
+      createSQL: `CREATE TABLE _temp_canvas_sessions (id TEXT PRIMARY KEY, userId TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', cards TEXT NOT NULL DEFAULT '[]', edges TEXT NOT NULL DEFAULT '[]', taskText TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', domain TEXT DEFAULT 'personal', orgId TEXT DEFAULT '', createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+      insertSQL: `INSERT INTO _temp_canvas_sessions (id, userId, title, cards, edges, taskText, status, domain, orgId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      rows: () => (memoryDB.canvas_sessions || []).map((s: any) => [s.id, s.userId, s.title || '', s.cards || '[]', s.edges || '[]', s.taskText || '', s.status || 'active', s.domain || 'personal', s.orgId || '', s.createdAt, s.updatedAt]),
     },
     {
       name: 'marketplace_skills',

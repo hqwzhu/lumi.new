@@ -70,14 +70,19 @@ export function registerChatHandler(
     const uid = userIdFn(socket);
     console.log('[ChatHandler] uid:', uid, 'agentId:', agentId, 'source:', source);
 
-    // Extract org context from the authenticated socket token (not client payload)
+    // Work context comes from the authenticated socket token. Personal mode can be
+    // explicitly requested by the desktop UI to avoid a stale org token leaking into
+    // local personal conversations.
     let resolvedDomain = 'personal';
     let resolvedOrgId = '';
     try {
       const authToken = socket.handshake?.auth?.token;
       if (authToken) {
         const decoded: any = jwt.verify(authToken, JWT_SECRET);
-        if (decoded.orgId) {
+        if (data.domain === 'personal') {
+          resolvedDomain = 'personal';
+          resolvedOrgId = '';
+        } else if (decoded.orgId) {
           resolvedDomain = 'work';
           resolvedOrgId = decoded.orgId;
         }
@@ -113,6 +118,8 @@ export function registerChatHandler(
         userId: uid, query: text, limit: 5, minConfidence: 0.4, agentId: agentMemoryFilter,
         retrievalTypeWeights: retrievalBiases.typeWeights,
         retrievalPerspectiveWeights: retrievalBiases.perspectiveWeights,
+        domain: resolvedDomain,
+        orgId: resolvedOrgId,
         useVector: true,
       });
       console.log('[ChatHandler] relevantMemories (vector):', relevantMemories.length);
@@ -447,11 +454,11 @@ export function registerChatHandler(
           }
           socket.emit("agent:response", { text: quickResult.responseText, agentName: personality.name, source: "quick_command" });
           if (conversationId) {
-            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id });
+            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id, domain: resolvedDomain, orgId: resolvedOrgId });
             if (quickResult.toolCall) {
-              addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: `[Tool: ${quickResult.toolCall.name}] Called` });
+              addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: `[Tool: ${quickResult.toolCall.name}] Called`, domain: resolvedDomain, orgId: resolvedOrgId });
             }
-            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id });
+            addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: quickResult.responseText, personality: personality.id, domain: resolvedDomain, orgId: resolvedOrgId });
             socket.emit('chat:conversation_updated', { conversationId, agentId: conversationAgentId });
           }
           socket.emit("agent:status", { status: "idle" });
@@ -789,15 +796,15 @@ export function registerChatHandler(
       // Save to conversation via conversation manager (reuse conversationId from setup)
 
       if (conversationId) {
-        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id });
+        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'user', content: text, personality: personality.id, domain: resolvedDomain, orgId: resolvedOrgId });
         // Persist tool calls interleaved before the assistant response
         for (const tc of allToolRecords) {
           const tcSummary = tc.error
             ? `[Tool: ${tc.name}] Error: ${tc.error}`
             : `[Tool: ${tc.name}] Done`;
-          addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: tcSummary });
+          addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'tool', content: tcSummary, domain: resolvedDomain, orgId: resolvedOrgId });
         }
-        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: responseText, personality: personality.id });
+        addMessage({ userId: uid, agentId: conversationAgentId, conversationId, role: 'assistant', content: responseText, personality: personality.id, domain: resolvedDomain, orgId: resolvedOrgId });
         // (conversation_updated NOW emitted AFTER agent:response — see below)
 
         // Topic tracking — extract and record topics for cross-session continuity
