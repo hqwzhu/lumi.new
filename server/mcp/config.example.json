@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ],
+      "enabled": true,
+      "source": "external",
+      "transport": "stdio",
+      "description": "Filesystem access for the Lumi workspace."
+    },
+    "sqlite": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sqlite",
+        "data/lumi.db"
+      ],
+      "enabled": false,
+      "source": "external",
+      "transport": "stdio",
+      "description": "SQLite access for the local Lumi database."
+    },
+    "git": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-git",
+        "."
+      ],
+      "enabled": false,
+      "source": "external",
+      "transport": "stdio",
+      "description": "Git repository inspection tools."
+    }
+  },
+  "remoteDevices": {}
+}

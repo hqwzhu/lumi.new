@@ -215,7 +215,7 @@ export function MCPSettings({ t }: { t?: any }) {
         <div className="p-10 bg-white/5 rounded-[2rem] border border-white/5 text-center">
           <Wrench size={32} className="text-white/45 mx-auto mb-4" />
           <p className="text-white/40 font-bold uppercase tracking-widest text-sm">{t?.mcpNoServers || 'No MCP servers configured'}</p>
-          <p className="text-white/45 text-xs mt-2">{t?.mcpAddHint || 'Add servers to server/mcp/config.json'}</p>
+          <p className="text-white/45 text-xs mt-2">{t?.mcpAddHint || 'Add servers from this settings panel'}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -432,7 +432,7 @@ export function MCPSettings({ t }: { t?: any }) {
           <h4 className="text-sm font-bold uppercase tracking-tight text-white">{t?.mcpAvailableServers || 'Available MCP Servers'}</h4>
         </div>
         <p className="text-xs text-white/55 leading-relaxed">
-          {t?.mcpInstallHint || 'Install MCP servers via npm or edit server/mcp/config.json to add new servers.'}
+          {t?.mcpInstallHint || 'Install MCP servers via npm or add them from this settings panel.'}
         </p>
       </div>
     </div>

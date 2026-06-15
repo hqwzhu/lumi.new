@@ -13,6 +13,7 @@ db.json
 *.tar.gz
 # Runtime data (auto-created by the application)
 data/
+server/mcp/config.json
 gpt-sovits-src/
 src-tauri/target/
 .claude/

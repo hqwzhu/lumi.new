@@ -8,8 +8,7 @@ import { attachMcpWebSocket, connectMcpServerToRemote } from "../mcp/ws_transpor
 import { attachLAPWebSocket } from "../lap/transport";
 import { toolRegistry } from "../tools/registry";
 import { deviceRegistry } from "../devices";
-import fs from "fs";
-import path from "path";
+import { mcpManager } from "../mcp/client";
 
 export function setupMcpServer(
   app: express.Express,
@@ -37,19 +36,15 @@ export function setupMcpServer(
   attachLAPWebSocket(server);
   console.log('[LAP] Agent protocol ready at /lap');
 
-  // Connect to remote devices
-  const mcpConfigPath = path.join(__dirname, 'mcp', 'config.json');
-  if (fs.existsSync(mcpConfigPath)) {
-    const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
-    if (mcpConfig.remoteDevices) {
-      for (const [name, url] of Object.entries(mcpConfig.remoteDevices)) {
-        console.log(`[MCP Server] Connecting to remote device: ${name}`);
-        connectMcpServerToRemote(
-          url as string, lumiMcp, name as string,
-          () => { deviceRegistry.registerMcpDevice(name as string, 'mcp_remote', { audio: true, video: false, spatial: false, haptic: false, holographic: false }); },
-          () => { deviceRegistry.unregisterMcpDevice(name as string); },
-        );
-      }
-    }
+  // Connect to remote devices from the runtime MCP config in the user data dir.
+  const remoteDevices = mcpManager.getRemoteDevices();
+  for (const [name, url] of Object.entries(remoteDevices)) {
+    if (!url) continue;
+    console.log(`[MCP Server] Connecting to remote device: ${name}`);
+    connectMcpServerToRemote(
+      url as string, lumiMcp, name as string,
+      () => { deviceRegistry.registerMcpDevice(name as string, 'mcp_remote', { audio: true, video: false, spatial: false, haptic: false, holographic: false }); },
+      () => { deviceRegistry.unregisterMcpDevice(name as string); },
+    );
   }
 }

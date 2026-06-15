@@ -1,11 +1,6 @@
 import { Router } from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { requireAuth } from "../middleware/auth";
 import { mcpManager, getMCPConfig, updateMCPConfig } from "../mcp";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function mountMcpRoutes(router: Router) {
   router.get("/mcp", requireAuth, (_req, res) => {
@@ -47,9 +42,7 @@ export function mountMcpRoutes(router: Router) {
 
   router.get("/remote-devices", (_req, res) => {
     try {
-      const configPath = path.join(__dirname, '..', 'mcp', 'config.json');
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      res.json({ devices: config.remoteDevices || {} });
+      res.json({ devices: mcpManager.getRemoteDevices() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -61,11 +54,8 @@ export function mountMcpRoutes(router: Router) {
       if (!devices || typeof devices !== 'object') {
         return res.status(400).json({ error: 'Invalid devices config' });
       }
-      const configPath = path.join(__dirname, '..', 'mcp', 'config.json');
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      config.remoteDevices = devices;
-      fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-      res.json({ success: true, devices: config.remoteDevices });
+      mcpManager.saveRemoteDevices(devices);
+      res.json({ success: true, devices });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

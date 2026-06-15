@@ -51,7 +51,45 @@ interface ConnectedServer {
   config: MCPServerConfig;
 }
 
+interface MCPConfigFile {
+  mcpServers?: Record<string, MCPServerConfig>;
+  remoteDevices?: Record<string, string>;
+  [key: string]: any;
+}
+
 const SKILLS_DIR = path.join(os.homedir(), 'lumi_skills');
+const DEFAULT_RUNTIME_CONFIG = 'mcp_config.json';
+const LEGACY_REPO_CONFIG = path.join(process.cwd(), 'server', 'mcp', 'config.json');
+const FACTORY_CONFIG = path.join(process.cwd(), 'server', 'mcp', 'config.example.json');
+const DEFAULT_CONFIG_FILE: MCPConfigFile = {
+  mcpServers: {
+    filesystem: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+      enabled: true,
+      source: 'external',
+      transport: 'stdio',
+      description: 'Filesystem access for the Lumi workspace.',
+    },
+    sqlite: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sqlite', 'data/lumi.db'],
+      enabled: false,
+      source: 'external',
+      transport: 'stdio',
+      description: 'SQLite access for the local Lumi database.',
+    },
+    git: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-git', '.'],
+      enabled: false,
+      source: 'external',
+      transport: 'stdio',
+      description: 'Git repository inspection tools.',
+    },
+  },
+  remoteDevices: {},
+};
 
 function expandPortablePath(value: string): string {
   if (value === '~') return os.homedir();
@@ -79,34 +117,82 @@ interface CrashTracker {
 class MCPClientManager {
   private servers: Map<string, ConnectedServer> = new Map();
   private configPath: string;
+  private legacyConfigPath: string;
+  private factoryConfigPath: string;
   private crashTrackers: Map<string, CrashTracker> = new Map();
   private closingSet: Set<string> = new Set();
   private onServerRecovered?: (name: string, tools: MCPToolDef[]) => void;
   private ioRef?: any;
 
   constructor(configPath?: string) {
-    this.configPath = configPath || path.join(process.cwd(), 'server', 'mcp', 'config.json');
+    this.configPath = configPath || getDataPath(DEFAULT_RUNTIME_CONFIG);
+    this.legacyConfigPath = LEGACY_REPO_CONFIG;
+    this.factoryConfigPath = FACTORY_CONFIG;
   }
 
   setSocketIO(io: any): void { this.ioRef = io; }
   setOnServerRecovered(cb: (name: string, tools: MCPToolDef[]) => void): void { this.onServerRecovered = cb; }
 
   getConfig(): Record<string, MCPServerConfig> {
+    return this.readConfigFile().mcpServers || {};
+  }
+
+  saveConfig(servers: Record<string, MCPServerConfig>): void {
+    const config = this.readConfigFile();
+    config.mcpServers = servers;
+    this.saveConfigFile(config);
+  }
+
+  getRemoteDevices(): Record<string, string> {
+    return this.readConfigFile().remoteDevices || {};
+  }
+
+  saveRemoteDevices(devices: Record<string, string>): void {
+    const config = this.readConfigFile();
+    config.remoteDevices = devices;
+    this.saveConfigFile(config);
+  }
+
+  getConfigPath(): string {
+    return this.configPath;
+  }
+
+  private readConfigFile(): MCPConfigFile {
+    this.ensureRuntimeConfig();
     try {
       let raw = fs.readFileSync(this.configPath, 'utf-8');
       // Replace static relative paths with actual data directory paths
       raw = raw.replace(/"data\/lumi\.db"/g, JSON.stringify(getDataPath('lumi.db')));
       const parsed = JSON.parse(raw);
-      return parsed.mcpServers || {};
+      if (parsed.mcpServers && typeof parsed.mcpServers === 'object') return parsed;
+      return { mcpServers: parsed && typeof parsed === 'object' ? parsed : {} };
     } catch {
-      return {};
+      return { mcpServers: {} };
     }
   }
 
-  saveConfig(servers: Record<string, MCPServerConfig>): void {
+  private saveConfigFile(config: MCPConfigFile): void {
     const dir = path.dirname(this.configPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(this.configPath, `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`);
+    fs.writeFileSync(this.configPath, `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  private ensureRuntimeConfig(): void {
+    if (fs.existsSync(this.configPath)) return;
+
+    const dir = path.dirname(this.configPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const seedPath = fs.existsSync(this.legacyConfigPath)
+      ? this.legacyConfigPath
+      : this.factoryConfigPath;
+
+    if (seedPath && fs.existsSync(seedPath)) {
+      fs.copyFileSync(seedPath, this.configPath);
+      return;
+    }
+
+    this.saveConfigFile(DEFAULT_CONFIG_FILE);
   }
 
   // ── Local skill directory management ──
