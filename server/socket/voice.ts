@@ -22,6 +22,7 @@ import { recordTokenUsage } from "../llm/token_tracker";
 import { getOperationModeConfig, parseStoredOperationMode } from "../cognition/operation_modes";
 import { shouldAllowToolUseForTurn, shouldExposeAgentWork } from "../cognition/tool_intent";
 import { updatePresence } from "../biometrics/presence";
+import { formatClientSelfPrompt } from "../client/self_model";
 
 interface AudioSession {
   sttSession: ReturnType<typeof createStreamingSession> | null;
@@ -270,7 +271,8 @@ async function processVoiceInput(
     ? toolVoiceOverlay
     : baseVoiceOverlay + '\n\n## Interaction Mode\nThis turn is chat-only. Do not call tools, operate the desktop, assemble a team, or claim that you are taking actions. Answer naturally unless the user gives an explicit command.';
 
-  const voiceSystemPrompt = fullPersonalityPrompt + interactionOverlay + opModeOverlay + topicContext;
+  const clientSelfPrompt = '\n\n' + formatClientSelfPrompt(session.userId);
+  const voiceSystemPrompt = fullPersonalityPrompt + interactionOverlay + opModeOverlay + clientSelfPrompt + topicContext;
 
   const DEFAULT_MODELS: Record<string, string> = {
     deepseek: 'deepseek-v4-pro', qwen: 'qwen-plus', openai: 'gpt-4o',

@@ -11,6 +11,7 @@ import { toolRegistry } from "../tools/registry";
 import { runWithTools } from "../llm/adapter";
 import { getOperationModeConfig, parseStoredOperationMode } from "../cognition/operation_modes";
 import { shouldAllowToolUseForTurn, shouldExposeAgentWork } from "../cognition/tool_intent";
+import { formatClientSelfPrompt } from "../client/self_model";
 import { queryMemories, queryMemoriesVector, addMemory, addReminder, extractMemories } from "../memory";
 import { loadEmotionalState, saveEmotionalState, updateEmotionalState, updateEmotionalStateWithHIM, loadHIMState, saveHIMState, generateContextualGreeting, vectorMemoryBias } from "../personality/state";
 import { buildModeOverlay } from "../personality/engine";
@@ -316,6 +317,7 @@ export function registerChatHandler(
       const opModeConfig = getOperationModeConfig(operationMode);
       const allowToolUseForTurn = shouldAllowToolUseForTurn(text, source, operationMode);
       const exposeAgentWork = shouldExposeAgentWork(text);
+      effectiveSystemPrompt += '\n\n' + formatClientSelfPrompt(uid);
       console.log('[ChatHandler] tool gate:', allowToolUseForTurn ? 'enabled' : 'chat-only', 'operationMode:', operationMode);
       if (opModeConfig && (allowToolUseForTurn || operationMode === 'music' || operationMode === 'meeting')) {
         effectiveSystemPrompt += '\n\n' + opModeConfig.promptOverlay;

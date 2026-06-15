@@ -110,7 +110,7 @@ import { Settings } from './Settings';
 import { TerminalWindow } from './Terminal';
 import { MusicMoodLayer } from './MusicMoodLayer';
 import { MusicCenter } from './MusicCenter';
-import { useMusicVisible } from '../hooks/useMusicPlayer';
+import { useMusicPlayerSnapshot, useMusicVisible } from '../hooks/useMusicPlayer';
 import { useVoiceprint } from '../hooks/useVoiceprint';
 import { useFaceRecognition } from '../hooks/useFaceRecognition';
 import { usePresence } from '../hooks/usePresence';
@@ -146,6 +146,23 @@ interface NativeFile {
   path: string;
   isDirectory: boolean;
 }
+
+interface ClientCanvasRuntime {
+  open?: boolean;
+  sessionId?: string | null;
+  taskText?: string;
+  cardCount?: number;
+  edgeCount?: number;
+  runningCount?: number;
+  errorCount?: number;
+  selectedEdgeId?: string | null;
+  saveState?: string;
+  status?: string;
+  domain?: string;
+  updatedAt?: number;
+}
+
+type ClientPermissionSnapshot = Record<string, string | boolean | number | null | undefined>;
 
 const normalizeNativeFiles = (value: unknown): NativeFile[] => {
   if (!Array.isArray(value)) return [];
@@ -1340,6 +1357,8 @@ export function DesktopUI({
   const [nativeHomePath, setNativeHomePath] = useState('');
   const [nativeFilesLoading, setNativeFilesLoading] = useState(false);
   const [nativeFilesError, setNativeFilesError] = useState<string | null>(null);
+  const [clientPermissions, setClientPermissions] = useState<ClientPermissionSnapshot>({});
+  const [canvasRuntime, setCanvasRuntime] = useState<ClientCanvasRuntime>({ open: false });
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState('general');
@@ -1546,6 +1565,7 @@ export function DesktopUI({
 
   const socket = useSocket();
   const musicVisible = useMusicVisible();
+  const musicSnapshot = useMusicPlayerSnapshot();
   useAmbientPoller(socket); // Ambient awareness: polls window, clipboard, idle state
   const { callState, audioLevel, startCall, startCallRef, endCall, error: callError, transcript, interrupt, toggleMute, isMuted, switchPersonality } = useVoiceCall({
     socket,
@@ -1615,6 +1635,59 @@ export function DesktopUI({
       window.removeEventListener('storage', onStorage);
     };
   }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ClientCanvasRuntime>).detail || {};
+      setCanvasRuntime(prev => ({
+        ...prev,
+        ...detail,
+      }));
+    };
+    window.addEventListener('lumi:canvas-state', handler);
+    return () => window.removeEventListener('lumi:canvas-state', handler);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const readPermission = async (name: string) => {
+      try {
+        if (!navigator.permissions?.query) return 'unknown';
+        const status = await navigator.permissions.query({ name } as any);
+        return status.state || 'unknown';
+      } catch {
+        return 'unknown';
+      }
+    };
+
+    const refreshPermissions = async () => {
+      const [microphone, camera, notifications] = await Promise.all([
+        readPermission('microphone'),
+        readPermission('camera'),
+        readPermission('notifications'),
+      ]);
+      if (disposed) return;
+      setClientPermissions({
+        microphone,
+        camera,
+        notifications,
+        nativeFiles: isTauri ? 'available' : 'unavailable',
+        desktopAutomation: isTauri ? 'available' : 'unavailable',
+        wakeWordEnabled: wakeEnabled,
+        sensorPrimerSeen,
+        biometricsPrimerSeen: sensorPrimerSeen,
+      });
+    };
+
+    void refreshPermissions();
+    const interval = window.setInterval(refreshPermissions, 30000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [isTauri, sensorPrimerSeen, wakeEnabled]);
+
   const wakeWord = useWakeWord({
     socket,
     startCallRef,
@@ -2351,6 +2424,334 @@ export function DesktopUI({
       if (nextWindows.length === 0) setActiveTab('home');
     }
   };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail || {};
+      const action = String(detail.action || '');
+      const target = String(detail.target || '');
+      const mode = String(detail.mode || '');
+      const task = String(detail.task || '');
+      const section = String(detail.section || '');
+      const confirmed = Boolean(detail.confirmed);
+      const respond = typeof detail.respond === 'function' ? detail.respond : () => {};
+      const reject = typeof detail.reject === 'function' ? detail.reject : () => {};
+
+      const normalizeTarget = (value: string) => {
+        if (value === 'music') return 'music-center';
+        if (value === 'memory') return 'knowledge';
+        if (value === 'sync') return 'devices';
+        return value;
+      };
+
+      const openSurface = (value: string) => {
+        const windowId = normalizeTarget(value);
+        if (!windowId) throw new Error('Client action requires a target surface');
+
+        if (windowId === 'home') {
+          setOpenWindows([]);
+          setFocusedWindow(null);
+          setWindowOrder([]);
+          setActiveTab('home');
+          return;
+        }
+        if (windowId === 'org') {
+          setActiveTab('org');
+          return;
+        }
+        if (windowId === 'knowledge') {
+          setKnowledgeOpen(true);
+          setActiveTab('knowledge');
+          return;
+        }
+        if (windowId === 'chat') {
+          setChatOpen(true);
+          setActiveTab('chat');
+          return;
+        }
+        if (windowId === 'canvas') {
+          setCanvasOpen(true);
+          if (task.trim()) setCanvasInitialTask(task.trim());
+          return;
+        }
+        if (windowId === 'files') {
+          void loadNativeFiles();
+        }
+
+        setOpenWindows(prev => prev.includes(windowId) ? prev : [...prev, windowId]);
+        setMinimizedWindows(prev => prev.filter(w => w !== windowId));
+        setFocusedWindow(windowId);
+        setWindowOrder(prev => [...prev.filter(w => w !== windowId), windowId]);
+        setActiveTab(windowId);
+      };
+
+      const closeSurface = (value: string) => {
+        const windowId = normalizeTarget(value);
+        if (!windowId) throw new Error('close_app requires target');
+        if (windowId === 'knowledge') {
+          setKnowledgeOpen(false);
+          return;
+        }
+        if (windowId === 'chat') {
+          setChatOpen(false);
+          return;
+        }
+        if (windowId === 'canvas') {
+          setCanvasOpen(false);
+          return;
+        }
+        if (windowId === 'org' && activeTab === 'org') {
+          setActiveTab('home');
+          return;
+        }
+        closeWindow(windowId);
+      };
+
+      const setClientMode = (value: string) => {
+        const allowed = ['chat', 'meeting', 'music', 'assistant', 'autonomous'];
+        if (!allowed.includes(value)) throw new Error(`Unsupported mode: ${value}`);
+        if ((value === 'autonomous' || value === 'meeting') && !confirmed) {
+          throw new Error(`${value} mode requires explicit user confirmation`);
+        }
+        setOperationMode(value as any);
+        if (value === 'meeting') setMeetingNotesOpen(true);
+      };
+
+      try {
+        if (action === 'open_app') {
+          openSurface(target);
+          respond({ ok: true, action, target });
+          return;
+        }
+        if (action === 'close_app') {
+          closeSurface(target);
+          respond({ ok: true, action, target });
+          return;
+        }
+        if (action === 'set_mode' || action === 'set_client_mode') {
+          setClientMode(mode);
+          respond({ ok: true, action, mode });
+          return;
+        }
+        if (action === 'focus_home') {
+          openSurface('home');
+          respond({ ok: true, action });
+          return;
+        }
+        if (action === 'open_music_center') {
+          openSurface('music-center');
+          respond({ ok: true, action, target: 'music-center' });
+          return;
+        }
+        if (action === 'show_music_layer' || action === 'hide_music_layer') {
+          window.dispatchEvent(new CustomEvent('lumi:music-layer', { detail: { visible: action === 'show_music_layer' } }));
+          respond({ ok: true, action });
+          return;
+        }
+        if (action === 'start_meeting_mode') {
+          if (!confirmed) throw new Error('start_meeting_mode requires explicit user confirmation');
+          setClientMode('meeting');
+          respond({ ok: true, action, mode: 'meeting' });
+          return;
+        }
+        if (action === 'end_meeting_mode') {
+          if (!confirmed) throw new Error('end_meeting_mode requires explicit user confirmation');
+          void endMeetingAndReport();
+          respond({ ok: true, action, status: 'ending_and_generating_report' });
+          return;
+        }
+        if (action === 'open_meeting_notes') {
+          setMeetingNotesOpen(true);
+          respond({ ok: true, action });
+          return;
+        }
+        if (action === 'open_canvas_task') {
+          openSurface('canvas');
+          respond({ ok: true, action, task: task.trim() });
+          return;
+        }
+        if (action === 'show_knowledge_base') {
+          openSurface('knowledge');
+          respond({ ok: true, action, target: 'knowledge' });
+          return;
+        }
+        if (action === 'open_organization_workspace') {
+          openSurface('org');
+          respond({ ok: true, action, target: 'org' });
+          return;
+        }
+        if (action === 'open_files') {
+          openSurface('files');
+          respond({ ok: true, action, target: 'files' });
+          return;
+        }
+        if (action === 'open_settings') {
+          if (section) setSettingsSection(section);
+          openSurface('settings');
+          respond({ ok: true, action, target: 'settings', section });
+          return;
+        }
+        if (action === 'open_skills' || action === 'open_tools' || action === 'open_team' || action === 'open_chat') {
+          const mapped = action === 'open_skills'
+            ? 'skills'
+            : action === 'open_tools'
+              ? 'tools'
+              : action === 'open_team'
+                ? 'team'
+                : 'chat';
+          openSurface(mapped);
+          respond({ ok: true, action, target: mapped });
+          return;
+        }
+        if (action === 'set_wallpaper_mode') {
+          const enabled = Boolean(detail.enabled);
+          if (enabled && !confirmed) throw new Error('set_wallpaper_mode requires explicit user confirmation');
+          applyWallpaperMode(enabled);
+          respond({ ok: true, action, enabled });
+          return;
+        }
+        throw new Error(`Unsupported client action: ${action}`);
+      } catch (err: any) {
+        reject(err?.message || String(err));
+      }
+    };
+
+    window.addEventListener('lumi:client-action', handler);
+    return () => window.removeEventListener('lumi:client-action', handler);
+  }, [
+    activeTab,
+    applyWallpaperMode,
+    closeWindow,
+    endMeetingAndReport,
+    loadNativeFiles,
+    setActiveTab,
+    setOperationMode,
+  ]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const sendState = () => {
+      const recentErrors = [
+        nativeFilesError ? { source: 'files', message: nativeFilesError, at: Date.now() } : null,
+        callError ? { source: 'voice', message: callError, at: Date.now() } : null,
+        musicSnapshot.lastError ? { source: 'music', message: musicSnapshot.lastError, at: Date.now() } : null,
+        canvasRuntime.saveState === 'error' ? { source: 'canvas', message: 'Canvas autosave failed', at: canvasRuntime.updatedAt || Date.now() } : null,
+      ].filter(Boolean);
+
+      socket.emit('client:state', {
+        platform: isTauri ? 'desktop' : 'web',
+        mode: operationMode,
+        activeTab,
+        workDomain,
+        org: {
+          connected: Boolean(orgConnection?.connected),
+          name: orgConnection?.orgName || '',
+          role: orgConnection?.orgRole || '',
+        },
+        windows: {
+          open: openWindows,
+          focused: focusedWindow,
+          minimized: minimizedWindows,
+        },
+        surfaces: {
+          knowledgeOpen,
+          chatOpen,
+          canvasOpen,
+          meetingOpen: meetingNotesOpen,
+          musicLayerVisible: musicVisible,
+          wallpaperMode: isWallpaperMode,
+        },
+        voice: {
+          state: callState,
+          muted: isMuted,
+        },
+        music: {
+          visible: musicSnapshot.visible,
+          isPlaying: musicSnapshot.isPlaying,
+          trackName: musicSnapshot.track?.name || '',
+          artists: musicSnapshot.track?.artists || [],
+          album: musicSnapshot.track?.album || '',
+          source: musicSnapshot.source,
+          progress: musicSnapshot.progress,
+          duration: musicSnapshot.duration,
+          volume: musicSnapshot.volume,
+          mood: musicSnapshot.mood,
+          hasLyrics: musicSnapshot.lyrics.length > 0,
+          layerVisible: musicVisible,
+          lastError: musicSnapshot.lastError || '',
+        },
+        meeting: {
+          active: operationMode === 'meeting',
+          noteCount: meetingNotes.length,
+          hasReport: Boolean(meetingReport),
+          startedAt: meetingStartedAt,
+          reportGenerating: meetingReportGenerating,
+        },
+        canvas: {
+          open: canvasOpen || Boolean(canvasRuntime.open),
+          sessionId: canvasRuntime.sessionId || null,
+          taskText: canvasRuntime.taskText || '',
+          cardCount: canvasRuntime.cardCount || 0,
+          edgeCount: canvasRuntime.edgeCount || 0,
+          runningCount: canvasRuntime.runningCount || 0,
+          errorCount: canvasRuntime.errorCount || 0,
+          selectedEdgeId: canvasRuntime.selectedEdgeId || null,
+          saveState: canvasRuntime.saveState || 'idle',
+          status: canvasRuntime.status || 'idle',
+          domain: canvasRuntime.domain || workDomain,
+          updatedAt: canvasRuntime.updatedAt,
+        },
+        permissions: clientPermissions,
+        tools: {
+          agentStatus,
+          workflowStepCount: workflowSteps.length,
+          runningWorkflowSteps: workflowSteps.filter(step =>
+            step.type === 'thinking' ||
+            step.type === 'background' ||
+            step.type === 'confirmation' ||
+            step.type === 'tool_start'
+          ).length,
+          mcpActivityCount: mcpActivities.length,
+        },
+        errors: recentErrors,
+      });
+    };
+    sendState();
+    const interval = setInterval(sendState, 10000);
+    return () => clearInterval(interval);
+  }, [
+    activeTab,
+    callState,
+    canvasOpen,
+    canvasRuntime,
+    chatOpen,
+    clientPermissions,
+    callError,
+    focusedWindow,
+    agentStatus,
+    isMuted,
+    isTauri,
+    isWallpaperMode,
+    knowledgeOpen,
+    mcpActivities.length,
+    meetingNotes.length,
+    meetingNotesOpen,
+    meetingReport,
+    meetingReportGenerating,
+    meetingStartedAt,
+    minimizedWindows,
+    musicSnapshot,
+    musicVisible,
+    nativeFilesError,
+    openWindows,
+    operationMode,
+    orgConnection?.connected,
+    orgConnection?.orgName,
+    orgConnection?.orgRole,
+    socket,
+    workDomain,
+    workflowSteps,
+  ]);
 
   const handleContextAction = (action: string, context: any) => {
     switch (action) {

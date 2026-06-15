@@ -262,6 +262,10 @@ async function handleDesktopExec(socket: Socket, data: {
         output = 'Glow click animation';
         break;
       }
+      case 'client_action': {
+        output = await dispatchClientAction(args);
+        break;
+      }
       default:
         socket.emit(`tool:desktop_result:${correlationId}`, {
           error: `Unknown desktop tool: ${name}`,
@@ -273,6 +277,35 @@ async function handleDesktopExec(socket: Socket, data: {
   } catch (err: any) {
     socket.emit(`tool:desktop_result:${correlationId}`, { error: err.message || String(err) });
   }
+}
+
+async function dispatchClientAction(args: Record<string, any>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Client action timed out'));
+    }, 5000);
+
+    window.dispatchEvent(new CustomEvent('lumi:client-action', {
+      detail: {
+        ...args,
+        respond: (result: any) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve(typeof result === 'string' ? result : JSON.stringify(result || { ok: true }));
+        },
+        reject: (message: string) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          reject(new Error(message || 'Client action failed'));
+        },
+      },
+    }));
+  });
 }
 
 export function useSocket() {

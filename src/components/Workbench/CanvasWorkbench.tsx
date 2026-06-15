@@ -36,6 +36,37 @@ export function CanvasWorkbench({ isOpen, onClose, t, user, domain = 'personal',
 
   useEffect(() => { cardsRef.current = cards; }, [cards]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  useEffect(() => {
+    const currentSession = sessions.find(session => session.id === currentSessionId);
+    const runningCount = cards.filter(card => card.status === 'running').length;
+    const errorCount = cards.filter(card => card.status === 'error' || card.type === 'error').length;
+    window.dispatchEvent(new CustomEvent('lumi:canvas-state', {
+      detail: {
+        open: isOpen,
+        sessionId: currentSessionId,
+        taskText: currentSession?.taskText || currentSession?.title || '',
+        cardCount: cards.length,
+        edgeCount: edges.length,
+        runningCount,
+        errorCount,
+        selectedEdgeId,
+        saveState,
+        status: statusText ? 'working' : 'idle',
+        domain,
+        updatedAt: Date.now(),
+      },
+    }));
+  }, [cards, currentSessionId, domain, edges, isOpen, saveState, selectedEdgeId, sessions, statusText]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent('lumi:canvas-state', {
+        detail: { open: false, updatedAt: Date.now() },
+      }));
+    };
+  }, []);
+
   const scopedCanvasUrl = useCallback((path: string) => {
     const separator = path.includes('?') ? '&' : '?';
     return `${path}${separator}domain=${encodeURIComponent(domain)}`;

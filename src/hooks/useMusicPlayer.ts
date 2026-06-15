@@ -3,14 +3,49 @@ import { useSocket } from './useSocket';
 
 let _musicVisible = false;
 const _listeners = new Set<() => void>();
+const _stateListeners = new Set<() => void>();
+
+const DEFAULT_MUSIC_PLAYER_STATE: MusicPlayerState = {
+  isPlaying: false,
+  track: null,
+  progress: 0,
+  duration: 0,
+  volume: 70,
+  mood: 'peaceful',
+  weather: undefined,
+  lumiReason: undefined,
+  lyrics: [],
+  scene: null,
+  visible: false,
+  source: null,
+};
+
+let _musicSnapshot: MusicPlayerState = DEFAULT_MUSIC_PLAYER_STATE;
+
 function setMusicVisible(v: boolean) {
   _musicVisible = v;
+  _musicSnapshot = { ..._musicSnapshot, visible: v };
   _listeners.forEach(fn => fn());
+  _stateListeners.forEach(fn => fn());
 }
 export function useMusicVisible() {
   return useSyncExternalStore(
     (cb) => { _listeners.add(cb); return () => { _listeners.delete(cb); }; },
     () => _musicVisible,
+  );
+}
+
+function setMusicSnapshot(state: MusicPlayerState) {
+  _musicSnapshot = state;
+  _musicVisible = state.visible;
+  _stateListeners.forEach(fn => fn());
+  _listeners.forEach(fn => fn());
+}
+
+export function useMusicPlayerSnapshot() {
+  return useSyncExternalStore(
+    (cb) => { _stateListeners.add(cb); return () => { _stateListeners.delete(cb); }; },
+    () => _musicSnapshot,
   );
 }
 
@@ -61,25 +96,19 @@ export interface MusicPlayerState {
   scene: MusicScene | null;
   visible: boolean;
   source: 'netease' | 'minimax' | 'url' | null;
+  lastError?: string;
 }
 
 export function useMusicPlayer() {
   const socket = useSocket();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<MusicPlayerState>({
-    isPlaying: false,
-    track: null,
-    progress: 0,
-    duration: 0,
-    volume: 70,
-    mood: 'peaceful',
-    weather: undefined,
-    lumiReason: undefined,
-    lyrics: [],
-    scene: null,
-    visible: false,
-    source: null,
+    ...DEFAULT_MUSIC_PLAYER_STATE,
   });
+
+  useEffect(() => {
+    setMusicSnapshot(state);
+  }, [state]);
 
   // Create audio element on mount
   useEffect(() => {
@@ -164,6 +193,7 @@ export function useMusicPlayer() {
 
     const onError = (data: { message: string }) => {
       console.warn('[Music]', data.message);
+      setState(prev => ({ ...prev, lastError: data.message || 'Music playback error' }));
     };
 
     socket.on('music:atmosphere', onAtmosphere);
@@ -221,6 +251,16 @@ export function useMusicPlayer() {
     setMusicVisible(false);
     setState(prev => ({ ...prev, visible: false }));
   }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const visible = Boolean((event as CustomEvent<{ visible?: boolean }>).detail?.visible);
+      if (visible) show();
+      else hide();
+    };
+    window.addEventListener('lumi:music-layer', handler);
+    return () => window.removeEventListener('lumi:music-layer', handler);
+  }, [hide, show]);
 
   return {
     ...state,

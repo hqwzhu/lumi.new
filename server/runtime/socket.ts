@@ -11,6 +11,7 @@ import { registerConversationHandlers } from "../socket/conversations";
 import { registerWakeHandlers } from "../socket/wake";
 import { registerTerminalHandlers } from "../socket/terminal";
 import { registerMusicHandlers } from "../socket/music";
+import { registerClientSelfHandlers } from "../socket/client_self";
 import { getSensory } from "../socket/shared";
 import { perceptionEvents } from "../socket/shared";
 import { deviceRegistry } from "../devices";
@@ -104,6 +105,7 @@ export function initSocketRuntime({ io, jwtSecret, llm }: SocketContext) {
     registerWakeHandlers(socket, getUserId);
     registerTerminalHandlers(socket, getUserId);
     registerMusicHandlers(socket, getUserId, io);
+    registerClientSelfHandlers(socket, getUserId, io);
     registerChatHandler(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);
     registerTaskHandler(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);
     registerVoiceHandlers(socket, llmGetters, (uid: string) => getSensory(uid), getUserId);
