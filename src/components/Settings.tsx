@@ -31,6 +31,7 @@ import { VoiceForge } from './VoiceForge';
 import { VoiceProviderSwitch } from './VoiceProviderSwitch';
 import { MCPSettings } from './MCPSettings';
 import { MessagingHub } from './MessagingHub';
+import { resetSetup } from '@/setup/setupApi';
 
 function buildSidebarGroups(t: any) {
   return [
@@ -196,6 +197,19 @@ export function Settings({
                   <div className="flex justify-between items-center text-sm"><span className="text-white/60">{t.platform || "Platform"}:</span><span className="font-mono text-celestial-jupiter uppercase">{platform}</span></div>
                   <div className="flex justify-between items-center text-sm"><span className="text-white/60">{t.nodeStatus || "Node Status"}:</span><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /><span className="font-bold text-green-500 underline decoration-green-500/20 underline-offset-4">{t.nodeActive || "ACTIVE"}</span></div></div>
                 </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await resetSetup();
+                      window.location.reload();
+                    } catch {
+                      toast.error('无法重新打开设置向导，请稍后重试');
+                    }
+                  }}
+                  className="w-full px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  重新打开首次设置向导
+                </button>
                 <SettingsItem label={t.hardwareAcceleration || "Hardware Acceleration"} desc={t.hardwareAccelerationDesc || "Use GPU for neural core inference."} storageKey="lumi_sec_hw_accel" t={t} />
                 <SettingsItem label={t.systemTrayMode || "System Tray Mode"} desc={t.systemTrayModeDesc || "Keep Lumi running in the background."} storageKey="lumi_sec_system_tray" t={t} />
               </SettingsSection>

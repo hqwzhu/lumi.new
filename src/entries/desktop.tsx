@@ -18,23 +18,42 @@ import { Profile } from '../components/Profile';
 import { Docs } from '../components/Docs';
 import { FoundersSanctuary } from '../components/FoundersSanctuary';
 import { OrgPortal } from '../components/OrgPortal';
-import { SetupWizard } from '../components/SetupWizard';
 import { useAppShell } from './useAppShell';
+import { SetupOnboarding } from '../setup/SetupOnboarding';
+import { getSetupStatus, type SetupStatus } from '../setup/setupApi';
 
 installApiBridge();
-
-const SETUP_DONE_KEY = 'lumi_setup_complete';
 
 export function DesktopApp() {
   const shell = useAppShell();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedAgent, setSelectedAgent] = useState<any>(null);
-  const [showSetup, setShowSetup] = useState(() => localStorage.getItem(SETUP_DONE_KEY) !== '1');
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [setupLoading, setSetupLoading] = useState(true);
 
   useEffect(() => { document.body.classList.add('overflow-hidden'); return () => document.body.classList.remove('overflow-hidden'); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
 
-  if (shell.loading) {
+  useEffect(() => {
+    let cancelled = false;
+    getSetupStatus()
+      .then(status => {
+        if (!cancelled) setSetupStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setSetupStatus({ state: { completed: false }, providers: {}, requiresSetup: true });
+      })
+      .finally(() => {
+        if (!cancelled) setSetupLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const showSetup = !setupLoading && setupStatus?.requiresSetup;
+
+  if (shell.loading || setupLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-transparent">
         <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }} className="flex flex-col items-center gap-4">
@@ -67,9 +86,14 @@ export function DesktopApp() {
       <ProactiveNotifications />
       <Toaster position="top-right" theme="dark" />
       {showSetup ? (
-        <div className="h-full w-full flex items-center justify-center bg-black/80 p-8">
-          <SetupWizard onFinish={() => { setShowSetup(false); localStorage.setItem(SETUP_DONE_KEY, '1'); }} />
-        </div>
+        <SetupOnboarding
+          initialProviders={setupStatus?.providers}
+          onFinish={() => setSetupStatus(current => current ? {
+            ...current,
+            requiresSetup: false,
+            state: { ...current.state, completed: true },
+          } : current)}
+        />
       ) : (
         <>
           <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5 }} className="h-full w-full">
