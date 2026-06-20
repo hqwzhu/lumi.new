@@ -17,19 +17,23 @@ Run:
 ```powershell
 npm test
 npm run lint
-npm run build:desktop
-npm run tauri:build
+npm run release:windows
 ```
 
 Expected:
 
 - All Vitest tests pass.
 - TypeScript check passes.
-- Desktop UI, server bundle, and desktop resources build.
+- Desktop UI, server bundle, desktop resources, Tauri shell, and NSIS bundle build.
 - NSIS installer is created under:
 
 ```text
 src-tauri\target\release\bundle\nsis\
+```
+- The release copy is exported to:
+
+```text
+release\windows\
 ```
 
 ## Installer Smoke Test
@@ -80,6 +84,8 @@ Use this installer naming pattern:
 ```text
 Lumi OS_<version>_x64-setup.exe
 ```
+
+Use the exported file under `release\windows\` for manual testing and release uploads. The deep `src-tauri\target\release\bundle\nsis\` path is an internal Tauri build output.
 
 Attach a short release note that tells users:
 

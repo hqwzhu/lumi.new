@@ -29,6 +29,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "export:windows-installer": "node scripts/export-windows-installer.mjs",
+    "release:windows": "npm run tauri:build && npm run export:windows-installer",
     "mobile:sync": "npm run build:mobile && cap sync",
     "mobile:open-android": "cap open android",
     "mobile:open-ios": "cap open ios",
