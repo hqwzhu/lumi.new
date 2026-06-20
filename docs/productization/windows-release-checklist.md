@@ -20,6 +20,7 @@ npm run lint
 npm run release:windows
 npm run release:windows:check
 npm run package:windows-release:check
+npm run smoke:windows-installer
 ```
 
 Expected:
@@ -41,6 +42,7 @@ release\windows\
 - `release\windows\LumiOS-Windows-<version>.zip` is created for sharing.
 - `release:windows:check` confirms the installer checksum and required desktop server resources.
 - `package:windows-release:check` confirms the zip contains the installer, manifest, checksum file, and release notes.
+- `smoke:windows-installer` silently installs to `release\windows-smoke-install\` and confirms the installed desktop executable, uninstaller, and backend resources exist.
 
 ## Installer Smoke Test
 
@@ -55,6 +57,8 @@ On a clean Windows user profile or VM:
 7. Launch into the desktop shell.
 8. Open Settings and reopen setup.
 9. Confirm setup state resets without deleting saved keys.
+
+Before manual smoke testing, run `npm run smoke:windows-installer` to verify the installer can unpack successfully without changing the normal user install directory.
 
 ## Product Scope For This Release
 

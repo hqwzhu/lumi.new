@@ -103,6 +103,17 @@ Before launch, LumiOS checks:
 
 You can launch LumiOS when at least one model source is available.
 
+## Export Support Bundle
+
+If setup or launch fails:
+
+1. Open Settings.
+2. Go to the Desktop Node Runtime section.
+3. Click `Export Support Bundle`.
+4. Send the downloaded `lumi-support-bundle-*.json` file to the maintainer.
+
+The support bundle includes setup status, model diagnostics, platform details, data directory path, and provider configuration flags. It does not include raw API keys.
+
 ## Reopen Setup
 
 After launching LumiOS:

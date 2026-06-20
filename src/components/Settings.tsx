@@ -102,6 +102,27 @@ export function Settings({
     });
   };
 
+  const downloadSupportBundle = async () => {
+    try {
+      const res = await fetch('/api/setup/support-bundle');
+      if (!res.ok) throw new Error('Support bundle request failed');
+      const bundle = await res.json();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.href = url;
+      link.download = `lumi-support-bundle-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success(t.supportBundleExported || 'Support bundle exported');
+    } catch {
+      toast.error(t.supportBundleExportFailed || 'Failed to export support bundle');
+    }
+  };
+
   const renderContent = (section: string) => {
     switch (section) {
       case 'general':
@@ -209,6 +230,12 @@ export function Settings({
                   className="w-full px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-black uppercase tracking-widest transition-colors"
                 >
                   重新打开首次设置向导
+                </button>
+                <button
+                  onClick={downloadSupportBundle}
+                  className="w-full px-4 py-3 rounded-2xl bg-celestial-jupiter/15 hover:bg-celestial-jupiter/25 border border-celestial-jupiter/20 text-white text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  {t.exportSupportBundle || 'Export Support Bundle'}
                 </button>
                 <SettingsItem label={t.hardwareAcceleration || "Hardware Acceleration"} desc={t.hardwareAccelerationDesc || "Use GPU for neural core inference."} storageKey="lumi_sec_hw_accel" t={t} />
                 <SettingsItem label={t.systemTrayMode || "System Tray Mode"} desc={t.systemTrayModeDesc || "Keep Lumi running in the background."} storageKey="lumi_sec_system_tray" t={t} />

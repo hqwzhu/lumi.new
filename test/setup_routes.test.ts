@@ -174,6 +174,27 @@ describe('setup routes', () => {
     expect(body.state.completed).toBe(false);
   });
 
+  it('exports a support bundle without leaking secrets', async () => {
+    await fetch(`${ctx.url}/api/setup/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'deepseek', apiKey: 'sk-super-secret' }),
+    });
+
+    const res = await fetch(`${ctx.url}/api/setup/support-bundle`);
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(body.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.platform).toBe(process.platform);
+    expect(typeof body.dataRoot).toBe('string');
+    expect(body.dataRoot.length).toBeGreaterThan(0);
+    expect(body.setupState.completed).toBe(false);
+    expect(body.configuredKeys.DEEPSEEK_API_KEY).toBe(true);
+    expect(body.diagnostics.items.length).toBeGreaterThan(0);
+    expect(JSON.stringify(body)).not.toContain('sk-super-secret');
+  });
+
   it('is mounted by the shared route aggregator', async () => {
     const mounted = await makeApp();
     try {

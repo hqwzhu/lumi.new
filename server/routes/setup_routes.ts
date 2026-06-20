@@ -3,6 +3,7 @@ import { loadKeys, saveKeys, getAllKeyNames } from '../config/keys';
 import { loadSetupState, completeSetup, resetSetupState, type SetupMode, type ModelPreference } from '../setup/setup_state';
 import { getPrimaryKeyName, getSetupProvider, SETUP_PROVIDERS } from '../setup/provider_catalog';
 import { getSetupDiagnostics } from '../setup/diagnostics';
+import { getSetupSupportBundle } from '../setup/support_bundle';
 
 function maskedKeys(): Record<string, boolean> {
   const stored = loadKeys();
@@ -95,6 +96,10 @@ export function mountSetupRoutes(router: Router) {
 
   router.get('/setup/diagnostics', async (_req, res) => {
     res.json(await getSetupDiagnostics());
+  });
+
+  router.get('/setup/support-bundle', async (_req, res) => {
+    res.json(await getSetupSupportBundle());
   });
 
   router.post('/setup/complete', async (req, res) => {
