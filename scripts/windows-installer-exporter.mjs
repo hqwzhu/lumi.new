@@ -94,6 +94,40 @@ function createReleaseNotes(manifest) {
 1. Verify the checksum in \`SHA256SUMS.txt\`.
 2. Run the installer on a clean Windows user profile or VM.
 3. Confirm first-launch setup reaches the LumiOS desktop after a cloud key or local model is available.
+
+## Install
+
+1. Run \`${manifest.installerName}\`.
+2. Follow the Windows installer prompts.
+3. Launch Lumi OS from the Start Menu or desktop shortcut.
+4. If Windows SmartScreen appears, choose more info and run anyway only when this installer came from the official release channel.
+
+## First Launch Setup
+
+1. Choose Essential for the fastest start, Practical for daily use, or Full for all provider options.
+2. Configure at least one cloud model API key, or start Ollama / LM Studio with a loaded local chat model.
+3. Use the bilingual API key help beside each provider field when you need provider-specific instructions.
+4. Run diagnostics and continue when at least one model source is available.
+
+Lumi OS stores local setup data under:
+
+\`\`\`text
+%USERPROFILE%\\LumiOS\\data
+\`\`\`
+
+## Troubleshooting
+
+### No model source detected
+
+Save one supported cloud provider API key, or start Ollama / LM Studio with a loaded model and run diagnostics again.
+
+### Relay provider test fails
+
+OpenAI-compatible relay providers require both an API key and a Base URL ending in a compatible API path such as \`/v1\`.
+
+### Installer cannot be found after build
+
+Use the exported release kit under \`release\\windows\`. The deeper \`src-tauri\\target\\release\\bundle\\nsis\` directory is only Tauri's internal build output.
 `;
 }
 

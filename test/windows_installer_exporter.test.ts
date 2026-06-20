@@ -119,6 +119,12 @@ describe('windows installer exporter', () => {
     const releaseNotes = fs.readFileSync(result.releaseNotesPath, 'utf8');
     expect(releaseNotes).toContain('Lumi OS 3.0.0 Windows Release');
     expect(releaseNotes).toContain('Lumi OS_3.0.0_x64-setup.exe');
+    expect(releaseNotes).toContain('Install');
+    expect(releaseNotes).toContain('First Launch Setup');
+    expect(releaseNotes).toContain('Troubleshooting');
+    expect(releaseNotes).toContain('%USERPROFILE%\\LumiOS\\data');
+    expect(releaseNotes).toContain('No model source detected');
+    expect(releaseNotes).toContain('Windows SmartScreen');
   });
 
   test('validates an exported release kit checksum and manifest', () => {
