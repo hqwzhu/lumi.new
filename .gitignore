@@ -17,6 +17,7 @@ server/mcp/config.json
 gpt-sovits-src/
 src-tauri/target/
 .claude/
+.worktrees/
 docs/
 gen_landing.py
 /tools/
