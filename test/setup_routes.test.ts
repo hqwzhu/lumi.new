@@ -61,6 +61,52 @@ describe('setup routes', () => {
     expect(body.providers.DEEPSEEK_API_KEY).toBe(true);
   });
 
+  it('tests a provider using a one-time API key before saving', async () => {
+    const res = await fetch(`${ctx.url}/api/setup/test-provider`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'deepseek', apiKey: 'sk-one-time' }),
+    });
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.source).toBe('input');
+    expect(body.message).toContain('not saved yet');
+  });
+
+  it('tests a provider using a saved API key without echoing secrets', async () => {
+    await fetch(`${ctx.url}/api/setup/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'openai', apiKey: 'sk-openai-saved' }),
+    });
+    const res = await fetch(`${ctx.url}/api/setup/test-provider`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'openai' }),
+    });
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(body)).not.toContain('sk-openai-saved');
+    expect(body.ok).toBe(true);
+    expect(body.source).toBe('saved');
+  });
+
+  it('requires relay base URL when testing relay provider', async () => {
+    const res = await fetch(`${ctx.url}/api/setup/test-provider`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'relay', apiKey: 'relay-key' }),
+    });
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain('Base URL');
+  });
+
   it('refuses completion without a model source', async () => {
     const res = await fetch(`${ctx.url}/api/setup/complete`, {
       method: 'POST',

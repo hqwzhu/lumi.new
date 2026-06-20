@@ -66,18 +66,31 @@ export function mountSetupRoutes(router: Router) {
   });
 
   router.post('/setup/test-provider', (req, res) => {
-    const { providerId, apiKey } = req.body || {};
+    const { providerId, apiKey, baseUrl } = req.body || {};
     const provider = getSetupProvider(String(providerId || ''));
     if (!provider) return res.status(400).json({ ok: false, error: 'Unknown provider' });
     if (provider.local) {
-      return res.json({ ok: false, providerId: provider.id, message: 'Use local model detection for this provider.' });
+      return res.json({ ok: false, providerId: provider.id, providerLabel: provider.label, source: 'local', message: 'Use setup diagnostics to detect this local provider.' });
     }
     const keys = maskedKeys();
-    const hasKey = provider.keyNames.some(name => keys[name]) || (typeof apiKey === 'string' && apiKey.trim().length > 0);
+    const hasInputKey = typeof apiKey === 'string' && apiKey.trim().length > 0;
+    const hasSavedKey = provider.keyNames.some(name => keys[name]);
+    const hasKey = hasSavedKey || hasInputKey;
     if (!hasKey) {
-      return res.status(400).json({ ok: false, providerId: provider.id, message: 'No API key configured for this provider.' });
+      return res.status(400).json({ ok: false, providerId: provider.id, providerLabel: provider.label, source: 'missing', message: 'No API key is configured for this provider.' });
     }
-    res.json({ ok: true, providerId: provider.id, message: 'API key is configured. A live provider call can be added after MVP.' });
+    if (provider.id === 'relay') {
+      const hasInputBaseUrl = typeof baseUrl === 'string' && baseUrl.trim().length > 0;
+      const hasSavedBaseUrl = keys.RELAY_BASE_URL === true;
+      if (!hasInputBaseUrl && !hasSavedBaseUrl) {
+        return res.status(400).json({ ok: false, providerId: provider.id, providerLabel: provider.label, source: 'missing', message: 'Relay Base URL is required before testing this provider.' });
+      }
+    }
+    const source = hasSavedKey ? 'saved' : 'input';
+    const message = source === 'saved'
+      ? `${provider.label} has a saved API key. No live provider call was made during MVP setup.`
+      : `${provider.label} API key format is present but not saved yet. Save it before launching LumiOS.`;
+    res.json({ ok: true, providerId: provider.id, providerLabel: provider.label, source, message });
   });
 
   router.get('/setup/diagnostics', async (_req, res) => {
