@@ -138,6 +138,7 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
   const sha256 = getFileSha256(installer.destination);
   const generatedAt = options.generatedAt ?? new Date();
   const version = getInstallerVersion(installerName);
+  const packageName = `LumiOS-Windows-${version}.zip`;
 
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
   const manifestPath = path.join(releaseDir, 'manifest.json');
@@ -148,6 +149,7 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
     version,
     platform: 'windows-x64',
     installerName,
+    packageName,
     size: installer.size,
     sha256,
     generatedAt: generatedAt.toISOString(),
@@ -175,6 +177,8 @@ export function validateWindowsReleaseKit(projectDir) {
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const installerPath = path.join(releaseDir, manifest.installerName);
+  const packageName = manifest.packageName ?? `LumiOS-Windows-${manifest.version ?? 'unknown'}.zip`;
+  const packagePath = path.join(releaseDir, packageName);
   if (!fs.existsSync(installerPath)) {
     throw new Error(`Windows release installer not found: ${installerPath}`);
   }
@@ -189,14 +193,18 @@ export function validateWindowsReleaseKit(projectDir) {
     ok: fs.existsSync(resourcePath),
   }));
 
+  const packageExists = fs.existsSync(packagePath);
   const ok =
     size === manifest.size &&
     sha256 === manifest.sha256 &&
+    packageExists &&
     resourceChecks.every((check) => check.ok);
 
   return {
     ok,
     installerName: manifest.installerName,
+    packageName,
+    packageExists,
     size,
     sha256,
     expectedSha256: manifest.sha256,

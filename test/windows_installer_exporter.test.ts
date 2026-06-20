@@ -43,6 +43,10 @@ function writeDesktopResources(projectDir: string) {
   fs.writeFileSync(path.join(distServerDir, 'server.mjs'), 'export {};');
 }
 
+function writeReleaseZip(projectDir: string, name = 'LumiOS-Windows-3.0.0.zip') {
+  fs.writeFileSync(path.join(projectDir, 'release', 'windows', name), 'zip-binary');
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -111,6 +115,7 @@ describe('windows installer exporter', () => {
       version: '3.0.0',
       platform: 'windows-x64',
       installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+      packageName: 'LumiOS-Windows-3.0.0.zip',
       size: 'installer-binary'.length,
       generatedAt: '2026-06-20T12:00:00.000Z',
     });
@@ -139,10 +144,13 @@ describe('windows installer exporter', () => {
       generatedAt: new Date('2026-06-20T12:00:00Z'),
     });
     writeDesktopResources(projectDir);
+    writeReleaseZip(projectDir);
 
     expect(validateWindowsReleaseKit(projectDir)).toMatchObject({
       ok: true,
       installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+      packageName: 'LumiOS-Windows-3.0.0.zip',
+      packageExists: true,
       size: 'installer-binary'.length,
     });
   });

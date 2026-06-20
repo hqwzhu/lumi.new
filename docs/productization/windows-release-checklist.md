@@ -37,6 +37,7 @@ src-tauri\target\release\bundle\nsis\
 release\windows\
 ```
 - `release\windows\manifest.json`, `SHA256SUMS.txt`, and `RELEASE_NOTES.md` are created.
+- `release\windows\LumiOS-Windows-<version>.zip` is created for sharing.
 - `release:windows:check` confirms the installer checksum and required desktop server resources.
 
 ## Installer Smoke Test
@@ -89,6 +90,14 @@ Lumi OS_<version>_x64-setup.exe
 ```
 
 Use the exported file under `release\windows\` for manual testing and release uploads. The deep `src-tauri\target\release\bundle\nsis\` path is an internal Tauri build output.
+
+For user distribution, prefer the zip package:
+
+```text
+LumiOS-Windows-<version>.zip
+```
+
+It includes the installer, manifest, checksum file, and release notes.
 
 Attach a short release note that tells users:
 

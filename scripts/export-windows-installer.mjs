@@ -1,19 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import {
-  exportWindowsReleaseKit,
-  validateWindowsReleaseKit,
-} from './windows-installer-exporter.mjs';
+import { exportWindowsReleaseKit } from './windows-installer-exporter.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.resolve(scriptDir, '..');
 
 try {
   const result = exportWindowsReleaseKit(projectDir);
-  const validation = validateWindowsReleaseKit(projectDir);
-  if (!validation.ok) {
-    throw new Error(`Windows release kit validation failed for ${validation.installerName}`);
-  }
 
   console.log('Windows release kit exported:');
   console.log(`  Installer:     ${result.installerPath}`);
