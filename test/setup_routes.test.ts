@@ -1,12 +1,31 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { makeApp, JWT_SECRET, COOKIE_OPTS, LLM_GETTERS } from './helpers';
 import { mountSetupRoutes } from '../server/routes/setup_routes';
 import { mountAllRoutes } from '../server/runtime/routes';
 
+vi.mock('../server/setup/local_models', () => ({
+  detectLocalModelSources: vi.fn(async () => ({
+    hasLocalModel: false,
+    providers: {
+      ollama: { id: 'ollama', label: 'Ollama', baseUrl: 'http://localhost:11434', detected: false, models: [], message: 'offline' },
+      lmstudio: { id: 'lmstudio', label: 'LM Studio', baseUrl: 'http://localhost:1234', detected: false, models: [], message: 'offline' },
+    },
+  })),
+}));
+
 describe('setup routes', () => {
   let ctx: Awaited<ReturnType<typeof makeApp>>;
+  let detectLocalModelSources: any;
 
   beforeEach(async () => {
+    detectLocalModelSources = (await import('../server/setup/local_models')).detectLocalModelSources as any;
+    detectLocalModelSources.mockResolvedValue({
+      hasLocalModel: false,
+      providers: {
+        ollama: { id: 'ollama', label: 'Ollama', baseUrl: 'http://localhost:11434', detected: false, models: [], message: 'offline' },
+        lmstudio: { id: 'lmstudio', label: 'LM Studio', baseUrl: 'http://localhost:1234', detected: false, models: [], message: 'offline' },
+      },
+    });
     ctx = await makeApp();
     mountSetupRoutes(ctx.apiRouter);
   });
@@ -63,6 +82,31 @@ describe('setup routes', () => {
       body: JSON.stringify({ mode: 'practical', modelPreference: 'china', configuredProviders: ['deepseek'], skippedOptionalProviders: [] }),
     });
     const body = await res.json() as any;
+    expect(res.status).toBe(200);
+    expect(body.state.completed).toBe(true);
+  });
+
+  it('completes setup when a local model source is detected', async () => {
+    detectLocalModelSources.mockResolvedValue({
+      hasLocalModel: true,
+      providers: {
+        ollama: { id: 'ollama', label: 'Ollama', baseUrl: 'http://localhost:11434', detected: true, models: ['qwen2.5:7b'], message: '1 model found' },
+        lmstudio: { id: 'lmstudio', label: 'LM Studio', baseUrl: 'http://localhost:1234', detected: false, models: [], message: 'offline' },
+      },
+    });
+
+    const diagnosticRes = await fetch(`${ctx.url}/api/setup/diagnostics`);
+    const diagnostics = await diagnosticRes.json() as any;
+    expect(diagnostics.hasModelSource).toBe(true);
+    expect(diagnostics.items.some((item: any) => item.id === 'local-models' && item.status === 'ok')).toBe(true);
+
+    const res = await fetch(`${ctx.url}/api/setup/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'essential', modelPreference: 'local', configuredProviders: ['ollama'], skippedOptionalProviders: [] }),
+    });
+    const body = await res.json() as any;
+
     expect(res.status).toBe(200);
     expect(body.state.completed).toBe(true);
   });

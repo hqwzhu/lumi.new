@@ -13,11 +13,13 @@ function maskedKeys(): Record<string, boolean> {
   return masked;
 }
 
-function hasAnyModelSource(): boolean {
+async function hasAnyModelSource(): Promise<boolean> {
   const keys = maskedKeys();
-  return SETUP_PROVIDERS.some(provider =>
+  if (SETUP_PROVIDERS.some(provider =>
     provider.llm && !provider.local && provider.keyNames.some(name => keys[name])
-  );
+  )) return true;
+  const diagnostics = await getSetupDiagnostics();
+  return diagnostics.hasModelSource;
 }
 
 function validMode(value: unknown): value is SetupMode {
@@ -29,9 +31,9 @@ function validModelPreference(value: unknown): value is ModelPreference {
 }
 
 export function mountSetupRoutes(router: Router) {
-  router.get('/setup/status', (_req, res) => {
+  router.get('/setup/status', async (_req, res) => {
     const state = loadSetupState();
-    const diagnostics = getSetupDiagnostics();
+    const diagnostics = await getSetupDiagnostics();
     res.json({
       state,
       providers: maskedKeys(),
@@ -78,15 +80,15 @@ export function mountSetupRoutes(router: Router) {
     res.json({ ok: true, providerId: provider.id, message: 'API key is configured. A live provider call can be added after MVP.' });
   });
 
-  router.get('/setup/diagnostics', (_req, res) => {
-    res.json(getSetupDiagnostics());
+  router.get('/setup/diagnostics', async (_req, res) => {
+    res.json(await getSetupDiagnostics());
   });
 
-  router.post('/setup/complete', (req, res) => {
+  router.post('/setup/complete', async (req, res) => {
     const { mode, modelPreference, configuredProviders, skippedOptionalProviders } = req.body || {};
     if (!validMode(mode)) return res.status(400).json({ error: 'Invalid setup mode' });
     if (!validModelPreference(modelPreference)) return res.status(400).json({ error: 'Invalid model preference' });
-    if (!hasAnyModelSource()) {
+    if (!(await hasAnyModelSource())) {
       return res.status(400).json({ error: 'At least one cloud model provider or local model is required before launch.' });
     }
     const state = completeSetup({

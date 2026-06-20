@@ -3,6 +3,7 @@ import path from 'path';
 import { getDataPath } from '../config/data_path';
 import { loadKeys } from '../config/keys';
 import { SETUP_PROVIDERS } from './provider_catalog';
+import { detectLocalModelSources } from './local_models';
 
 export interface DiagnosticItem {
   id: string;
@@ -28,7 +29,7 @@ function checkDataDirectory(): DiagnosticItem {
   }
 }
 
-function checkProviderKeys(): { item: DiagnosticItem; hasCloudModel: boolean } {
+export function checkProviderKeys(): { item: DiagnosticItem; hasCloudModel: boolean } {
   const keys = loadKeys();
   const cloudProviders = SETUP_PROVIDERS.filter(provider => provider.llm && !provider.local);
   const configured = cloudProviders.filter(provider => provider.keyNames.some(name => !!(keys as any)[name]));
@@ -54,6 +55,31 @@ function checkProviderKeys(): { item: DiagnosticItem; hasCloudModel: boolean } {
   };
 }
 
+async function checkLocalModels(): Promise<{ item: DiagnosticItem; hasLocalModel: boolean }> {
+  const localModels = await detectLocalModelSources();
+  const available = Object.values(localModels.providers).filter(provider => provider.detected);
+  if (available.length > 0) {
+    return {
+      hasLocalModel: true,
+      item: {
+        id: 'local-models',
+        label: 'Local model runtime',
+        status: 'ok',
+        message: available.map(provider => `${provider.label}: ${provider.models.join(', ') || 'model ready'}`).join('; '),
+      },
+    };
+  }
+  return {
+    hasLocalModel: false,
+    item: {
+      id: 'local-models',
+      label: 'Local model runtime',
+      status: 'warning',
+      message: 'No Ollama or LM Studio chat model was detected. This is optional when a cloud model key is configured.',
+    },
+  };
+}
+
 function checkBundledBackend(): DiagnosticItem {
   const cwd = process.cwd();
   const candidates = [
@@ -68,14 +94,16 @@ function checkBundledBackend(): DiagnosticItem {
     : { id: 'bundled-backend', label: 'Bundled backend', status: 'warning', message: 'Bundled backend resources were not found in the current working directory.' };
 }
 
-export function getSetupDiagnostics(): SetupDiagnostics {
+export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
   const items: DiagnosticItem[] = [
     checkDataDirectory(),
     checkBundledBackend(),
   ];
   const providerCheck = checkProviderKeys();
+  const localCheck = await checkLocalModels();
   items.push(providerCheck.item);
-  const hasModelSource = providerCheck.hasCloudModel;
+  items.push(localCheck.item);
+  const hasModelSource = providerCheck.hasCloudModel || localCheck.hasLocalModel;
   const ok = items.every(item => item.status !== 'error') && hasModelSource;
   return { ok, hasModelSource, items };
 }
