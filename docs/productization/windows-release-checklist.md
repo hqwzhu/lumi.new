@@ -18,6 +18,7 @@ Run:
 npm test
 npm run lint
 npm run release:windows
+npm run release:windows:check
 ```
 
 Expected:
@@ -35,6 +36,8 @@ src-tauri\target\release\bundle\nsis\
 ```text
 release\windows\
 ```
+- `release\windows\manifest.json`, `SHA256SUMS.txt`, and `RELEASE_NOTES.md` are created.
+- `release:windows:check` confirms the installer checksum and required desktop server resources.
 
 ## Installer Smoke Test
 

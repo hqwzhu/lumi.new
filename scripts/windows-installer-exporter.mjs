@@ -147,7 +147,18 @@ export function validateWindowsReleaseKit(projectDir) {
 
   const size = fs.statSync(installerPath).size;
   const sha256 = getFileSha256(installerPath);
-  const ok = size === manifest.size && sha256 === manifest.sha256;
+  const resourceChecks = [
+    path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
+    path.join(projectDir, 'desktop-resources', 'dist-server', 'server.mjs'),
+  ].map((resourcePath) => ({
+    path: resourcePath,
+    ok: fs.existsSync(resourcePath),
+  }));
+
+  const ok =
+    size === manifest.size &&
+    sha256 === manifest.sha256 &&
+    resourceChecks.every((check) => check.ok);
 
   return {
     ok,
@@ -155,5 +166,6 @@ export function validateWindowsReleaseKit(projectDir) {
     size,
     sha256,
     expectedSha256: manifest.sha256,
+    resourceChecks,
   };
 }

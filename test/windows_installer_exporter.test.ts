@@ -36,6 +36,13 @@ function writeInstaller(projectDir: string, name: string, body: string, mtime: D
   return installerPath;
 }
 
+function writeDesktopResources(projectDir: string) {
+  const distServerDir = path.join(projectDir, 'desktop-resources', 'dist-server');
+  fs.mkdirSync(distServerDir, { recursive: true });
+  fs.writeFileSync(path.join(distServerDir, 'entry.cjs'), 'module.exports = {};');
+  fs.writeFileSync(path.join(distServerDir, 'server.mjs'), 'export {};');
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -125,11 +132,36 @@ describe('windows installer exporter', () => {
     exportWindowsReleaseKit(projectDir, {
       generatedAt: new Date('2026-06-20T12:00:00Z'),
     });
+    writeDesktopResources(projectDir);
 
     expect(validateWindowsReleaseKit(projectDir)).toMatchObject({
       ok: true,
       installerName: 'Lumi OS_3.0.0_x64-setup.exe',
       size: 'installer-binary'.length,
     });
+  });
+
+  test('reports missing desktop resources during release validation', () => {
+    const projectDir = makeTempProject();
+    writeInstaller(
+      projectDir,
+      'Lumi OS_3.0.0_x64-setup.exe',
+      'installer-binary',
+      new Date('2026-06-20T10:00:00Z'),
+    );
+    exportWindowsReleaseKit(projectDir, {
+      generatedAt: new Date('2026-06-20T12:00:00Z'),
+    });
+
+    expect(validateWindowsReleaseKit(projectDir).resourceChecks).toEqual([
+      {
+        path: path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
+        ok: false,
+      },
+      {
+        path: path.join(projectDir, 'desktop-resources', 'dist-server', 'server.mjs'),
+        ok: false,
+      },
+    ]);
   });
 });
