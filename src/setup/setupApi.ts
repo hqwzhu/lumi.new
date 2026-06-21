@@ -102,3 +102,7 @@ export function completeSetup(input: CompleteSetupInput): Promise<{ success: boo
 export function resetSetup(): Promise<{ success: boolean; state: SetupState }> {
   return requestJson('/api/setup/reset', { method: 'POST' });
 }
+
+export function exportSupportBundle(): Promise<unknown> {
+  return requestJson('/api/setup/support-bundle');
+}

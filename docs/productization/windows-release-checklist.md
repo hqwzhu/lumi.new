@@ -18,6 +18,7 @@ Run:
 npm test
 npm run lint
 npm run release:windows
+npm run site:downloads
 npm run release:windows:check
 npm run package:windows-release:check
 npm run smoke:windows-installer
@@ -41,6 +42,7 @@ release\windows\
 ```
 - `release\windows\manifest.json`, `SHA256SUMS.txt`, and `RELEASE_NOTES.md` are created.
 - `release\windows\LumiOS-Windows-<version>.zip` is created for sharing.
+- `public\downloads\windows.html` and `public\downloads\windows.json` are generated for the website download page.
 - `release:windows:check` confirms the installer checksum and required desktop server resources.
 - `package:windows-release:check` confirms the zip contains the installer, manifest, checksum file, and release notes.
 - `smoke:windows-installer` silently installs to `release\windows-smoke-install\` and confirms the installed desktop executable, uninstaller, and backend resources exist.
@@ -122,7 +124,7 @@ gh auth login
 npm run github:release:windows
 ```
 
-The command publishes to `hqwzhu/lumi.new` with tag `windows-v<version>` and uploads the zip package, installer, checksum file, and manifest.
+The command publishes to `hqwzhu/lumi.new` with tag `windows-v<version>` and uploads the zip package, installer, checksum file, manifest, and release notes.
 
 Attach a short release note that tells users:
 

@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { AppProvider } from '../contexts/AppContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { WebApp } from './web';
+import { installClientDiagnostics } from '../lib/diagnostics';
+
+installClientDiagnostics('web');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

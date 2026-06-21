@@ -35,6 +35,7 @@
     "package:windows-release:check": "powershell -ExecutionPolicy Bypass -File scripts/check-windows-package.ps1",
     "smoke:windows-installer": "powershell -ExecutionPolicy Bypass -File scripts/smoke-windows-installer.ps1",
     "github:release:windows": "node scripts/github-release-windows.mjs",
+    "site:downloads": "node scripts/generate-download-page.mjs",
     "release:windows": "npm run tauri:build && npm run export:windows-installer && npm run package:windows-release && npm run release:windows:check && npm run package:windows-release:check",
     "mobile:sync": "npm run build:mobile && cap sync",
     "mobile:open-android": "cap open android",

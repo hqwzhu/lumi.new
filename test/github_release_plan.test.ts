@@ -54,6 +54,7 @@ describe('GitHub release plan', () => {
       'Lumi OS_3.0.0_x64-setup.exe',
       'SHA256SUMS.txt',
       'manifest.json',
+      'RELEASE_NOTES.md',
     ]);
   });
 

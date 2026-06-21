@@ -4,6 +4,7 @@ import { getDataRoot } from '../config/data_path';
 import { getAllKeyNames, loadKeys } from '../config/keys';
 import { loadSetupState } from './setup_state';
 import { getSetupDiagnostics, type SetupDiagnostics } from './diagnostics';
+import { getDiagnosticLogFilePath, getRecentDiagnosticEvents, type DiagnosticEvent } from './diagnostic_logs';
 
 export interface SetupSupportBundle {
   generatedAt: string;
@@ -15,6 +16,8 @@ export interface SetupSupportBundle {
   setupState: ReturnType<typeof loadSetupState>;
   configuredKeys: Record<string, boolean>;
   diagnostics: SetupDiagnostics;
+  diagnosticLogPath: string;
+  recentDiagnosticEvents: DiagnosticEvent[];
   releaseManifest?: unknown;
 }
 
@@ -56,6 +59,8 @@ export async function getSetupSupportBundle(): Promise<SetupSupportBundle> {
     setupState: loadSetupState(),
     configuredKeys: configuredKeys(),
     diagnostics: await getSetupDiagnostics(),
+    diagnosticLogPath: getDiagnosticLogFilePath(),
+    recentDiagnosticEvents: getRecentDiagnosticEvents(50),
     releaseManifest: loadReleaseManifest(),
   };
 }

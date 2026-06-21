@@ -34,6 +34,7 @@ export function createWindowsGitHubReleasePlan(projectDir, options = {}) {
     requireAsset(path.join(releaseDir, manifest.installerName)),
     requireAsset(path.join(releaseDir, 'SHA256SUMS.txt')),
     requireAsset(path.join(releaseDir, 'manifest.json')),
+    requireAsset(path.join(releaseDir, 'RELEASE_NOTES.md')),
   ];
   const notesPath = requireAsset(path.join(releaseDir, 'RELEASE_NOTES.md'));
 

@@ -1,0 +1,53 @@
+﻿# Lumi OS Windows Productization
+
+This directory is the operating manual for the Windows-first product release.
+
+## What To Send To Users
+
+For normal users, send the Windows installer:
+
+```text
+release/windows/Lumi OS_3.0.0_x64-setup.exe
+```
+
+For a formal release channel, publish all files in `release/windows/`:
+
+- `Lumi OS_3.0.0_x64-setup.exe`
+- `LumiOS-Windows-3.0.0.zip`
+- `manifest.json`
+- `RELEASE_NOTES.md`
+- `SHA256SUMS.txt`
+
+Do not send source project archives to normal users.
+
+## Documents
+
+- `windows-release-checklist.md`: maintainer checklist before release.
+- `github-release-and-download-page.md`: GitHub Release and static download page workflow.
+- `windows-user-guide.md`: user install and first-launch guide.
+- `api-key-guide.md`: bilingual API key setup guide.
+- `diagnostics-and-feedback.md`: support bundle, crash logs, and issue triage.
+
+## Release Commands
+
+```powershell
+npm test
+npm run lint
+npm run release:windows
+npm run site:downloads
+npm run github:release:windows -- --dry-run
+```
+
+Publish with GitHub CLI after authentication:
+
+```powershell
+gh auth login
+npm run github:release:windows
+```
+
+Or use GitHub Actions:
+
+1. Open the `LumiOS CI and Windows Release` workflow.
+2. Run workflow on `main`.
+3. Set `publish_release=true`.
+4. Keep `prerelease=true` for beta builds.

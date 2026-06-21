@@ -4,6 +4,7 @@ import { loadSetupState, completeSetup, resetSetupState, type SetupMode, type Mo
 import { getPrimaryKeyName, getSetupProvider, SETUP_PROVIDERS } from '../setup/provider_catalog';
 import { getSetupDiagnostics } from '../setup/diagnostics';
 import { getSetupSupportBundle } from '../setup/support_bundle';
+import { appendDiagnosticEvent } from '../setup/diagnostic_logs';
 
 function maskedKeys(): Record<string, boolean> {
   const stored = loadKeys();
@@ -100,6 +101,21 @@ export function mountSetupRoutes(router: Router) {
 
   router.get('/setup/support-bundle', async (_req, res) => {
     res.json(await getSetupSupportBundle());
+  });
+
+  router.post('/setup/client-error', (req, res) => {
+    const { level, message, stack, context } = req.body || {};
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Client error message is required.' });
+    }
+    appendDiagnosticEvent({
+      source: 'renderer',
+      level: level === 'info' || level === 'warning' || level === 'fatal' ? level : 'error',
+      message,
+      stack: typeof stack === 'string' ? stack : undefined,
+      context: context && typeof context === 'object' ? context : {},
+    });
+    res.json({ success: true });
   });
 
   router.post('/setup/complete', async (req, res) => {

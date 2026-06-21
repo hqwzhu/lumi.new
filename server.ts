@@ -2,14 +2,22 @@
 // / → personal AI OS desktop
 // /index.org.html → org workbench (create/manage orgs, legal tools)
 import "dotenv/config";
+import { appendDiagnosticEvent } from "./server/setup/diagnostic_logs";
 
 // ── Global exception handlers (must be first — before any async setup) ──
 process.on('uncaughtException', (err) => {
+  appendDiagnosticEvent({ source: 'server', level: 'fatal', message: err.message, stack: err.stack });
   console.error('[FATAL] Uncaught exception:', err.message);
   console.error(err.stack);
   process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
+  appendDiagnosticEvent({
+    source: 'server',
+    level: 'fatal',
+    message: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
   console.error('[FATAL] Unhandled rejection:', reason);
   if (reason instanceof Error) console.error(reason.stack);
   process.exit(1);

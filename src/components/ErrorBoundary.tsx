@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { translations } from '@/lib/translations';
+import { reportClientDiagnostic } from '@/lib/diagnostics';
 
 function getT() {
   try {
@@ -34,6 +35,15 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('[ErrorBoundary]', error.message, errorInfo.componentStack?.slice(0, 300));
+    reportClientDiagnostic({
+      level: 'error',
+      message: error.message || 'React render failure',
+      stack: `${error.stack || ''}\n${errorInfo.componentStack || ''}`.trim(),
+      context: {
+        surface: 'ErrorBoundary',
+        url: window.location.href,
+      },
+    });
   }
 
   handleRetry = () => {
