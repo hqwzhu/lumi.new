@@ -46,7 +46,9 @@ type LLMGetters = {
   getRelay?: () => any;
 };
 
-class Scheduler {
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+export class Scheduler {
   private tasks: ScheduledTask[] = [];
   private timers: Map<string, NodeJS.Timeout> = new Map();
   io: SocketIOServer | null = null;
@@ -234,24 +236,39 @@ class Scheduler {
         }
         // Schedule next run
         const nextMs = this.nextCronTime(parsed.fields!);
-        const timer = setTimeout(runAndReschedule, nextMs);
-        this.timers.set(task.id, timer);
+        this.setTaskTimeout(task.id, runAndReschedule, nextMs);
       };
       const firstMs = this.nextCronTime(parsed.fields!);
-      const timer = setTimeout(runAndReschedule, firstMs);
-      this.timers.set(task.id, timer);
+      this.setTaskTimeout(task.id, runAndReschedule, firstMs);
       const [m, h, dom, mon, dow] = parsed.fields!;
       console.log(`[Scheduler] Registered cron task "${task.id}" — ${m} ${h} ${dom} ${mon} ${dow} (next in ${Math.round(firstMs / 1000)}s)`);
     }
   }
 
   /** Parse a cron string — returns either a fixed interval or cron field array */
+  private setTaskTimeout(id: string, handler: () => void | Promise<void>, delayMs: number) {
+    const safeDelay = Math.max(0, delayMs);
+    const timer = setTimeout(() => {
+      if (safeDelay > MAX_TIMEOUT_MS) {
+        this.setTaskTimeout(id, handler, safeDelay - MAX_TIMEOUT_MS);
+        return;
+      }
+      void handler();
+    }, Math.min(safeDelay, MAX_TIMEOUT_MS));
+    this.timers.set(id, timer);
+  }
+
   private parseCron(cron: string): { type: 'interval'; intervalMs: number } | { type: 'cron'; fields: number[] } {
     // Aliases (backward compatible)
     switch (cron) {
+      case 'every_10s': return { type: 'interval', intervalMs: 10 * 1000 };
+      case 'every_1m': return { type: 'interval', intervalMs: 60 * 1000 };
       case 'every_5m': return { type: 'interval', intervalMs: 5 * 60 * 1000 };
+      case 'every_10m': return { type: 'interval', intervalMs: 10 * 60 * 1000 };
       case 'every_1h': return { type: 'interval', intervalMs: 60 * 60 * 1000 };
+      case 'every_hour': return { type: 'interval', intervalMs: 60 * 60 * 1000 };
       case 'every_6h': return { type: 'interval', intervalMs: 6 * 60 * 60 * 1000 };
+      case 'every_24h': return { type: 'interval', intervalMs: 24 * 60 * 60 * 1000 };
       case 'daily_9am': return { type: 'interval', intervalMs: 24 * 60 * 60 * 1000 };
       case 'evening_8pm': return { type: 'interval', intervalMs: 24 * 60 * 60 * 1000 };
       case 'every_30m': return { type: 'interval', intervalMs: 30 * 60 * 1000 };
