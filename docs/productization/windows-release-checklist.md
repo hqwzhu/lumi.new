@@ -21,6 +21,7 @@ npm run release:windows
 npm run release:windows:check
 npm run package:windows-release:check
 npm run smoke:windows-installer
+npm run github:release:windows -- --dry-run
 ```
 
 Expected:
@@ -43,6 +44,7 @@ release\windows\
 - `release:windows:check` confirms the installer checksum and required desktop server resources.
 - `package:windows-release:check` confirms the zip contains the installer, manifest, checksum file, and release notes.
 - `smoke:windows-installer` silently installs to `release\windows-smoke-install\` and confirms the installed desktop executable, uninstaller, and backend resources exist.
+- `github:release:windows -- --dry-run` prints the GitHub Release tag, notes file, and upload assets without publishing.
 
 ## Installer Smoke Test
 
@@ -104,6 +106,23 @@ LumiOS-Windows-<version>.zip
 ```
 
 It includes the installer, manifest, checksum file, and release notes.
+
+## GitHub Release Publishing
+
+Dry run first:
+
+```powershell
+npm run github:release:windows -- --dry-run
+```
+
+Publish after GitHub CLI authentication:
+
+```powershell
+gh auth login
+npm run github:release:windows
+```
+
+The command publishes to `hqwzhu/lumi.new` with tag `windows-v<version>` and uploads the zip package, installer, checksum file, and manifest.
 
 Attach a short release note that tells users:
 
