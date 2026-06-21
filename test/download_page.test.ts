@@ -5,15 +5,16 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { generateWindowsDownloadPage } from '../scripts/generate-download-page.mjs';
 
 const tempDirs: string[] = [];
+const RELEASE_INSTALLER_NAME = 'LumiOS-Windows-3.0.0-x64-setup.exe';
 
 function makeProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-download-page-'));
   tempDirs.push(projectDir);
   const releaseDir = path.join(projectDir, 'release', 'windows');
   fs.mkdirSync(releaseDir, { recursive: true });
-  fs.writeFileSync(path.join(releaseDir, 'Lumi OS_3.0.0_x64-setup.exe'), 'installer');
+  fs.writeFileSync(path.join(releaseDir, RELEASE_INSTALLER_NAME), 'installer');
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-Windows-3.0.0.zip'), 'zip');
-  fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), 'abc123  Lumi OS_3.0.0_x64-setup.exe\n');
+  fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), `abc123  ${RELEASE_INSTALLER_NAME}\n`);
   fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), '# Notes');
   fs.writeFileSync(
     path.join(releaseDir, 'manifest.json'),
@@ -22,7 +23,7 @@ function makeProject() {
         appName: 'Lumi OS',
         version: '3.0.0',
         platform: 'windows-x64',
-        installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+        installerName: RELEASE_INSTALLER_NAME,
         packageName: 'LumiOS-Windows-3.0.0.zip',
         size: 9,
         sha256: 'abc123',
@@ -60,12 +61,12 @@ describe('official download page generator', () => {
       platform: 'windows-x64',
       repo: 'hqwzhu/lumi.new',
       tag: 'windows-v3.0.0',
-      installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+      installerName: RELEASE_INSTALLER_NAME,
       packageName: 'LumiOS-Windows-3.0.0.zip',
       sha256: 'abc123',
     });
     expect(metadata.downloads.installer).toBe(
-      'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/Lumi%20OS_3.0.0_x64-setup.exe',
+      'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe',
     );
     expect(metadata.downloads.package).toBe(
       'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0.zip',

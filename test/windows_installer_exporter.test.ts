@@ -11,6 +11,7 @@ import {
 } from '../scripts/windows-installer-exporter.mjs';
 
 const tempDirs: string[] = [];
+const RELEASE_INSTALLER_NAME = 'LumiOS-Windows-3.0.0-x64-setup.exe';
 
 function makeTempProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-windows-export-'));
@@ -78,9 +79,7 @@ describe('windows installer exporter', () => {
 
     const result = exportWindowsInstaller(projectDir);
 
-    expect(result.destination).toBe(
-      path.join(getWindowsReleaseDir(projectDir), 'Lumi OS_3.0.0_x64-setup.exe'),
-    );
+    expect(result.destination).toBe(path.join(getWindowsReleaseDir(projectDir), RELEASE_INSTALLER_NAME));
     expect(fs.readFileSync(result.destination, 'utf8')).toBe('installer-binary');
     expect(result.size).toBe('installer-binary'.length);
   });
@@ -104,9 +103,9 @@ describe('windows installer exporter', () => {
       generatedAt: new Date('2026-06-20T12:00:00Z'),
     });
 
-    expect(path.basename(result.installerPath)).toBe('Lumi OS_3.0.0_x64-setup.exe');
+    expect(path.basename(result.installerPath)).toBe(RELEASE_INSTALLER_NAME);
     expect(fs.readFileSync(result.checksumPath, 'utf8')).toMatch(
-      /^[a-f0-9]{64}  Lumi OS_3\.0\.0_x64-setup\.exe\r?\n$/,
+      /^[a-f0-9]{64}  LumiOS-Windows-3\.0\.0-x64-setup\.exe\r?\n$/,
     );
 
     const manifest = JSON.parse(fs.readFileSync(result.manifestPath, 'utf8'));
@@ -114,7 +113,7 @@ describe('windows installer exporter', () => {
       appName: 'Lumi OS',
       version: '3.0.0',
       platform: 'windows-x64',
-      installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+      installerName: RELEASE_INSTALLER_NAME,
       packageName: 'LumiOS-Windows-3.0.0.zip',
       size: 'installer-binary'.length,
       generatedAt: '2026-06-20T12:00:00.000Z',
@@ -123,7 +122,7 @@ describe('windows installer exporter', () => {
 
     const releaseNotes = fs.readFileSync(result.releaseNotesPath, 'utf8');
     expect(releaseNotes).toContain('Lumi OS 3.0.0 Windows Release');
-    expect(releaseNotes).toContain('Lumi OS_3.0.0_x64-setup.exe');
+    expect(releaseNotes).toContain(RELEASE_INSTALLER_NAME);
     expect(releaseNotes).toContain('Install');
     expect(releaseNotes).toContain('First Launch Setup');
     expect(releaseNotes).toContain('Troubleshooting');
@@ -148,7 +147,7 @@ describe('windows installer exporter', () => {
 
     expect(validateWindowsReleaseKit(projectDir)).toMatchObject({
       ok: true,
-      installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+      installerName: RELEASE_INSTALLER_NAME,
       packageName: 'LumiOS-Windows-3.0.0.zip',
       packageExists: true,
       size: 'installer-binary'.length,

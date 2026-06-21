@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { createWindowsGitHubReleasePlan } from '../scripts/github-release-plan.mjs';
 
 const tempDirs: string[] = [];
+const RELEASE_INSTALLER_NAME = 'LumiOS-Windows-3.0.0-x64-setup.exe';
 
 function makeProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-github-release-'));
@@ -12,7 +13,7 @@ function makeProject() {
   const releaseDir = path.join(projectDir, 'release', 'windows');
   fs.mkdirSync(releaseDir, { recursive: true });
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-Windows-3.0.0.zip'), 'zip');
-  fs.writeFileSync(path.join(releaseDir, 'Lumi OS_3.0.0_x64-setup.exe'), 'exe');
+  fs.writeFileSync(path.join(releaseDir, RELEASE_INSTALLER_NAME), 'exe');
   fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), 'sha');
   fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), '# notes');
   fs.writeFileSync(
@@ -22,7 +23,7 @@ function makeProject() {
         appName: 'Lumi OS',
         version: '3.0.0',
         platform: 'windows-x64',
-        installerName: 'Lumi OS_3.0.0_x64-setup.exe',
+        installerName: RELEASE_INSTALLER_NAME,
         packageName: 'LumiOS-Windows-3.0.0.zip',
       },
       null,
@@ -51,7 +52,7 @@ describe('GitHub release plan', () => {
     });
     expect(plan.assets.map(asset => path.basename(asset))).toEqual([
       'LumiOS-Windows-3.0.0.zip',
-      'Lumi OS_3.0.0_x64-setup.exe',
+      RELEASE_INSTALLER_NAME,
       'SHA256SUMS.txt',
       'manifest.json',
       'RELEASE_NOTES.md',

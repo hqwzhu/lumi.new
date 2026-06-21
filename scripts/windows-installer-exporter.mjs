@@ -39,7 +39,11 @@ export function exportWindowsInstaller(projectDir) {
   const releaseDir = getWindowsReleaseDir(projectDir);
   fs.mkdirSync(releaseDir, { recursive: true });
 
-  const destination = path.join(releaseDir, path.basename(source));
+  const sourceName = path.basename(source);
+  const version = getInstallerVersion(sourceName);
+  const installerName =
+    version === 'unknown' ? sourceName.replace(/\s+/g, '-') : `LumiOS-Windows-${version}-x64-setup.exe`;
+  const destination = path.join(releaseDir, installerName);
   fs.copyFileSync(source, destination);
 
   const sourceStat = fs.statSync(source);
@@ -137,7 +141,7 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
   const installerName = path.basename(installer.destination);
   const sha256 = getFileSha256(installer.destination);
   const generatedAt = options.generatedAt ?? new Date();
-  const version = getInstallerVersion(installerName);
+  const version = installerName.match(/^LumiOS-Windows-(.+)-x64-setup\.exe$/)?.[1] ?? getInstallerVersion(installerName);
   const packageName = `LumiOS-Windows-${version}.zip`;
 
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
