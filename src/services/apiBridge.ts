@@ -5,6 +5,7 @@ declare global {
 }
 
 const DESKTOP_BACKEND_ORIGIN = 'http://127.0.0.1:3000';
+const BACKEND_PORT = '3000';
 
 function isBackendPath(url: string): boolean {
   return url.startsWith('/api/') || url === '/api' || url.startsWith('/mcp/');
@@ -21,11 +22,23 @@ export function isTauriRuntime(): boolean {
   return protocol === 'tauri:' || protocol === 'asset:' || protocol === 'file:' || hostname === 'tauri.localhost';
 }
 
+export function isLocalBackendPreviewRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  const location = window.location;
+  const protocol = String(location?.protocol || '').toLowerCase();
+  const hostname = String(location?.hostname || '').toLowerCase();
+  const port = String(location?.port || '');
+
+  if (protocol !== 'http:' && protocol !== 'https:') return false;
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') return false;
+  return port.length > 0 && port !== BACKEND_PORT;
+}
+
 export function getBackendOrigin(): string {
   if (typeof window === 'undefined') return DESKTOP_BACKEND_ORIGIN;
   // In Tauri production, WebView2 custom protocol can't reach the backend;
   // always route through the bundled Node.js server.
-  if (isTauriRuntime()) return DESKTOP_BACKEND_ORIGIN;
+  if (isTauriRuntime() || isLocalBackendPreviewRuntime()) return DESKTOP_BACKEND_ORIGIN;
   return window.location.origin;
 }
 
@@ -51,10 +64,10 @@ export function installApiBridge(): void {
       return nativeFetch(input, init);
     }
 
-    // In Tauri, API paths need credentials for cross-origin (localhost vs 127.0.0.1)
+    // In desktop/preview runtimes, API paths need credentials for cross-origin localhost vs 127.0.0.1.
     // But if same-origin, pass through untouched
     if (url.startsWith('/')) {
-      const needsCredentials = isTauriRuntime() && isBackendPath(url);
+      const needsCredentials = (isTauriRuntime() || isLocalBackendPreviewRuntime()) && isBackendPath(url);
       if (!needsCredentials) return nativeFetch(input, init);
       const patched: RequestInit = { ...init, credentials: 'include' };
 
@@ -69,7 +82,7 @@ export function installApiBridge(): void {
         }
       } catch {}
 
-      // In Tauri production, rewrite /api/* requests to the bundled Node.js backend
+      // In desktop production and local preview ports, rewrite /api/* requests to the Node.js backend.
       return nativeFetch(resolveBackendUrl(url), patched);
     }
 

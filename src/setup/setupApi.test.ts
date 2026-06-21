@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { completeSetup, getSetupStatus, saveSetupKey, testSetupProvider } from './setupApi';
 import { SETUP_PROVIDER_CARDS, providersFor } from './providerCatalog';
-import { getBackendOrigin, installApiBridge, isTauriRuntime } from '../services/apiBridge';
+import { getBackendOrigin, installApiBridge, isLocalBackendPreviewRuntime, isTauriRuntime } from '../services/apiBridge';
 
 describe('setup API client', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -73,6 +74,25 @@ describe('setup API client', () => {
       .rejects.toThrow('无法连接 Lumi OS 本地服务');
   });
 
+  it('retries setup requests while the bundled backend is still starting', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', {
+      location: { origin: 'tauri://localhost', protocol: 'tauri:', hostname: 'localhost' },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, providers: { DEEPSEEK_API_KEY: true } }),
+      } as Response);
+
+    const request = saveSetupKey({ providerId: 'deepseek', apiKey: 'sk-test-secret' });
+    await vi.advanceTimersByTimeAsync(300);
+
+    await expect(request).resolves.toMatchObject({ success: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('posts provider tests and setup completion to setup routes', async () => {
     vi.stubGlobal('window', {
       location: { origin: 'http://localhost:3000', protocol: 'http:', hostname: 'localhost' },
@@ -121,13 +141,50 @@ describe('desktop API bridge', () => {
     });
 
     expect(isTauriRuntime()).toBe(false);
+    expect(isLocalBackendPreviewRuntime()).toBe(false);
     expect(getBackendOrigin()).toBe('http://localhost:3000');
+  });
+
+  it('routes localhost preview ports to the fixed bundled backend', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'http://localhost:53995', protocol: 'http:', hostname: 'localhost', port: '53995' },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, providers: { DEEPSEEK_API_KEY: true } }),
+    } as Response);
+
+    expect(isTauriRuntime()).toBe(false);
+    expect(isLocalBackendPreviewRuntime()).toBe(true);
+    expect(getBackendOrigin()).toBe('http://127.0.0.1:3000');
+
+    await saveSetupKey({ providerId: 'deepseek', apiKey: 'sk-test-secret' });
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:3000/api/setup/keys', expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+    }));
   });
 
   it('rewrites relative API requests to the bundled backend in Tauri', async () => {
     const nativeFetch = vi.fn().mockResolvedValue({ ok: true } as Response);
     vi.stubGlobal('window', {
       location: { origin: 'http://tauri.localhost', protocol: 'http:', hostname: 'tauri.localhost' },
+      fetch: nativeFetch,
+      localStorage: { getItem: vi.fn(() => null) },
+    });
+
+    installApiBridge();
+    await (window.fetch as typeof fetch)('/api/setup/status');
+
+    expect(nativeFetch).toHaveBeenCalledWith('http://127.0.0.1:3000/api/setup/status', expect.objectContaining({
+      credentials: 'include',
+    }));
+  });
+
+  it('rewrites relative API requests from localhost preview ports', async () => {
+    const nativeFetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal('window', {
+      location: { origin: 'http://localhost:64164', protocol: 'http:', hostname: 'localhost', port: '64164' },
       fetch: nativeFetch,
       localStorage: { getItem: vi.fn(() => null) },
     });

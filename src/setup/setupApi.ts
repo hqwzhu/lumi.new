@@ -1,6 +1,8 @@
 import type { ModelPreference, SetupMode } from './providerCatalog';
 import { resolveBackendUrl } from '../services/apiBridge';
 
+const RETRY_DELAYS_MS = [300, 700, 1200];
+
 export interface SetupState {
   version?: 1;
   completed: boolean;
@@ -51,26 +53,48 @@ export interface TestProviderResult {
   error?: string;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  return /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message);
+}
+
+function formatConnectionError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`无法连接 Lumi OS 本地服务。请先关闭 Lumi OS 后重新打开；如果仍然失败，请确认安装包为 3.0.2 或更新版本。原始错误：${message}`);
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(resolveBackendUrl(path), {
-      credentials: 'include',
-      ...init,
-      headers: {
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init?.headers || {}),
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`无法连接 Lumi OS 本地服务，请关闭程序后重新打开再试。原始错误：${message}`);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(resolveBackendUrl(path), {
+        credentials: 'include',
+        ...init,
+        headers: {
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(init?.headers || {}),
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || `Request failed: ${response.status}`);
+      }
+      return data as T;
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      lastError = error;
+      if (attempt >= RETRY_DELAYS_MS.length) break;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
   }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `Request failed: ${response.status}`);
-  }
-  return data as T;
+
+  throw formatConnectionError(lastError);
 }
 
 export function getSetupStatus(): Promise<SetupStatus> {
