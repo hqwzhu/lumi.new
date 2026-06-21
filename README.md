@@ -1,6 +1,6 @@
-# LumiOS
+﻿# LumiOS
 
-[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.0)
+[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.1)
 
 灵序科技 / Lumi AI 官方桌面客户端
 
@@ -18,10 +18,10 @@
 
 当前可交付版本是 Windows MVP：
 
-- Release 页面：[Lumi OS 3.0.0 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.0)
-- 普通用户下载：[`LumiOS-Windows-3.0.0-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe)
-- 完整发布包：[`LumiOS-Windows-3.0.0.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0.zip)
-- 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/SHA256SUMS.txt)
+- Release 页面：[Lumi OS 3.0.1 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.1)
+- 普通用户下载：[`LumiOS-Windows-3.0.1-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.1/LumiOS-Windows-3.0.1-x64-setup.exe)
+- 完整发布包：[`LumiOS-Windows-3.0.1.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.1/LumiOS-Windows-3.0.1.zip)
+- 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.1/SHA256SUMS.txt)
 
 Windows 用户直接下载安装器并双击运行即可。首次启动时，Lumi OS 会进入配置向导：选择配置模式、填写至少一个模型 API Key 或启用本地模型，然后正式进入程序。
 
@@ -29,7 +29,7 @@ If Windows SmartScreen appears, continue only when the installer was downloaded 
 
 ## 用户快速使用 / Quick Use
 
-1. 下载 `LumiOS-Windows-3.0.0-x64-setup.exe`。
+1. 下载 `LumiOS-Windows-3.0.1-x64-setup.exe`。
 2. 双击安装，按 Windows 安装器提示完成安装。
 3. 从桌面快捷方式或开始菜单启动 Lumi OS。
 4. 在首次启动向导中选择一种配置模式：
