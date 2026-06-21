@@ -41,6 +41,7 @@ if ($Process.ExitCode -ne 0) {
 $ExpectedFiles = @(
   (Join-Path $InstallDir "lumi-os.exe"),
   (Join-Path $InstallDir "uninstall.exe"),
+  (Join-Path $InstallDir "_up_\desktop-resources\dist-server\node.exe"),
   (Join-Path $InstallDir "_up_\desktop-resources\dist-server\entry.cjs"),
   (Join-Path $InstallDir "_up_\desktop-resources\dist-server\server.mjs")
 )

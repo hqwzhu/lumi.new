@@ -40,6 +40,7 @@ function writeInstaller(projectDir: string, name: string, body: string, mtime: D
 function writeDesktopResources(projectDir: string) {
   const distServerDir = path.join(projectDir, 'desktop-resources', 'dist-server');
   fs.mkdirSync(distServerDir, { recursive: true });
+  fs.writeFileSync(path.join(distServerDir, 'node.exe'), 'node-binary');
   fs.writeFileSync(path.join(distServerDir, 'entry.cjs'), 'module.exports = {};');
   fs.writeFileSync(path.join(distServerDir, 'server.mjs'), 'export {};');
 }
@@ -167,6 +168,10 @@ describe('windows installer exporter', () => {
     });
 
     expect(validateWindowsReleaseKit(projectDir).resourceChecks).toEqual([
+      {
+        path: path.join(projectDir, 'desktop-resources', 'dist-server', 'node.exe'),
+        ok: false,
+      },
       {
         path: path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
         ok: false,

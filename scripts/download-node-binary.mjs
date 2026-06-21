@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, rm, copyFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { execSync } from 'node:child_process';
@@ -11,6 +11,7 @@ const root = path.resolve(path.dirname(__filename), '..');
 const outDir = path.join(root, 'dist-server');
 
 const NODE_VERSION = '20.19.0';
+const forceDownload = process.env.LUMI_FORCE_DOWNLOAD_NODE === '1';
 
 const platformMap = {
   'win32-x64':  { os: 'win',   arch: 'x64', ext: 'zip' },
@@ -29,6 +30,24 @@ if (!target) {
 const { os: osName, arch, ext } = target;
 const base = `node-v${NODE_VERSION}-${osName}-${arch}`;
 const url = `https://nodejs.org/dist/v${NODE_VERSION}/${base}.${ext}`;
+const nodeBinaryName = process.platform === 'win32' ? 'node.exe' : 'node';
+const nodeOutPath = path.join(outDir, nodeBinaryName);
+
+await mkdir(outDir, { recursive: true });
+
+if (existsSync(nodeOutPath) && !forceDownload) {
+  console.log(`[download-node] Reusing existing ${path.relative(root, nodeOutPath)}`);
+  process.exit(0);
+}
+
+if (!forceDownload && process.execPath && existsSync(process.execPath)) {
+  await copyFile(process.execPath, nodeOutPath);
+  if (process.platform !== 'win32') {
+    execSync(`chmod +x "${nodeOutPath}"`, { stdio: 'inherit' });
+  }
+  console.log(`[download-node] Copied current Node.js runtime to ${path.relative(root, nodeOutPath)}`);
+  process.exit(0);
+}
 
 console.log(`[download-node] Downloading Node.js ${NODE_VERSION} for ${key}...`);
 console.log(`[download-node] ${url}`);
@@ -38,8 +57,6 @@ if (!res.ok) {
   console.error(`[download-node] HTTP ${res.status}: ${res.statusText}`);
   process.exit(1);
 }
-
-await mkdir(outDir, { recursive: true });
 
 const tmpDir = path.join(os.tmpdir(), `lumi-node-${Date.now()}`);
 await mkdir(tmpDir, { recursive: true });
@@ -51,15 +68,15 @@ await pipeline(res.body, archiveFile);
 try {
   if (ext === 'zip') {
     execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${tmpDir}' -Force"`, { stdio: 'inherit' });
-    await copyFile(path.join(tmpDir, base, 'node.exe'), path.join(outDir, 'node.exe'));
+    await copyFile(path.join(tmpDir, base, 'node.exe'), nodeOutPath);
     console.log('[download-node] Extracted node.exe to dist-server/');
   } else {
     // macOS / Linux: extract only the node binary
     execSync(`tar -xzf "${archivePath}" -C "${tmpDir}" "${base}/bin/node"`, { stdio: 'inherit' });
     const extracted = path.join(tmpDir, base, 'bin', 'node');
-    await copyFile(extracted, path.join(outDir, 'node'));
+    await copyFile(extracted, nodeOutPath);
     // Ensure executable permission
-    execSync(`chmod +x "${path.join(outDir, 'node')}"`, { stdio: 'inherit' });
+    execSync(`chmod +x "${nodeOutPath}"`, { stdio: 'inherit' });
     console.log('[download-node] Extracted node to dist-server/');
   }
 } finally {

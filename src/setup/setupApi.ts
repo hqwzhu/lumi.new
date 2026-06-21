@@ -1,4 +1,5 @@
 import type { ModelPreference, SetupMode } from './providerCatalog';
+import { resolveBackendUrl } from '../services/apiBridge';
 
 export interface SetupState {
   version?: 1;
@@ -51,14 +52,20 @@ export interface TestProviderResult {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(resolveBackendUrl(path), {
+      credentials: 'include',
+      ...init,
+      headers: {
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`无法连接 Lumi OS 本地服务，请关闭程序后重新打开再试。原始错误：${message}`);
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data?.error || data?.message || `Request failed: ${response.status}`);

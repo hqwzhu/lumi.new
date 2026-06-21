@@ -190,6 +190,7 @@ export function validateWindowsReleaseKit(projectDir) {
   const size = fs.statSync(installerPath).size;
   const sha256 = getFileSha256(installerPath);
   const resourceChecks = [
+    path.join(projectDir, 'desktop-resources', 'dist-server', 'node.exe'),
     path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
     path.join(projectDir, 'desktop-resources', 'dist-server', 'server.mjs'),
   ].map((resourcePath) => ({
