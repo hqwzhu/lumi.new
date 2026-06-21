@@ -7,12 +7,12 @@ This directory is the operating manual for the Windows-first product release.
 For normal users, send the Windows installer:
 
 ```text
-release/windows/Lumi OS_3.0.0_x64-setup.exe
+release/windows/LumiOS-Windows-3.0.0-x64-setup.exe
 ```
 
 For a formal release channel, publish all files in `release/windows/`:
 
-- `Lumi OS_3.0.0_x64-setup.exe`
+- `LumiOS-Windows-3.0.0-x64-setup.exe`
 - `LumiOS-Windows-3.0.0.zip`
 - `manifest.json`
 - `RELEASE_NOTES.md`

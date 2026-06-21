@@ -1,5 +1,7 @@
 # LumiOS
 
+[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.0)
+
 灵序科技 / Lumi AI 官方桌面客户端
 
 **浙江灵序科技有限公司 · [lumiai.asia](https://lumiai.asia)**
@@ -9,6 +11,49 @@
 > LumiOS 不是又一个 AI 助手。
 >
 > 它是第一个真正属于你的 AI 操作系统——从你身上孵化，记忆是你的，人格是你的，存在于你真实的空间里。
+
+---
+
+## 下载与安装 / Download
+
+当前可交付版本是 Windows MVP：
+
+- Release 页面：[Lumi OS 3.0.0 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.0)
+- 普通用户下载：[`LumiOS-Windows-3.0.0-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe)
+- 完整发布包：[`LumiOS-Windows-3.0.0.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0.zip)
+- 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/SHA256SUMS.txt)
+
+Windows 用户直接下载安装器并双击运行即可。首次启动时，Lumi OS 会进入配置向导：选择配置模式、填写至少一个模型 API Key 或启用本地模型，然后正式进入程序。
+
+If Windows SmartScreen appears, continue only when the installer was downloaded from this official GitHub Release.
+
+## 用户快速使用 / Quick Use
+
+1. 下载 `LumiOS-Windows-3.0.0-x64-setup.exe`。
+2. 双击安装，按 Windows 安装器提示完成安装。
+3. 从桌面快捷方式或开始菜单启动 Lumi OS。
+4. 在首次启动向导中选择一种配置模式：
+   - 精简必需版：最快启动，只配置一个主要模型来源。
+   - 实用完整版：推荐日常使用，支持主模型、备用模型、本地模型检测和连接诊断。
+   - 全量配置：适合高级用户和团队，开放中国模型、国际模型、本地模型和 OpenAI 兼容中转配置。
+5. 配置至少一个模型来源：
+   - 中国推荐：DeepSeek、Qwen / DashScope、豆包 / 火山方舟、Kimi、GLM。
+   - 国际推荐：OpenAI、Anthropic Claude、Google Gemini。
+   - 本地模型：Ollama、LM Studio。
+6. 运行诊断，通过后进入 Lumi OS。
+
+更多中文说明见 [README.zh-CN.md](README.zh-CN.md)。Windows 用户指南见 [docs/productization/windows-user-guide.md](docs/productization/windows-user-guide.md)。API Key 获取教程见 [docs/productization/api-key-guide.md](docs/productization/api-key-guide.md)。
+
+## 反馈与诊断 / Support
+
+如果安装、启动或 API Key 测试失败：
+
+1. 打开 Lumi OS 设置。
+2. 进入 `Desktop Node Runtime`。
+3. 点击 `Export Support Bundle`。
+4. 将导出的 `lumi-support-bundle-*.json` 发给维护者。
+
+支持包包含诊断状态、平台信息、数据目录和近期诊断事件，不包含原始 API Key。
 
 ---
 
@@ -168,8 +213,8 @@ LumiOS 是这个愿景的第一个落地形态。
 
 ```powershell
 # Windows (PowerShell)
-git clone https://github.com/maoxiansheng946-dev/-lumi-OS.git
-cd lumi-OS
+git clone https://github.com/hqwzhu/lumi.new.git
+cd lumi.new
 copy .env.example .env
 # 编辑 .env，填入 API Key
 ./scripts/deploy-windows.ps1                                    # 管理员安装到 Program Files
@@ -178,8 +223,8 @@ copy .env.example .env
 
 ```bash
 # macOS
-git clone https://github.com/maoxiansheng946-dev/-lumi-OS.git
-cd lumi-OS
+git clone https://github.com/hqwzhu/lumi.new.git
+cd lumi.new
 cp .env.example .env
 # 编辑 .env，填入 API Key
 bash scripts/deploy-macos.sh
@@ -187,8 +232,8 @@ bash scripts/deploy-macos.sh
 
 ```bash
 # Linux (Ubuntu/Debian)
-git clone https://github.com/maoxiansheng946-dev/-lumi-OS.git
-cd lumi-OS
+git clone https://github.com/hqwzhu/lumi.new.git
+cd lumi.new
 cp .env.example .env
 # 编辑 .env，填入 API Key
 bash scripts/deploy-linux.sh
