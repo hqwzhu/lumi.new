@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadKeys, saveKeys, getAllKeyNames } from '../config/keys';
-import { loadSetupState, completeSetup, resetSetupState, type SetupMode, type ModelPreference } from '../setup/setup_state';
+import { loadSetupState, completeSetup, resetSetupState, updateSetupPreferences, type SetupMode, type ModelPreference } from '../setup/setup_state';
 import { getPrimaryKeyName, getSetupProvider, SETUP_PROVIDERS } from '../setup/provider_catalog';
 import { getSetupDiagnostics } from '../setup/diagnostics';
 import { getSetupSupportBundle } from '../setup/support_bundle';
@@ -132,6 +132,19 @@ export function mountSetupRoutes(router: Router) {
       skippedOptionalProviders: Array.isArray(skippedOptionalProviders) ? skippedOptionalProviders : [],
     });
     res.json({ success: true, state });
+  });
+
+  router.patch('/setup/preferences', (req, res) => {
+    const { mode, modelPreference, configuredProviders, skippedOptionalProviders } = req.body || {};
+    if (!validMode(mode)) return res.status(400).json({ error: 'Invalid setup mode' });
+    if (!validModelPreference(modelPreference)) return res.status(400).json({ error: 'Invalid model preference' });
+    const state = updateSetupPreferences({
+      mode,
+      modelPreference,
+      configuredProviders: Array.isArray(configuredProviders) ? configuredProviders : [],
+      skippedOptionalProviders: Array.isArray(skippedOptionalProviders) ? skippedOptionalProviders : [],
+    });
+    res.json({ success: true, state, requiresSetup: !state.completed });
   });
 
   router.post('/setup/reset', (_req, res) => {

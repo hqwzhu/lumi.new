@@ -31,7 +31,8 @@ import { VoiceForge } from './VoiceForge';
 import { VoiceProviderSwitch } from './VoiceProviderSwitch';
 import { MCPSettings } from './MCPSettings';
 import { MessagingHub } from './MessagingHub';
-import { resetSetup } from '@/setup/setupApi';
+import { resetSetup, getSetupStatus, type SetupStatus } from '@/setup/setupApi';
+import { SetupOnboarding } from '@/setup/SetupOnboarding';
 
 function buildSidebarGroups(t: any) {
   return [
@@ -45,6 +46,7 @@ function buildSidebarGroups(t: any) {
       label: t.sidebarAiNeural || 'AI & Neural',
       items: [
         { id: 'neural', label: t.neuralEngine || 'Neural Engine', icon: <BrainCircuit size={16} /> },
+        { id: 'setup-manager', label: '配置模式 / API Key', icon: <Cloud size={16} /> },
         { id: 'llm-providers', label: t.llmProviders || 'LLM Providers', icon: <BrainCircuit size={16} /> },
         { id: 'voice-services', label: t.voiceServices || 'Voice Services', icon: <Mic size={16} /> },
       ],
@@ -82,6 +84,8 @@ export function Settings({
   const { aiConfig, updateAIConfig, logout, operationMode, setOperationMode } = useApp();
   const [providerStatus, setProviderStatus] = useState<Record<string, { available: boolean; model: string }>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [setupStatusLoading, setSetupStatusLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/llm/providers')
@@ -89,6 +93,23 @@ export function Settings({
       .then(d => setProviderStatus(d.providers || {}))
       .catch(() => toast.error(t.failedToLoadProviderStatus || 'Failed to load provider status'));
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'setup-manager') return;
+    let cancelled = false;
+    setSetupStatusLoading(true);
+    getSetupStatus()
+      .then(status => {
+        if (!cancelled) setSetupStatus(status);
+      })
+      .catch(() => toast.error('无法加载配置模式状态'))
+      .finally(() => {
+        if (!cancelled) setSetupStatusLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection]);
 
   const handleSectionChange = (section: string) => {
     if (onSectionChange) onSectionChange(section);
@@ -202,6 +223,28 @@ export function Settings({
         return <VoiceForge t={t} />;
       case 'llm-providers':
         return <LLMProvidersPage t={t} providerStatus={providerStatus} />;
+      case 'setup-manager':
+        return (
+          <div className="h-full min-h-0">
+            {setupStatusLoading && !setupStatus ? (
+              <div className="flex h-64 items-center justify-center gap-3 text-white/55">
+                <Loader2 size={20} className="animate-spin" />
+                正在加载配置模式...
+              </div>
+            ) : (
+              <SetupOnboarding
+                variant="settings"
+                initialProviders={setupStatus?.providers}
+                initialState={setupStatus?.state}
+                onFinish={() => {
+                  getSetupStatus()
+                    .then(status => setSetupStatus(status))
+                    .catch(() => {});
+                }}
+              />
+            )}
+          </div>
+        );
       case 'voice-services':
         return <VoiceServicesPage t={t} />;
       case 'security':

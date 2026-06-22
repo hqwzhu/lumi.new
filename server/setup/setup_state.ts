@@ -75,6 +75,18 @@ export function completeSetup(input: Omit<SetupState, 'version' | 'completed' | 
   });
 }
 
+export function updateSetupPreferences(input: Omit<SetupState, 'version' | 'completed' | 'completedAt'>): SetupState {
+  const current = loadSetupState();
+  return saveSetupState({
+    ...current,
+    version: 1,
+    mode: input.mode,
+    modelPreference: input.modelPreference,
+    configuredProviders: input.configuredProviders,
+    skippedOptionalProviders: input.skippedOptionalProviders,
+  });
+}
+
 export function resetSetupState(): SetupState {
   return saveSetupState(DEFAULT_STATE);
 }

@@ -53,4 +53,34 @@ describe('setup_state', () => {
     expect(loadSetupState()).toEqual({ version: 1, completed: false });
     expect(fs.existsSync(path.join(root, 'data'))).toBe(true);
   });
+
+  it('updates setup preferences without forcing users through first-run setup again', async () => {
+    const { saveSetupState, updateSetupPreferences, loadSetupState } = await import('../server/setup/setup_state');
+    saveSetupState({
+      version: 1,
+      completed: true,
+      completedAt: '2026-06-20T00:00:00.000Z',
+      mode: 'essential',
+      modelPreference: 'china',
+      configuredProviders: ['deepseek'],
+      skippedOptionalProviders: [],
+    });
+
+    const updated = updateSetupPreferences({
+      mode: 'full',
+      modelPreference: 'international',
+      configuredProviders: ['deepseek', 'openai'],
+      skippedOptionalProviders: ['ollama'],
+    });
+
+    expect(updated).toMatchObject({
+      completed: true,
+      completedAt: '2026-06-20T00:00:00.000Z',
+      mode: 'full',
+      modelPreference: 'international',
+      configuredProviders: ['deepseek', 'openai'],
+      skippedOptionalProviders: ['ollama'],
+    });
+    expect(loadSetupState().completed).toBe(true);
+  });
 });

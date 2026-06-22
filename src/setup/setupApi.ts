@@ -130,6 +130,13 @@ export function completeSetup(input: CompleteSetupInput): Promise<{ success: boo
   });
 }
 
+export function updateSetupPreferences(input: CompleteSetupInput): Promise<{ success: boolean; state: SetupState; requiresSetup: boolean }> {
+  return requestJson('/api/setup/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
 export function resetSetup(): Promise<{ success: boolean; state: SetupState }> {
   return requestJson('/api/setup/reset', { method: 'POST' });
 }

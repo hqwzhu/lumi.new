@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { completeSetup, getSetupStatus, saveSetupKey, testSetupProvider } from './setupApi';
+import { completeSetup, getSetupStatus, saveSetupKey, testSetupProvider, updateSetupPreferences } from './setupApi';
 import { SETUP_PROVIDER_CARDS, providersFor } from './providerCatalog';
 import { getBackendOrigin, installApiBridge, isLocalBackendPreviewRuntime, isTauriRuntime } from '../services/apiBridge';
 
@@ -117,6 +117,28 @@ describe('setup API client', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:3000/api/setup/test-provider', expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:3000/api/setup/complete', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('updates setup preferences without reopening first-run onboarding', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'http://localhost:3000', protocol: 'http:', hostname: 'localhost' },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, state: { version: 1, completed: true, mode: 'full' }, requiresSetup: false }),
+    } as Response);
+
+    await expect(updateSetupPreferences({
+      mode: 'full',
+      modelPreference: 'international',
+      configuredProviders: ['openai'],
+      skippedOptionalProviders: [],
+    })).resolves.toMatchObject({ state: { mode: 'full' }, requiresSetup: false });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/api/setup/preferences', expect.objectContaining({
+      method: 'PATCH',
+      credentials: 'include',
+    }));
   });
 });
 

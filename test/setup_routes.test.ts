@@ -132,6 +132,34 @@ describe('setup routes', () => {
     expect(body.state.completed).toBe(true);
   });
 
+  it('updates setup preferences after onboarding without requiring another model-source check', async () => {
+    await fetch(`${ctx.url}/api/setup/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId: 'deepseek', apiKey: 'sk-deepseek-test' }),
+    });
+    const completeRes = await fetch(`${ctx.url}/api/setup/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'essential', modelPreference: 'china', configuredProviders: ['deepseek'], skippedOptionalProviders: [] }),
+    });
+    const completeBody = await completeRes.json() as any;
+
+    const res = await fetch(`${ctx.url}/api/setup/preferences`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'full', modelPreference: 'international', configuredProviders: ['deepseek', 'openai'], skippedOptionalProviders: [] }),
+    });
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(body.state.completed).toBe(true);
+    expect(body.state.completedAt).toBe(completeBody.state.completedAt);
+    expect(body.state.mode).toBe('full');
+    expect(body.state.modelPreference).toBe('international');
+    expect(body.requiresSetup).toBe(false);
+  });
+
   it('completes setup when a local model source is detected', async () => {
     detectLocalModelSources.mockResolvedValue({
       hasLocalModel: true,
