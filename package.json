@@ -39,6 +39,7 @@
     "package:macos-release": "node scripts/package-macos-release.mjs",
     "release:macos:check": "node scripts/check-macos-release.mjs",
     "release:macos": "npm run tauri:build -- --bundles dmg,app && npm run export:macos-release && npm run package:macos-release && npm run release:macos:check",
+    "release:macos:unsigned": "npm run tauri:build -- --bundles dmg,app --no-sign && npm run export:macos-release && npm run package:macos-release && npm run release:macos:check",
     "github:release:windows": "node scripts/github-release-windows.mjs",
     "site:downloads": "node scripts/generate-download-page.mjs",
     "release:windows": "npm run tauri:build && npm run export:windows-installer && npm run package:windows-release && npm run release:windows:check && npm run package:windows-release:check",

@@ -20,5 +20,16 @@ describe('Tauri macOS release config', () => {
       'release:macos:check': 'node scripts/check-macos-release.mjs',
     });
     expect(pkg.scripts['release:macos']).toContain('--bundles dmg,app');
+    expect(pkg.scripts['release:macos:unsigned']).toContain('--no-sign');
+  });
+
+  it('keeps unsigned macOS CI builds away from empty Apple signing secrets', () => {
+    const workflowPath = path.resolve(process.cwd(), '.github', 'workflows', 'ci.yml');
+    const workflow = fs.readFileSync(workflowPath, 'utf-8');
+
+    expect(workflow).toContain('Build unsigned macOS release kit');
+    expect(workflow).toContain('npm run release:macos:unsigned');
+    expect(workflow).toContain('Build signed macOS release kit');
+    expect(workflow).not.toContain('APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}\n      APPLE_CERTIFICATE_PASSWORD');
   });
 });

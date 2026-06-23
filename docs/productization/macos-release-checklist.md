@@ -11,11 +11,17 @@ macOS DMG builds cannot be produced on the Windows development machine. Use one 
 
 ## Local Commands On macOS
 
-Run from the project root:
+Run from the project root for an unsigned internal test build:
 
 ```bash
 npm test
 npm run lint
+npm run release:macos:unsigned
+```
+
+Run this variant only after Apple signing and notarization secrets are configured in the local environment:
+
+```bash
 npm run release:macos
 ```
 
