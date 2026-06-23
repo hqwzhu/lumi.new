@@ -18,13 +18,13 @@ For a formal Windows release channel, publish all files in `release/windows/`:
 - `RELEASE_NOTES.md`
 - `SHA256SUMS.txt`
 
-For macOS internal testing, send the DMG from the macOS release kit:
+The macOS version is in development. For internal Apple Silicon testing, send the DMG from the macOS release kit:
 
 ```text
 release/macos/LumiOS-macOS-3.0.4-arm64.dmg
 ```
 
-For normal macOS users, publish the DMG only after Apple Developer signing and notarization are configured.
+For normal macOS users, publish the DMG only after Apple Developer signing and notarization are configured. Until then, keep macOS marked as an internal test build / in-development platform in GitHub and website copy.
 
 Do not send source project archives to normal users.
 

@@ -1,6 +1,6 @@
 # LumiOS
 
-[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4)
+[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
 
 灵序科技 / Lumi AI 官方桌面客户端
 
@@ -16,12 +16,27 @@
 
 ## 下载与安装 / Download
 
-当前可交付版本是 Windows MVP：
+当前面向普通用户可交付的正式版本是 Windows MVP。macOS 版本正在开发中，CI 已经可以生成 Apple Silicon 内部测试 DMG，但正式公开分发还需要 Apple Developer 签名和 notarization。
 
-- Release 页面：[Lumi OS 3.0.4 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4)
+| 平台 | 状态 | 入口 |
+| --- | --- | --- |
+| Windows | 正式 MVP，可下载使用 | [Lumi OS 3.0.4 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4) |
+| macOS Apple Silicon | 开发中，内部测试包已由 GitHub Actions 生成 | [macOS 安装与真机验收指南](docs/productization/macos-user-guide.zh-CN.md) |
+| macOS Intel | 计划中，尚未发布 x64 DMG | [macOS 签名与发布流程](docs/productization/macos-signing-and-release.zh-CN.md) |
+
+Windows 下载：
+
 - 普通用户下载：[`LumiOS-Windows-3.0.4-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/LumiOS-Windows-3.0.4-x64-setup.exe)
 - 完整发布包：[`LumiOS-Windows-3.0.4.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/LumiOS-Windows-3.0.4.zip)
 - 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/SHA256SUMS.txt)
+
+macOS 开发中：
+
+- 当前 CI 产物：`LumiOS-macOS-3.0.4-arm64.dmg`
+- 适用范围：Apple Silicon Mac 内部测试
+- 当前限制：未签名 / 未 notarize，普通用户正式发布前需要配置 Apple Developer 签名密钥
+- 最新验证过的 Actions run：[LumiOS CI and Desktop Release](https://github.com/hqwzhu/lumi.new/actions/runs/28035995414)
+- macOS 测试说明：[docs/productization/macos-user-guide.zh-CN.md](docs/productization/macos-user-guide.zh-CN.md)
 
 Windows 用户直接下载安装器并双击运行即可。首次启动时，Lumi OS 会进入配置向导：选择配置模式、填写至少一个模型 API Key 或启用本地模型，然后正式进入程序。
 
@@ -183,9 +198,9 @@ LumiOS 是这个愿景的第一个落地形态。
 
 | 平台 | 状态 |
 |------|------|
-| Windows 桌面（Tauri v2 + WebView2） | 主要目标，稳定运行 |
-| macOS 桌面（Tauri v2） | 支持 |
-| Linux 桌面（Tauri v2） | 支持 |
+| Windows 桌面（Tauri v2 + WebView2） | 主要目标，3.0.4 MVP 已发布 |
+| macOS 桌面（Tauri v2） | 开发中，Apple Silicon 内部测试 DMG 已可由 GitHub Actions 生成，正式版待 Apple 签名与 notarization |
+| Linux 桌面（Tauri v2） | 第二阶段规划 |
 | Web（React SPA） | 官网独立发布，不随桌面安装包打包 |
 | iOS / Android（Capacitor） | 实验阶段，不随桌面安装包打包 |
 
@@ -311,7 +326,9 @@ LumiOS 是灵序科技 Personal AI 生态的软件核心，配合以下硬件终
 ## 路线图
 
 - [x] Web 平台上线（lumiai.asia）
-- [x] 桌面客户端（Windows / macOS / Linux）
+- [x] Windows 桌面安装器 MVP
+- [ ] macOS 桌面版正式发布（开发中，内部测试包已生成，待 Apple 签名/公证）
+- [ ] Linux 桌面版
 - [x] 多 LLM 引擎接入（11 个提供商）
 - [x] MCP 生态系统（20 技能 + 26 内置工具）
 - [x] 语音交互（TTS + STT + 语音唤醒 + 情感自适应）

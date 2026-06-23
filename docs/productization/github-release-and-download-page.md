@@ -110,15 +110,18 @@ Generated files:
 ```text
 public/downloads/windows.html
 public/downloads/windows.json
+public/downloads/macos.html
+public/downloads/macos.json
 ```
 
 Recommended website route:
 
 ```text
 https://lumiai.asia/downloads/windows.html
+https://lumiai.asia/downloads/macos.html
 ```
 
-The HTML page links directly to GitHub Release assets. The JSON file can be used by a future website, updater service, or release monitor.
+The Windows HTML page links directly to GitHub Release assets. The macOS HTML page intentionally marks macOS as in development until Apple Developer signing and notarization are complete. The JSON files can be used by a future website, updater service, or release monitor.
 
 ## Before Public Distribution
 

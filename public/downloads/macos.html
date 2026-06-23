@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lumi OS macOS 版本开发中</title>
+    <meta name="description" content="Lumi OS macOS version is in development. Apple Silicon internal test builds are available from GitHub Actions; public release is pending Apple signing and notarization." />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090a0c;
+        --panel: #14171c;
+        --line: #262b33;
+        --text: #f3f6fb;
+        --muted: #a8b1bf;
+        --accent: #77d7c8;
+        --warn: #f4c95d;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+      }
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+      header {
+        display: grid;
+        gap: 20px;
+        padding: 28px 0 36px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 5vw, 64px);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+      p { color: var(--muted); margin: 0; }
+      section {
+        padding: 28px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .badge {
+        width: fit-content;
+        border: 1px solid color-mix(in srgb, var(--warn), transparent 55%);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: #f8e7ad;
+        background: color-mix(in srgb, var(--warn), transparent 90%);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        border-radius: 8px;
+        padding: 0 18px;
+        color: #06110f;
+        background: var(--accent);
+        font-weight: 800;
+        text-decoration: none;
+      }
+      a.secondary {
+        color: var(--text);
+        background: #1d222a;
+        border: 1px solid var(--line);
+      }
+      dl {
+        display: grid;
+        grid-template-columns: minmax(140px, 220px) 1fr;
+        gap: 10px 16px;
+        margin: 0;
+      }
+      dt { color: var(--muted); }
+      dd { margin: 0; overflow-wrap: anywhere; }
+      code {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-family: "JetBrains Mono", Consolas, monospace;
+        font-size: 0.92em;
+      }
+      ol { margin: 0; padding-left: 22px; color: var(--muted); }
+      li + li { margin-top: 8px; }
+      .notice {
+        border: 1px solid color-mix(in srgb, var(--warn), transparent 68%);
+        background: color-mix(in srgb, var(--warn), transparent 90%);
+        color: #f8e7ad;
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      @media (max-width: 640px) {
+        main { width: min(100% - 24px, 1040px); padding-top: 28px; }
+        dl { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="badge">macOS 版本开发中 / In development</div>
+        <div>
+          <h1>Lumi OS macOS</h1>
+          <p>Apple Silicon 内部测试 DMG 已由 GitHub Actions 生成；正式公开下载等待 Apple Developer 签名和 notarization。</p>
+        </div>
+        <div class="actions">
+          <a class="button" href="https://github.com/hqwzhu/lumi.new/actions/runs/28035995414">查看 GitHub Actions 测试包</a>
+          <a class="button secondary" href="../../docs/productization/macos-user-guide.zh-CN.md">macOS 测试说明</a>
+          <a class="button secondary" href="../../docs/productization/macos-signing-and-release.zh-CN.md">签名发布流程</a>
+        </div>
+      </header>
+      <section>
+        <h2>当前状态</h2>
+        <dl>
+          <dt>平台</dt><dd>macOS Apple Silicon</dd>
+          <dt>版本</dt><dd>3.0.4</dd>
+          <dt>测试包</dt><dd><code>LumiOS-macOS-3.0.4-arm64.dmg</code></dd>
+          <dt>SHA256</dt><dd><code>c2d0617431c8e72a73b1015c0c80de5cb814f51050d018b5ef6e2e2ce2752318</code></dd>
+          <dt>Artifact</dt><dd><code>lumi-os-macos-release-kit</code></dd>
+          <dt>公开下载</dt><dd>暂未开放</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>为什么还不能公开下载</h2>
+        <p class="notice">当前 DMG 是未签名内部测试版。面向普通 Mac 用户发布前，需要配置 Apple Developer 证书、完成代码签名和 notarization，否则 macOS Gatekeeper 可能阻止启动。</p>
+      </section>
+      <section>
+        <h2>下一步</h2>
+        <ol>
+          <li>在 Mac 真机安装并完成首次启动验收。</li>
+          <li>配置 GitHub Actions Apple 签名密钥。</li>
+          <li>重新构建 signed macOS release kit。</li>
+          <li>测试通过后发布正式 macOS GitHub Release。</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>

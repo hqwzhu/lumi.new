@@ -1,18 +1,35 @@
 # LumiOS 中文说明
 
-[English README](README.md) | [Windows 下载](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4)
+[English README](README.md) | [Windows 下载](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4) | [macOS 开发中](docs/productization/macos-user-guide.zh-CN.md)
 
-LumiOS 是 Lumi AI 的桌面客户端。本仓库当前面向普通用户交付的是 Windows MVP 安装包，目标是让用户不需要手动搭环境，下载安装后通过首次启动向导完成 API Key 和基础设置。
+LumiOS 是 Lumi AI 的桌面客户端。本仓库当前面向普通用户交付的是 Windows MVP 安装包，目标是让用户不需要手动搭环境，下载安装后通过首次启动向导完成 API Key 和基础设置。macOS 版本正在开发中，GitHub Actions 已经可以生成 Apple Silicon 内部测试 DMG；正式公开发布还需要 Apple Developer 签名和 notarization。
 
 ## 下载
 
-正式 Release 页面：
+正式 Windows Release 页面：
 
 [https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4)
 
 普通用户只需要下载这个文件：
 
 [`LumiOS-Windows-3.0.4-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/LumiOS-Windows-3.0.4-x64-setup.exe)
+
+### macOS 版本状态
+
+macOS 版本开发中，当前状态：
+
+| 项目 | 状态 |
+| --- | --- |
+| Apple Silicon DMG | 已由 GitHub Actions 生成内部测试包 |
+| Intel Mac DMG | 计划中，尚未发布 |
+| 普通用户公开下载 | 暂不开放，等待 Apple Developer 签名和 notarization |
+| 内部测试文件 | `LumiOS-macOS-3.0.4-arm64.dmg` |
+| 测试说明 | [macOS 安装与真机验收指南](docs/productization/macos-user-guide.zh-CN.md) |
+| 签名发布说明 | [macOS 签名、公证与正式 Release 流程](docs/productization/macos-signing-and-release.zh-CN.md) |
+
+最新验证过的 macOS Actions run：
+
+[https://github.com/hqwzhu/lumi.new/actions/runs/28035995414](https://github.com/hqwzhu/lumi.new/actions/runs/28035995414)
 
 发布页里还包含：
 
@@ -152,6 +169,8 @@ npm run package:windows-release:check
 ## 更多文档
 
 - [Windows 用户指南](docs/productization/windows-user-guide.md)
+- [macOS 安装与真机验收指南](docs/productization/macos-user-guide.zh-CN.md)
+- [macOS 签名、公证与正式 Release 流程](docs/productization/macos-signing-and-release.zh-CN.md)
 - [API Key 获取教程](docs/productization/api-key-guide.md)
 - [诊断和反馈机制](docs/productization/diagnostics-and-feedback.md)
 - [GitHub Release 与下载页流程](docs/productization/github-release-and-download-page.md)
