@@ -6,15 +6,21 @@ import { getKey } from '../config/keys';
 import { hasDoubaoSpeech } from './providers/ark';
 import { getVoicePreference } from '../config/voice_preference';
 import { isCircuitClosed } from '../cloud/circuit_breaker';
+import { cleanTextForSpeech } from '../llm/response_text';
 
 export async function synthesizeSpeech(text: string, config: TTSConfig): Promise<TTSResult> {
+  const speechText = cleanTextForSpeech(text);
+  if (!speechText) {
+    throw new Error('No speakable text after removing reasoning content.');
+  }
+
   switch (config.provider) {
     case 'gptsovits':
-      return gptsovits.synthesizeSpeech(text, config.voiceId, config.signal);
+      return gptsovits.synthesizeSpeech(speechText, config.voiceId, config.signal);
     case 'cosyvoice':
-      return cosyvoice.synthesizeSpeech(text, config.voiceId, config.signal, config.speechRate, config.pitch, config.volume);
+      return cosyvoice.synthesizeSpeech(speechText, config.voiceId, config.signal, config.speechRate, config.pitch, config.volume);
     case 'ark':
-      return ark.synthesizeSpeech(text, config.voiceId, config.signal, config.speechRate, config.pitch, config.volume);
+      return ark.synthesizeSpeech(speechText, config.voiceId, config.signal, config.speechRate, config.pitch, config.volume);
     default:
       throw new Error(`Unknown TTS provider: ${config.provider}`);
   }

@@ -1,6 +1,7 @@
 import { ParsedToolCall, NormalizedLLMResponse } from '../tools/types';
 import { withCloudResilience } from '../cloud/resilience';
 import { isStrictPrivacy, requireLocalProvider } from '../config/privacy';
+import { StreamingAssistantTextFilter, cleanAssistantTextForDisplay } from './response_text';
 
 export type MessageContent =
   | string
@@ -45,7 +46,6 @@ export function formatDeepSeekRequest(params: {
     const roleMap: Record<string, string> = { assistant: 'assistant', tool: 'tool', system: 'system' };
     const entry: any = { role: roleMap[m.role] || 'user' };
     if (m.content !== null) entry.content = m.content;
-    if (m.reasoningContent) entry.reasoning_content = m.reasoningContent;
     if (m.toolCalls) {
       entry.tool_calls = m.toolCalls.map(tc => ({
         id: tc.id,
@@ -83,8 +83,7 @@ export function parseDeepSeekResponse(rawResponse: any): NormalizedLLMResponse {
   const message = rawResponse.choices?.[0]?.message;
   if (!message) return { text: null, toolCalls: null };
 
-  // Reasoning models (v4-pro, v4-flash, reasoner) put output in reasoning_content; content may be empty
-  const text = message.content || message.reasoning_content || null;
+  const text = cleanAssistantTextForDisplay(message.content);
   const reasoningContent = message.reasoning_content || null;
   const usage = extractUsage(rawResponse);
 
@@ -250,7 +249,6 @@ export function formatQwenRequest(params: {
     const roleMap: Record<string, string> = { assistant: 'assistant', tool: 'tool', system: 'system' };
     const entry: any = { role: roleMap[m.role] || 'user' };
     if (m.content !== null) entry.content = m.content;
-    if (m.reasoningContent) entry.reasoning_content = m.reasoningContent;
     if (m.toolCalls) {
       entry.tool_calls = m.toolCalls.map(tc => ({
         id: tc.id,
@@ -590,6 +588,7 @@ export async function makeLLMCallStreaming(
     );
     const accumulatedText: string[] = [];
     const accumulatedReasoning: string[] = [];
+    const displayFilter = new StreamingAssistantTextFilter();
     const toolCallAccumulators: Map<number, { id: string; name: string; args: string }> = new Map();
     let streamUsage: any = undefined;
 
@@ -597,14 +596,15 @@ export async function makeLLMCallStreaming(
       const delta = chunk.choices?.[0]?.delta;
       if (delta) {
         if (delta.content) {
-          accumulatedText.push(delta.content);
-          onChunk(delta.content);
+          const visibleChunk = displayFilter.push(delta.content);
+          if (visibleChunk) {
+            accumulatedText.push(visibleChunk);
+            onChunk(visibleChunk);
+          }
         }
 
         if (delta.reasoning_content) {
           accumulatedReasoning.push(delta.reasoning_content);
-          // Reasoning model → stream thinking as visible output when content is empty
-          if (!delta.content) onChunk(delta.reasoning_content);
         }
 
         if (delta.tool_calls) {
@@ -624,8 +624,13 @@ export async function makeLLMCallStreaming(
     }
 
     const usage = extractUsage({ usage: streamUsage });
+    const visibleTail = displayFilter.flush();
+    if (visibleTail) {
+      accumulatedText.push(visibleTail);
+      onChunk(visibleTail);
+    }
 
-    const text = accumulatedText.length > 0 ? accumulatedText.join('') : (accumulatedReasoning.length > 0 ? accumulatedReasoning.join('') : null);
+    const text = accumulatedText.length > 0 ? cleanAssistantTextForDisplay(accumulatedText.join('')) : null;
     const reasoningContent = accumulatedReasoning.length > 0 ? accumulatedReasoning.join('') : null;
     if (toolCallAccumulators.size > 0) {
       const toolCalls: ParsedToolCall[] = [...toolCallAccumulators.values()].map(acc => {
