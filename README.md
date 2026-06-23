@@ -35,7 +35,7 @@ macOS 开发中：
 - 当前 CI 产物：`LumiOS-macOS-3.0.4-arm64.dmg`
 - 适用范围：Apple Silicon Mac 内部测试
 - 当前限制：未签名 / 未 notarize，普通用户正式发布前需要配置 Apple Developer 签名密钥
-- 最新验证过的 Actions run：[LumiOS CI and Desktop Release](https://github.com/hqwzhu/lumi.new/actions/runs/28035995414)
+- GitHub Actions 构建入口：[LumiOS CI and Desktop Release](https://github.com/hqwzhu/lumi.new/actions/workflows/ci.yml)
 - macOS 测试说明：[docs/productization/macos-user-guide.zh-CN.md](docs/productization/macos-user-guide.zh-CN.md)
 
 Windows 用户直接下载安装器并双击运行即可。首次启动时，Lumi OS 会进入配置向导：选择配置模式、填写至少一个模型 API Key 或启用本地模型，然后正式进入程序。

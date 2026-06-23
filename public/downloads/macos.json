@@ -5,9 +5,8 @@
   "status": "in-development",
   "releaseChannel": "internal-test",
   "repo": "hqwzhu/lumi.new",
-  "actionsRun": "https://github.com/hqwzhu/lumi.new/actions/runs/28035995414",
+  "actionsWorkflow": "https://github.com/hqwzhu/lumi.new/actions/workflows/ci.yml",
   "artifactName": "lumi-os-macos-release-kit",
-  "artifactId": 7825076394,
   "generatedAt": "2026-06-24T00:00:00.000+08:00",
   "dmgName": "LumiOS-macOS-3.0.4-arm64.dmg",
   "dmgSha256": "c2d0617431c8e72a73b1015c0c80de5cb814f51050d018b5ef6e2e2ce2752318",
@@ -15,7 +14,7 @@
     "publicDownloadReady": false,
     "requiresAppleSigning": true,
     "requiresNotarization": true,
-    "notes": "Apple Silicon internal test build is available from GitHub Actions. Public macOS distribution is pending Apple Developer signing and notarization."
+    "notes": "Apple Silicon internal test builds are available from the GitHub Actions workflow artifacts. Public macOS distribution is pending Apple Developer signing and notarization."
   },
   "docs": {
     "installGuide": "../../docs/productization/macos-user-guide.zh-CN.md",

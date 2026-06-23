@@ -27,9 +27,9 @@ macOS 版本开发中，当前状态：
 | 测试说明 | [macOS 安装与真机验收指南](docs/productization/macos-user-guide.zh-CN.md) |
 | 签名发布说明 | [macOS 签名、公证与正式 Release 流程](docs/productization/macos-signing-and-release.zh-CN.md) |
 
-最新验证过的 macOS Actions run：
+macOS GitHub Actions 构建入口：
 
-[https://github.com/hqwzhu/lumi.new/actions/runs/28035995414](https://github.com/hqwzhu/lumi.new/actions/runs/28035995414)
+[https://github.com/hqwzhu/lumi.new/actions/workflows/ci.yml](https://github.com/hqwzhu/lumi.new/actions/workflows/ci.yml)
 
 发布页里还包含：
 
