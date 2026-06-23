@@ -23,6 +23,7 @@ Do not send source project archives to normal users.
 ## Documents
 
 - `windows-release-checklist.md`: maintainer checklist before release.
+- `macos-release-checklist.md`: macOS DMG build, artifact, signing, and smoke-test checklist.
 - `github-release-and-download-page.md`: GitHub Release and static download page workflow.
 - `windows-user-guide.md`: user install and first-launch guide.
 - `api-key-guide.md`: bilingual API key setup guide.
@@ -47,7 +48,8 @@ npm run github:release:windows
 
 Or use GitHub Actions:
 
-1. Open the `LumiOS CI and Windows Release` workflow.
+1. Open the `LumiOS CI and Desktop Release` workflow.
 2. Run workflow on `main`.
 3. Set `publish_release=true`.
-4. Keep `prerelease=true` for beta builds.
+4. Set `release_platform=windows` or `release_platform=macos`.
+5. Keep `prerelease=true` for beta builds.

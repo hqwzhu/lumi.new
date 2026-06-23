@@ -1,6 +1,6 @@
 ﻿# GitHub Release And Download Page
 
-This workflow publishes the Windows MVP through GitHub Releases and generates a static download page for the official website.
+This workflow publishes desktop releases through GitHub Releases and generates a static download page for the official website.
 
 ## Release Channel
 
@@ -10,10 +10,16 @@ Repository:
 hqwzhu/lumi.new
 ```
 
-Tag pattern:
+Windows tag pattern:
 
 ```text
 windows-v<version>
+```
+
+macOS tag pattern:
+
+```text
+macos-v<version>-<arch>
 ```
 
 Example:
@@ -22,7 +28,7 @@ Example:
 windows-v3.0.0
 ```
 
-## Local Release Flow
+## Local Windows Release Flow
 
 Run from the project root:
 
@@ -55,22 +61,41 @@ npm run github:release:windows
 
 ## GitHub Actions Flow
 
-The workflow `.github/workflows/ci.yml` is Windows-first:
+The workflow `.github/workflows/ci.yml` supports Windows and macOS desktop release artifacts:
 
 - PR and push checks run TypeScript, Rust check, Vitest, and frontend build.
-- Installer build runs on `windows-latest`.
-- macOS and Linux installers are deferred to phase 2.
-- Manual workflow dispatch can publish a GitHub Release.
+- Windows installer build runs on `windows-latest`.
+- macOS DMG build runs on `macos-latest`.
+- Manual workflow dispatch can publish a GitHub Release for the selected platform.
 
-Manual publish:
+Manual Windows publish:
 
 1. Go to GitHub Actions.
-2. Select `LumiOS CI and Windows Release`.
+2. Select `LumiOS CI and Desktop Release`.
 3. Click `Run workflow`.
 4. Select branch `main`.
 5. Set `publish_release=true`.
-6. Keep `prerelease=true` for beta builds.
-7. Confirm the release assets appear under `windows-v<version>`.
+6. Set `release_platform=windows`.
+7. Keep `prerelease=true` for beta builds.
+8. Confirm the release assets appear under `windows-v<version>`.
+
+Manual macOS test artifact:
+
+1. Go to GitHub Actions.
+2. Select `LumiOS CI and Desktop Release`.
+3. Click `Run workflow`.
+4. Select branch `main`.
+5. Set `publish_release=false`.
+6. Set `release_platform=macos`.
+7. Confirm the `lumi-os-macos-release-kit` artifact contains the DMG, app archive, zip, manifest, checksum file, and release notes.
+
+Manual macOS prerelease:
+
+1. Run the macOS test artifact workflow first.
+2. Run workflow again with `publish_release=true`.
+3. Set `release_platform=macos`.
+4. Keep `prerelease=true` unless Apple signing and notarization are ready.
+5. Confirm the release assets appear under `macos-v<version>-<arch>`.
 
 ## Official Website Download Page
 
@@ -106,3 +131,5 @@ Confirm:
 - Support bundle export works from Settings.
 
 Code signing is still pending. Until signing is added, tell users to expect a possible Windows SmartScreen warning and only trust the official release channel.
+
+For macOS public distribution, configure Apple Developer signing and notarization before sending the DMG to normal users. Unsigned DMGs are internal test builds and may be blocked by Gatekeeper.

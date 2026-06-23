@@ -1,4 +1,4 @@
-name: LumiOS CI and Windows Release
+name: LumiOS CI and Desktop Release
 
 on:
   push:
@@ -8,13 +8,21 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Create a GitHub Release from the Windows installer
+        description: Create a GitHub Release from the selected desktop installer
         required: true
         default: "false"
         type: choice
         options:
           - "false"
           - "true"
+      release_platform:
+        description: Desktop platform to publish when publish_release is true
+        required: true
+        default: "windows"
+        type: choice
+        options:
+          - "windows"
+          - "macos"
       prerelease:
         description: Mark the GitHub Release as prerelease
         required: true
@@ -131,7 +139,7 @@ jobs:
   release:
     name: Create Windows GitHub Release
     needs: build-windows
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true' && inputs.release_platform == 'windows'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -144,7 +152,11 @@ jobs:
         id: meta
         run: |
           VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.version)")"
+          INSTALLER="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.installerName)")"
+          PACKAGE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.packageName)")"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "installer=${INSTALLER}" >> "$GITHUB_OUTPUT"
+          echo "package=${PACKAGE}" >> "$GITHUB_OUTPUT"
           echo "tag=windows-v${VERSION}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
@@ -152,12 +164,109 @@ jobs:
           name: Lumi OS ${{ steps.meta.outputs.version }} Windows
           body_path: artifacts/release/windows/RELEASE_NOTES.md
           files: |
-            artifacts/release/windows/LumiOS-Windows-${{ steps.meta.outputs.version }}.zip
-            artifacts/release/windows/Lumi OS_${{ steps.meta.outputs.version }}_x64-setup.exe
+            artifacts/release/windows/${{ steps.meta.outputs.package }}
+            artifacts/release/windows/${{ steps.meta.outputs.installer }}
             artifacts/release/windows/SHA256SUMS.txt
             artifacts/release/windows/manifest.json
             artifacts/release/windows/RELEASE_NOTES.md
             artifacts/public/downloads/windows.html
             artifacts/public/downloads/windows.json
+          draft: false
+          prerelease: ${{ inputs.prerelease == 'true' }}
+
+  build-macos:
+    name: Build macOS app
+    needs: [typecheck, test, frontend-build]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare Node.js runtime
+        run: node scripts/download-node-binary.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Import Apple signing certificate
+        if: env.APPLE_CERTIFICATE != '' && env.APPLE_CERTIFICATE_PASSWORD != ''
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/lumi-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/apple-certificate.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "${KEYCHAIN_PASSWORD:-temporary-password}" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD:-temporary-password}" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD:-temporary-password}" "$KEYCHAIN_PATH"
+      - name: Build macOS release kit
+        run: npm run release:macos
+      - name: Upload macOS release kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumi-os-macos-release-kit
+          path: |
+            release/macos/**
+          if-no-files-found: error
+
+  release-macos:
+    name: Create macOS GitHub Release
+    needs: build-macos
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release == 'true' && inputs.release_platform == 'macos'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lumi-os-macos-release-kit
+          path: artifacts
+      - name: Normalize macOS artifact layout
+        run: |
+          if [ -f artifacts/manifest.json ] && [ ! -f artifacts/release/macos/manifest.json ]; then
+            mkdir -p artifacts/release/macos
+            find artifacts -maxdepth 1 -type f -exec mv {} artifacts/release/macos/ \;
+          fi
+      - name: Read release version
+        id: meta
+        run: |
+          VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.version)")"
+          ARCH="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.arch)")"
+          DMG="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.dmgName)")"
+          APP_ARCHIVE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.appArchiveName)")"
+          PACKAGE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.packageName)")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "arch=${ARCH}" >> "$GITHUB_OUTPUT"
+          echo "dmg=${DMG}" >> "$GITHUB_OUTPUT"
+          echo "app_archive=${APP_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "package=${PACKAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=macos-v${VERSION}-${ARCH}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Lumi OS ${{ steps.meta.outputs.version }} macOS ${{ steps.meta.outputs.arch }}
+          body_path: artifacts/release/macos/RELEASE_NOTES.md
+          files: |
+            artifacts/release/macos/${{ steps.meta.outputs.package }}
+            artifacts/release/macos/${{ steps.meta.outputs.dmg }}
+            artifacts/release/macos/${{ steps.meta.outputs.app_archive }}
+            artifacts/release/macos/SHA256SUMS.txt
+            artifacts/release/macos/manifest.json
+            artifacts/release/macos/RELEASE_NOTES.md
           draft: false
           prerelease: ${{ inputs.prerelease == 'true' }}
