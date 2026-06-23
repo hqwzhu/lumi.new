@@ -21,6 +21,8 @@ import { OrgPortal } from '../components/OrgPortal';
 import { useAppShell } from './useAppShell';
 import { SetupOnboarding } from '../setup/SetupOnboarding';
 import { getSetupStatus, type SetupStatus } from '../setup/setupApi';
+import { LicenseActivation } from '../license/LicenseActivation';
+import { getLicenseStatus, type LicenseStatus } from '../license/licenseApi';
 
 installApiBridge();
 
@@ -30,12 +32,31 @@ export function DesktopApp() {
   const [selectedAgent, setSelectedAgent] = useState<any>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [setupLoading, setSetupLoading] = useState(true);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(true);
+  const [licenseError, setLicenseError] = useState('');
 
   useEffect(() => { document.body.classList.add('overflow-hidden'); return () => document.body.classList.remove('overflow-hidden'); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
 
   useEffect(() => {
     let cancelled = false;
+    getLicenseStatus()
+      .then(status => {
+        if (!cancelled) {
+          setLicenseStatus(status);
+          setLicenseError('');
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setLicenseError(error?.message || '无法读取授权状态。');
+          setLicenseStatus(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLicenseLoading(false);
+      });
     getSetupStatus()
       .then(status => {
         if (!cancelled) setSetupStatus(status);
@@ -52,8 +73,9 @@ export function DesktopApp() {
   }, []);
 
   const showSetup = !setupLoading && setupStatus?.requiresSetup;
+  const showActivation = !licenseLoading && (licenseStatus?.requiresActivation !== false);
 
-  if (shell.loading || setupLoading) {
+  if (shell.loading || setupLoading || licenseLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-transparent">
         <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }} className="flex flex-col items-center gap-4">
@@ -85,7 +107,16 @@ export function DesktopApp() {
     <div className="h-screen w-full bg-transparent overflow-hidden">
       <ProactiveNotifications />
       <Toaster position="top-right" theme="dark" />
-      {showSetup ? (
+      {showActivation ? (
+        <LicenseActivation
+          initialStatus={licenseStatus}
+          initialError={licenseError}
+          onActivated={(status) => {
+            setLicenseStatus(status);
+            setLicenseError('');
+          }}
+        />
+      ) : showSetup ? (
         <SetupOnboarding
           initialProviders={setupStatus?.providers}
           onFinish={() => setSetupStatus(current => current ? {

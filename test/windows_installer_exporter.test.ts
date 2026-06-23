@@ -125,6 +125,8 @@ describe('windows installer exporter', () => {
     expect(releaseNotes).toContain('Lumi OS 3.0.0 Windows Release');
     expect(releaseNotes).toContain(RELEASE_INSTALLER_NAME);
     expect(releaseNotes).toContain('Install');
+    expect(releaseNotes).toContain('One-machine license activation');
+    expect(releaseNotes).toContain('First Launch Activation');
     expect(releaseNotes).toContain('First Launch Setup');
     expect(releaseNotes).toContain('Troubleshooting');
     expect(releaseNotes).toContain('%USERPROFILE%\\LumiOS\\data');

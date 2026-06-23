@@ -6,6 +6,7 @@ import { mountMcpRoutes } from "../routes/mcp_routes";
 import { mountDeviceRoutes } from "../routes/device_routes";
 import { mountSystemRoutes } from "../routes/system_routes";
 import { mountSetupRoutes } from "../routes/setup_routes";
+import { mountLicenseRoutes } from "../routes/license_routes";
 import { mountChatRoutes } from "../routes/chat_routes";
 import { mountPreferencesRoutes } from "../routes/preferences_routes";
 import { mountInteractionsRoutes } from "../routes/interactions_routes";
@@ -43,6 +44,7 @@ export function mountAllRoutes({ apiRouter, jwtSecret, llm, getCookieOptions, io
 
   // System routes (health, tools, llm, settings, stats, ecosystem, modules)
   mountSystemRoutes(apiRouter, jwtSecret, io);
+  mountLicenseRoutes(apiRouter);
   mountSetupRoutes(apiRouter);
 
   // AI Chat

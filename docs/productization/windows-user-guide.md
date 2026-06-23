@@ -1,4 +1,4 @@
-# Lumi OS Windows User Guide / Windows 用户使用指南
+﻿# Lumi OS Windows User Guide / Windows 用户使用指南
 
 This guide is for the Windows productized build of Lumi OS.
 
@@ -36,6 +36,16 @@ If Windows SmartScreen appears, continue only when the installer came from the o
 
 如果 Windows SmartScreen 弹出提示，请只在安装器来自官方 GitHub Release 或可信下载渠道时继续。
 
+
+## License Activation / 授权激活
+
+Windows MVP uses one-machine activation. Lumi OS displays a machine code on first launch. The operator generates an authorization code for that exact machine code at:
+
+[https://www.enhe-tech.com.cn/admin/license-generator](https://www.enhe-tech.com.cn/admin/license-generator)
+
+Paste the generated code into Lumi OS and click `激活并继续`. After activation succeeds, Lumi OS opens the API Key setup wizard.
+
+Windows MVP 版本采用一机一授权。用户首次启动时复制机器码，运营人员在上面的授权码生成器中为同一机器码生成授权码，用户粘贴后点击激活即可继续配置 API Key。
 ## Choose A Setup Mode / 选择配置模式
 
 ### Essential / 精简必需版
@@ -185,3 +195,4 @@ npm run build:desktop
 ```
 
 普通用户请使用官方发布的安装器。开发环境可重新构建桌面资源。
+

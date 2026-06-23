@@ -87,6 +87,7 @@ function createReleaseNotes(manifest) {
 ## What Users Get
 
 - Windows-first NSIS installer.
+- One-machine license activation before first-launch setup.
 - First-launch setup wizard with Essential, Practical, and Full modes.
 - China, international, and local model provider recommendations.
 - Bilingual API key help for provider setup.
@@ -97,7 +98,8 @@ function createReleaseNotes(manifest) {
 
 1. Verify the checksum in \`SHA256SUMS.txt\`.
 2. Run the installer on a clean Windows user profile or VM.
-3. Confirm first-launch setup reaches the LumiOS desktop after a cloud key or local model is available.
+3. Confirm first launch shows the machine code and rejects an invalid authorization code.
+4. Generate an authorization code for the displayed machine code, activate, then confirm setup reaches the LumiOS desktop after a cloud key or local model is available.
 
 ## Install
 
@@ -105,6 +107,12 @@ function createReleaseNotes(manifest) {
 2. Follow the Windows installer prompts.
 3. Launch Lumi OS from the Start Menu or desktop shortcut.
 4. If Windows SmartScreen appears, choose more info and run anyway only when this installer came from the official release channel.
+
+## First Launch Activation
+
+1. Copy the machine code shown by Lumi OS.
+2. Generate an authorization code at the admin license generator.
+3. Paste the authorization code into Lumi OS and activate.
 
 ## First Launch Setup
 

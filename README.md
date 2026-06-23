@@ -1,6 +1,6 @@
-# LumiOS
+﻿# LumiOS
 
-[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
+[中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
 
 灵序科技 / Lumi AI 官方桌面客户端
 
@@ -20,15 +20,15 @@
 
 | 平台 | 状态 | 入口 |
 | --- | --- | --- |
-| Windows | 正式 MVP，可下载使用 | [Lumi OS 3.0.4 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.4) |
+| Windows | 正式 MVP，可下载使用 | [Lumi OS 3.0.5 Windows](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) |
 | macOS Apple Silicon | 开发中，内部测试包已由 GitHub Actions 生成 | [macOS 安装与真机验收指南](docs/productization/macos-user-guide.zh-CN.md) |
 | macOS Intel | 计划中，尚未发布 x64 DMG | [macOS 签名与发布流程](docs/productization/macos-signing-and-release.zh-CN.md) |
 
 Windows 下载：
 
-- 普通用户下载：[`LumiOS-Windows-3.0.4-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/LumiOS-Windows-3.0.4-x64-setup.exe)
-- 完整发布包：[`LumiOS-Windows-3.0.4.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/LumiOS-Windows-3.0.4.zip)
-- 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.4/SHA256SUMS.txt)
+- 普通用户下载：[`LumiOS-Windows-3.0.5-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/LumiOS-Windows-3.0.5-x64-setup.exe)
+- 完整发布包：[`LumiOS-Windows-3.0.5.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/LumiOS-Windows-3.0.5.zip)
+- 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/SHA256SUMS.txt)
 
 macOS 开发中：
 
@@ -42,13 +42,25 @@ Windows 用户直接下载安装器并双击运行即可。首次启动时，Lum
 
 If Windows SmartScreen appears, continue only when the installer was downloaded from this official GitHub Release.
 
+### Windows license activation
+
+Windows first launch now includes one-machine activation before the API Key setup wizard. Copy the machine code shown by Lumi OS, generate an authorization code in the admin generator, paste it into Lumi OS, and then continue setup.
+
+Admin generator:
+
+[https://www.enhe-tech.com.cn/admin/license-generator](https://www.enhe-tech.com.cn/admin/license-generator)
+
+Operator and website integration details:
+
+[docs/productization/license-activation.md](docs/productization/license-activation.md)
+
 ### Clean Windows runtime note
 
 For normal users, the Windows installer is the only required download. Lumi OS bundles the Node.js backend runtime and desktop resources. Starting with 3.0.3, the installer also embeds the Microsoft WebView2 bootstrapper, so a clean Windows machine can install the required WebView2 runtime during setup if it is missing. This bootstrapper still needs internet access during installation. A fully offline installer with the complete WebView2 runtime is planned as a later optional package.
 
 ## 用户快速使用 / Quick Use
 
-1. 下载 `LumiOS-Windows-3.0.4-x64-setup.exe`。
+1. 下载 `LumiOS-Windows-3.0.5-x64-setup.exe`。
 2. 双击安装，按 Windows 安装器提示完成安装。
 3. 从桌面快捷方式或开始菜单启动 Lumi OS。
 4. 在首次启动向导中选择一种配置模式：
@@ -383,3 +395,4 @@ LumiOS 是灵序科技 Personal AI 生态的软件核心，配合以下硬件终
 GNU Affero General Public License v3.0 (AGPL-3.0)。详见 [LICENSE](./LICENSE)。
 
 **简言之：** 个人使用、修改和分发自由。若在网络服务中商用使用，必须以相同许可证开源你的修改。闭源商业许可请联系版权方。
+
