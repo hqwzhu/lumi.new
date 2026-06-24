@@ -4,6 +4,15 @@ import { toast } from 'sonner';
 import { useMusicPlayer } from '../hooks/useMusicPlayer';
 import { useSocket } from '../hooks/useSocket';
 
+interface NcmAccount {
+  id?: string;
+  originalId?: number | string;
+  nickname?: string;
+  avatarUrl?: string;
+  signature?: string;
+  vipTypes?: number[];
+}
+
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
   const mins = Math.floor(seconds / 60);
@@ -23,16 +32,29 @@ export function MusicCenter({ isOpen, onClose, t }: { isOpen: boolean; onClose: 
   const [cfgBusy, setCfgBusy] = useState(false);
   const [cfgMsg, setCfgMsg] = useState('');
   const [musicPrompt, setMusicPrompt] = useState('');
+  const [account, setAccount] = useState<NcmAccount | null>(null);
+  const [loginMessage, setLoginMessage] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const refreshLoginStatus = async () => {
+    try {
+      const s = await fetch('/api/ncm/login/status').then(r => r.json());
+      setLoginDone(Boolean(s.done));
+      setLoginMessage(s.message || '');
+      setAccount(s.account || null);
+      if (s.qrUrl) setQrImgSrc(`https://quickchart.io/qr?text=${encodeURIComponent(s.qrUrl)}&size=220`);
+      else if (s.done) setQrImgSrc(null);
+      return s;
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     fetch('/api/ncm/configure/status').then(r => r.json()).then(s => {
       setConfigured(s.configured);
     }).catch(() => setConfigured(false));
-    fetch('/api/ncm/login/status').then(r => r.json()).then(s => {
-      if (s.done) setLoginDone(true);
-      if (s.qrUrl) setQrImgSrc(`https://quickchart.io/qr?text=${encodeURIComponent(s.qrUrl)}&size=220`);
-    }).catch(() => {});
+    void refreshLoginStatus();
     socket?.emit('music:get_state');
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [socket]);
@@ -77,8 +99,11 @@ export function MusicCenter({ isOpen, onClose, t }: { isOpen: boolean; onClose: 
           const ss = await sr.json();
           if (ss.done) {
             setLoginDone(true);
+            setAccount(ss.account || null);
+            setLoginMessage(ss.message || '');
             setQrImgSrc(null);
             clearInterval(interval);
+            socket?.emit('music:get_state');
             toast.success(t?.musicConnected || 'NetEase Cloud connected');
           }
         } catch {}
@@ -116,6 +141,13 @@ export function MusicCenter({ isOpen, onClose, t }: { isOpen: boolean; onClose: 
   if (!isOpen) return null;
 
   const progressMax = Math.max(1, Math.floor(player.duration || 0));
+  const currentArtist = player.track?.artists?.filter(Boolean).join(' / ');
+  const connectionText = loginDone
+    ? (account?.nickname || loginMessage || t?.musicConnected || 'Connected')
+    : (t?.musicNotConnected || 'Not connected');
+  const playbackText = player.track
+    ? `${player.isPlaying ? (t?.playing || 'Playing') : (t?.paused || 'Paused')}${player.source === 'netease' ? ' · NetEase' : ''}`
+    : (t?.musicWaitingForTrack || 'Waiting for music request');
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar p-1">
@@ -144,12 +176,24 @@ export function MusicCenter({ isOpen, onClose, t }: { isOpen: boolean; onClose: 
 
           <div className="rounded-2xl bg-black/30 border border-white/5 p-4">
             <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-base font-bold text-white/85 truncate">
-                  {player.track?.name || t?.musicNoTrack || 'No track loaded'}
-                </div>
-                <div className="text-xs text-white/40 truncate">
-                  {player.track?.artists?.join(' / ') || t?.musicControlHint || 'Voice, chat, and this panel share the same playback engine.'}
+              <div className="flex items-center gap-3 min-w-0">
+                {player.track?.coverUrl ? (
+                  <img src={player.track.coverUrl} alt="" className="w-12 h-12 rounded-xl object-cover border border-white/10 bg-white/5" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-400/10 flex items-center justify-center">
+                    <Volume2 size={18} className="text-red-300/70" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="text-base font-bold text-white/85 truncate">
+                    {player.track?.name || t?.musicNoTrack || 'No track loaded'}
+                  </div>
+                  <div className="text-xs text-white/40 truncate">
+                    {currentArtist || t?.musicControlHint || 'Voice, chat, and this panel share the same playback engine.'}
+                  </div>
+                  <div className="mt-1 text-[10px] text-white/30 truncate">
+                    {playbackText}
+                  </div>
                 </div>
               </div>
               <button
@@ -271,11 +315,21 @@ export function MusicCenter({ isOpen, onClose, t }: { isOpen: boolean; onClose: 
 
             {qrImgSrc ? (
               <img src={qrImgSrc} alt="QR Code" className="w-40 h-40 rounded-xl bg-white" />
+            ) : account?.avatarUrl ? (
+              <img src={account.avatarUrl} alt="" className="w-40 h-40 rounded-xl object-cover bg-white/[0.03] border border-white/10" />
             ) : (
               <div className="w-40 h-40 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center text-xs text-white/25">
                 {loginDone ? 'Connected' : 'QR Login'}
               </div>
             )}
+
+            <div className="w-full rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+              <div className="text-xs font-bold text-white/75 truncate">{connectionText}</div>
+              <div className="mt-1 text-[10px] text-white/35 truncate">
+                {account?.originalId ? `ID ${account.originalId}` : loginDone ? (t?.musicAccountReady || 'Account ready') : (t?.musicAccountRequired || 'Login to sync NetEase account')}
+                {account?.vipTypes?.length ? ` · VIP ${account.vipTypes.join('/')}` : ''}
+              </div>
+            </div>
 
             <button
               onClick={startLogin}

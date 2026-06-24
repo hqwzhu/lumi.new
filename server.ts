@@ -41,6 +41,11 @@ import voiceRoutes from "./routes/voice";
 import fileRoutes from "./routes/files";
 import { subscriptionRoutes } from "./server/subscription/routes";
 import { resolveRole } from "./server/runtime/role";
+import {
+  extractNcmJson,
+  normalizeNcmAccountProfile,
+  runNcmCli as runSharedNcmCli,
+} from "./server/music/ncm_cli";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,23 +72,12 @@ let ncmLoginDone = false;
 const execFileP = promisify(execFile);
 
 async function runNcmCli(args: string[], timeout = 15000): Promise<{ stdout: string; stderr: string }> {
-  if (process.platform === 'win32') {
-    // MSYS2 bash PATH lacks .cmd entries — go through cmd.exe
-    const cmdline = `npx.cmd @music163/ncm-cli ${args.join(' ')}`;
-    try {
-      const stdout = execFileSync('cmd.exe', ['/c', cmdline], { timeout, windowsHide: true, encoding: 'utf8' });
-      return { stdout, stderr: '' };
-    } catch (e: any) {
-      throw new Error(e.stderr || e.message || String(e));
-    }
-  }
-  const result = await execFileP('npx', ['@music163/ncm-cli', ...args], { timeout, maxBuffer: 1024 * 1024 });
-  return { stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  return runSharedNcmCli(args, timeout);
 }
 
 function normalizeNcmAppId(value: unknown): string | null {
   const appId = String(value ?? '').trim();
-  return /^\d{1,32}$/.test(appId) ? appId : null;
+  return /^[A-Za-z0-9_-]{1,64}$/.test(appId) ? appId : null;
 }
 
 function normalizeNcmPrivateKey(value: unknown): string | null {
@@ -115,9 +109,13 @@ apiRouter.get('/ncm/configure/status', async (_req, res) => {
   try {
     const result = await runNcmCli(['config', 'list'], 8000);
     const stdout = result.stdout || '';
-    const hasAppId = stdout.includes('appId:') && !stdout.includes('appId: (未配置)');
-    const hasPrivateKey = stdout.includes('privateKey:') && !stdout.includes('privateKey: (未配置)');
-    res.json({ configured: hasAppId && hasPrivateKey });
+    const configLine = (key: string) =>
+      stdout.split(/\r?\n/).find(line => line.trim().toLowerCase().startsWith(`${key.toLowerCase()}:`)) || '';
+    const hasConfigValue = (key: string) => {
+      const value = configLine(key).split(':').slice(1).join(':').trim();
+      return Boolean(value && !/未配置|not configured|undefined|null/i.test(value));
+    };
+    res.json({ configured: hasConfigValue('appId') && hasConfigValue('privateKey') });
   } catch {
     res.json({ configured: false });
   }
@@ -126,7 +124,7 @@ apiRouter.get('/ncm/configure/status', async (_req, res) => {
 apiRouter.post('/ncm/login', async (_req, res) => {
   try {
     const result = await runNcmCli(['login', '--background', '--output', 'json'], 15000);
-    const data = JSON.parse(result.stdout);
+    const data = extractNcmJson(result.stdout) || {};
     ncmLoginQrUrl = data.qrCodeUrl || data.clickableUrl || null;
     ncmLoginDone = false;
 
@@ -135,7 +133,7 @@ apiRouter.post('/ncm/login', async (_req, res) => {
     ncmLoginPolling = setInterval(async () => {
       try {
         const check = await runNcmCli(['login', '--check', '--output', 'json'], 8000);
-        const cd = JSON.parse(check.stdout);
+        const cd = extractNcmJson(check.stdout) || {};
         if (cd.success) {
           ncmLoginDone = true;
           ncmLoginQrUrl = null;
@@ -156,8 +154,13 @@ apiRouter.post('/ncm/login', async (_req, res) => {
     const fs = await import('fs');
 
     // Configure mpv player path so ncm-cli can find it
+    const bundledMpvDir = 'C:\\Program Files\\MPV Player';
+    const bundledMpvPath = `${bundledMpvDir}\\mpv.exe`;
     const mpvPath = process.env.MPV_PATH
-      || (fs.existsSync('C:/Program Files/MPV Player/mpv.exe') ? 'C:/Program Files/MPV Player/mpv.exe' : 'mpv');
+      || (process.platform === 'win32' && fs.existsSync(bundledMpvPath) ? 'mpv' : 'mpv');
+    if (process.platform === 'win32' && fs.existsSync(bundledMpvPath)) {
+      process.env.PATH = `${process.env.PATH || ''};${bundledMpvDir}`;
+    }
     await runNcmCli(['config', 'set', 'player', mpvPath], 10000).catch(() => {});
     console.log(`[NCM] Player configured: ${mpvPath}`);
 
@@ -168,7 +171,7 @@ apiRouter.post('/ncm/login', async (_req, res) => {
       await runNcmCli(['config', 'set', 'appId', appId], 10000).catch(() => {});
       await runNcmCli(['config', 'set', 'privateKey', privateKey], 10000).catch(() => {});
       const check = await runNcmCli(['login', '--check', '--output', 'json'], 10000);
-      const data = JSON.parse(check.stdout);
+      const data = extractNcmJson(check.stdout) || {};
       if (data.success) {
         ncmLoginDone = true;
         console.log('[NCM] Already logged in from previous session.');
@@ -217,7 +220,41 @@ apiRouter.post('/ncm/login', async (_req, res) => {
 })();
 
 apiRouter.get('/ncm/login/status', (_req, res) => {
-  res.json({ done: ncmLoginDone, qrUrl: ncmLoginQrUrl });
+  (async () => {
+    let done = ncmLoginDone;
+    let message = '';
+    let account = null;
+
+    try {
+      const check = await runNcmCli(['login', '--check', '--output', 'json'], 8000);
+      const data = extractNcmJson(check.stdout) || {};
+      done = Boolean(data.success);
+      message = typeof data.message === 'string' ? data.message : '';
+      ncmLoginDone = done;
+      if (done) ncmLoginQrUrl = null;
+    } catch {
+      done = ncmLoginDone;
+    }
+
+    if (done) {
+      try {
+        const profile = await runNcmCli(['user', 'info', '--output', 'json'], 10000);
+        const normalized = normalizeNcmAccountProfile(extractNcmJson(profile.stdout));
+        if (normalized) {
+          account = {
+            id: normalized.id,
+            originalId: normalized.originalId,
+            nickname: normalized.nickname,
+            avatarUrl: normalized.avatarUrl,
+            signature: normalized.signature,
+            vipTypes: normalized.vipTypes,
+          };
+        }
+      } catch {}
+    }
+
+    res.json({ done, qrUrl: ncmLoginQrUrl, account, message });
+  })().catch(() => res.json({ done: ncmLoginDone, qrUrl: ncmLoginQrUrl, account: null }));
 });
 
 // ── Org routes ──

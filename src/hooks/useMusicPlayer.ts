@@ -173,11 +173,11 @@ export function useMusicPlayer() {
           artists: data.artists || [],
           album: data.album,
           coverUrl: data.coverUrl,
-          duration: data.duration,
+          duration: data.duration ? data.duration * 1000 : prev.track?.duration,
         } : prev.track,
         isPlaying: data.playing ?? prev.isPlaying,
         progress: data.progress != null ? data.progress : prev.progress,
-        duration: data.duration ? data.duration / 1000 : prev.duration,
+        duration: data.duration ?? prev.duration,
         volume: data.volume ?? prev.volume,
         source: data.source ?? prev.source,
       }));

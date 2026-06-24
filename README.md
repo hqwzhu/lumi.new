@@ -1,5 +1,7 @@
 # LumiOS
 
+> Status: LumiOS is under active iterative development. The Windows MVP is usable today; music, macOS packaging, licensing, and the skill ecosystem will continue to receive updates.
+
 [中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
 
 ---

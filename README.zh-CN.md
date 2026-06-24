@@ -1,5 +1,7 @@
 # LumiOS 中文说明
 
+> 项目状态：LumiOS 正在持续迭代更新中。当前 Windows MVP 已可安装使用，音乐中枢、macOS 打包、授权机制和技能生态会继续优化。
+
 [English README](README.md) | [Windows 下载](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) | [macOS 开发中](docs/productization/macos-user-guide.zh-CN.md)
 
 LumiOS 是 Lumi AI 的桌面客户端。本仓库当前面向普通用户交付的是 Windows MVP 安装包，目标是让用户不需要手动搭环境，下载安装后通过首次启动向导完成 API Key 和基础设置。macOS 版本正在开发中，GitHub Actions 已经可以生成 Apple Silicon 内部测试 DMG；正式公开发布还需要 Apple Developer 签名和 notarization。
