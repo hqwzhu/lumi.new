@@ -10,8 +10,10 @@ try {
 
   console.log('Windows release kit check:');
   console.log(`  Installer: ${result.installerName}`);
+  console.log(`  Uninstaller: ${result.uninstallerName}`);
   console.log(`  Size:      ${result.size} bytes`);
   console.log(`  SHA256:    ${result.sha256}`);
+  console.log(`  Uninstaller SHA256: ${result.uninstallerSha256}`);
 
   for (const check of result.resourceChecks) {
     console.log(`  ${check.ok ? 'OK' : 'MISSING'}: ${check.path}`);

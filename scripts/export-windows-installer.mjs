@@ -10,6 +10,7 @@ try {
 
   console.log('Windows release kit exported:');
   console.log(`  Installer:     ${result.installerPath}`);
+  console.log(`  Uninstaller:   ${result.uninstallerCmdPath}`);
   console.log(`  SHA256SUMS:    ${result.checksumPath}`);
   console.log(`  Manifest:      ${result.manifestPath}`);
   console.log(`  Release notes: ${result.releaseNotesPath}`);

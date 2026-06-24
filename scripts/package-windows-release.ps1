@@ -20,6 +20,8 @@ $PackagePath = Join-Path $ReleaseDir $PackageName
 
 $Files = @(
   (Join-Path $ReleaseDir $Manifest.installerName),
+  (Join-Path $ReleaseDir $Manifest.uninstallerName),
+  (Join-Path $ReleaseDir $Manifest.uninstallerScriptName),
   (Join-Path $ReleaseDir "manifest.json"),
   (Join-Path $ReleaseDir "SHA256SUMS.txt"),
   (Join-Path $ReleaseDir "RELEASE_NOTES.md")

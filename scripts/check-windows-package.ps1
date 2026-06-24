@@ -25,6 +25,8 @@ try {
   $EntryNames = @($Zip.Entries | ForEach-Object { $_.Name })
   $Required = @(
     $Manifest.installerName,
+    $Manifest.uninstallerName,
+    $Manifest.uninstallerScriptName,
     "manifest.json",
     "SHA256SUMS.txt",
     "RELEASE_NOTES.md"

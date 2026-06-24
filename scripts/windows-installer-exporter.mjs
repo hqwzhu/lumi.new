@@ -74,12 +74,176 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function createWindowsUninstaller(releaseDir, version) {
+  const uninstallerScriptName = `LumiOS-Windows-${version}-uninstall.ps1`;
+  const uninstallerName = `LumiOS-Windows-${version}-uninstall.cmd`;
+  const scriptPath = path.join(releaseDir, uninstallerScriptName);
+  const cmdPath = path.join(releaseDir, uninstallerName);
+
+  const script = String.raw`param(
+  [switch]$RemoveUserData,
+  [switch]$Silent
+)
+
+$ErrorActionPreference = "Stop"
+
+function Get-LumiUninstallCommand {
+  $roots = @(
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+  )
+
+  $entries = foreach ($root in $roots) {
+    Get-ItemProperty -Path $root -ErrorAction SilentlyContinue |
+      Where-Object {
+        ($_.DisplayName -eq "Lumi OS" -or $_.DisplayName -eq "LumiOS") -and
+        ($_.UninstallString -or $_.QuietUninstallString)
+      }
+  }
+
+  $entry = $entries |
+    Sort-Object @{ Expression = { if ($_.DisplayName -eq "Lumi OS") { 0 } else { 1 } } } |
+    Select-Object -First 1
+
+  if ($entry) {
+    if ($Silent -and $entry.QuietUninstallString) { return $entry.QuietUninstallString }
+    if ($entry.UninstallString) { return $entry.UninstallString }
+    if ($entry.QuietUninstallString) { return $entry.QuietUninstallString }
+  }
+
+  return $null
+}
+
+function Get-LumiUninstallExeCandidates {
+  $localAppData = [Environment]::GetFolderPath("LocalApplicationData")
+  $programFiles = [Environment]::GetFolderPath("ProgramFiles")
+  $programFilesX86 = \${env:ProgramFiles(x86)}
+
+  $paths = @()
+  if ($localAppData) {
+    $paths += Join-Path $localAppData "Programs\Lumi OS\uninstall.exe"
+    $paths += Join-Path $localAppData "Lumi OS\uninstall.exe"
+    $paths += Join-Path $localAppData "com.lumiai.os\uninstall.exe"
+  }
+  if ($programFiles) {
+    $paths += Join-Path $programFiles "Lumi OS\uninstall.exe"
+  }
+  if ($programFilesX86) {
+    $paths += Join-Path $programFilesX86 "Lumi OS\uninstall.exe"
+  }
+
+  return $paths | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+}
+
+function Split-UninstallCommand([string]$Command) {
+  if ($Command -match '^\s*"([^"]+)"\s*(.*)$') {
+    return @{ FilePath = $matches[1]; Arguments = $matches[2] }
+  }
+  if ($Command -match '^\s*([^\s]+)\s*(.*)$') {
+    return @{ FilePath = $matches[1]; Arguments = $matches[2] }
+  }
+  throw "Invalid uninstall command: $Command"
+}
+
+function Invoke-LumiUninstaller([string]$Command) {
+  $parts = Split-UninstallCommand $Command
+  $filePath = $parts.FilePath
+  $arguments = $parts.Arguments
+
+  Write-Host "Starting Lumi OS uninstaller..."
+  Write-Host "Command: $Command"
+
+  if ((Test-Path -LiteralPath $filePath) -or (Get-Command $filePath -ErrorAction SilentlyContinue)) {
+    if ([string]::IsNullOrWhiteSpace($arguments)) {
+      $process = Start-Process -FilePath $filePath -Wait -PassThru
+    } else {
+      $process = Start-Process -FilePath $filePath -ArgumentList $arguments -Wait -PassThru
+    }
+  } else {
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $Command) -Wait -PassThru
+  }
+
+  if ($process.ExitCode -ne 0) {
+    throw "Lumi OS uninstaller exited with code $($process.ExitCode)."
+  }
+}
+
+function Remove-LumiUserData {
+  $userProfile = [Environment]::GetFolderPath("UserProfile")
+  $localAppData = [Environment]::GetFolderPath("LocalApplicationData")
+  $targets = @()
+
+  if ($userProfile) {
+    $targets += Join-Path $userProfile "LumiOS"
+    $targets += Join-Path $userProfile "lumi_skills"
+  }
+  if ($localAppData) {
+    $targets += Join-Path $localAppData "com.lumiai.os"
+  }
+
+  foreach ($target in $targets) {
+    if ($target -and (Test-Path -LiteralPath $target)) {
+      Write-Host "Removing user data: $target"
+      Remove-Item -LiteralPath $target -Recurse -Force
+    }
+  }
+}
+
+try {
+  $command = Get-LumiUninstallCommand
+  if (-not $command) {
+    $exe = Get-LumiUninstallExeCandidates | Select-Object -First 1
+    if ($exe) { $command = '"' + $exe + '"' }
+  }
+
+  if (-not $command) {
+    Write-Host "Lumi OS uninstaller was not found." -ForegroundColor Red
+    Write-Host "Try Windows Settings > Apps > Installed apps > Lumi OS > Uninstall."
+    exit 1
+  }
+
+  Invoke-LumiUninstaller $command
+
+  if (-not $Silent -and -not $RemoveUserData) {
+    $answer = Read-Host "Remove local Lumi OS data and installed skills? [y/N]"
+    if ($answer -match "^(y|yes)$") { $RemoveUserData = $true }
+  }
+
+  if ($RemoveUserData) { Remove-LumiUserData }
+
+  Write-Host "Lumi OS uninstall helper finished."
+  exit 0
+} catch {
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  exit 1
+}
+`;
+
+  const cmd = `@echo off\r\nsetlocal\r\nset "SCRIPT=%~dp0${uninstallerScriptName}"\r\nif not exist "%SCRIPT%" (\r\n  echo Lumi OS uninstall script not found: "%SCRIPT%"\r\n  pause\r\n  exit /b 1\r\n)\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*\r\nset "EXITCODE=%ERRORLEVEL%"\r\nif not "%EXITCODE%"=="0" (\r\n  echo.\r\n  echo Lumi OS uninstall helper exited with code %EXITCODE%.\r\n)\r\npause\r\nexit /b %EXITCODE%\r\n`;
+
+  fs.writeFileSync(scriptPath, script.replace(/\n/g, '\r\n'));
+  fs.writeFileSync(cmdPath, cmd);
+
+  return {
+    uninstallerName,
+    uninstallerScriptName,
+    cmdPath,
+    scriptPath,
+    cmdSize: fs.statSync(cmdPath).size,
+    scriptSize: fs.statSync(scriptPath).size,
+    cmdSha256: getFileSha256(cmdPath),
+    scriptSha256: getFileSha256(scriptPath),
+  };
+}
+
 function createReleaseNotes(manifest) {
   return `# Lumi OS ${manifest.version} Windows Release
 
 ## Artifact
 
 - Installer: ${manifest.installerName}
+- Uninstaller: ${manifest.uninstallerName}
 - Platform: ${manifest.platform}
 - Size: ${manifest.size} bytes
 - SHA256: ${manifest.sha256}
@@ -107,6 +271,12 @@ function createReleaseNotes(manifest) {
 2. Follow the Windows installer prompts.
 3. Launch Lumi OS from the Start Menu or desktop shortcut.
 4. If Windows SmartScreen appears, choose more info and run anyway only when this installer came from the official release channel.
+
+## Uninstall
+
+1. Run \`${manifest.uninstallerName}\` from the release package, or use Windows Settings > Apps > Installed apps > Lumi OS > Uninstall.
+2. The helper locates Lumi OS through the Windows uninstall registry or the local install directory, then runs the installed \`uninstall.exe\`.
+3. When prompted, choose whether to remove local setup data and installed skills. User data is kept by default.
 
 ## First Launch Activation
 
@@ -151,6 +321,7 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
   const generatedAt = options.generatedAt ?? new Date();
   const version = installerName.match(/^LumiOS-Windows-(.+)-x64-setup\.exe$/)?.[1] ?? getInstallerVersion(installerName);
   const packageName = `LumiOS-Windows-${version}.zip`;
+  const uninstaller = createWindowsUninstaller(releaseDir, version);
 
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
   const manifestPath = path.join(releaseDir, 'manifest.json');
@@ -161,18 +332,30 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
     version,
     platform: 'windows-x64',
     installerName,
+    uninstallerName: uninstaller.uninstallerName,
+    uninstallerScriptName: uninstaller.uninstallerScriptName,
     packageName,
     size: installer.size,
     sha256,
+    uninstallerSize: uninstaller.cmdSize,
+    uninstallerSha256: uninstaller.cmdSha256,
+    uninstallerScriptSize: uninstaller.scriptSize,
+    uninstallerScriptSha256: uninstaller.scriptSha256,
     generatedAt: generatedAt.toISOString(),
   };
 
-  fs.writeFileSync(checksumPath, `${sha256}  ${installerName}\n`);
+  fs.writeFileSync(checksumPath, [
+    `${sha256}  ${installerName}`,
+    `${uninstaller.cmdSha256}  ${uninstaller.uninstallerName}`,
+    `${uninstaller.scriptSha256}  ${uninstaller.uninstallerScriptName}`,
+  ].join('\n') + '\n');
   writeJson(manifestPath, manifest);
   fs.writeFileSync(releaseNotesPath, createReleaseNotes(manifest));
 
   return {
     installerPath: installer.destination,
+    uninstallerCmdPath: uninstaller.cmdPath,
+    uninstallerScriptPath: uninstaller.scriptPath,
     checksumPath,
     manifestPath,
     releaseNotesPath,
@@ -194,9 +377,15 @@ export function validateWindowsReleaseKit(projectDir) {
   if (!fs.existsSync(installerPath)) {
     throw new Error(`Windows release installer not found: ${installerPath}`);
   }
+  const uninstallerPath = manifest.uninstallerName ? path.join(releaseDir, manifest.uninstallerName) : null;
+  const uninstallerScriptPath = manifest.uninstallerScriptName ? path.join(releaseDir, manifest.uninstallerScriptName) : null;
 
   const size = fs.statSync(installerPath).size;
   const sha256 = getFileSha256(installerPath);
+  const uninstallerExists = !!(uninstallerPath && fs.existsSync(uninstallerPath));
+  const uninstallerScriptExists = !!(uninstallerScriptPath && fs.existsSync(uninstallerScriptPath));
+  const uninstallerSha256 = uninstallerExists ? getFileSha256(uninstallerPath) : '';
+  const uninstallerScriptSha256 = uninstallerScriptExists ? getFileSha256(uninstallerScriptPath) : '';
   const resourceChecks = [
     path.join(projectDir, 'desktop-resources', 'dist-server', 'node.exe'),
     path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
@@ -210,6 +399,10 @@ export function validateWindowsReleaseKit(projectDir) {
   const ok =
     size === manifest.size &&
     sha256 === manifest.sha256 &&
+    uninstallerExists &&
+    uninstallerSha256 === manifest.uninstallerSha256 &&
+    uninstallerScriptExists &&
+    uninstallerScriptSha256 === manifest.uninstallerScriptSha256 &&
     packageExists &&
     resourceChecks.every((check) => check.ok);
 
@@ -221,6 +414,14 @@ export function validateWindowsReleaseKit(projectDir) {
     size,
     sha256,
     expectedSha256: manifest.sha256,
+    uninstallerName: manifest.uninstallerName,
+    uninstallerExists,
+    uninstallerSha256,
+    expectedUninstallerSha256: manifest.uninstallerSha256,
+    uninstallerScriptName: manifest.uninstallerScriptName,
+    uninstallerScriptExists,
+    uninstallerScriptSha256,
+    expectedUninstallerScriptSha256: manifest.uninstallerScriptSha256,
     resourceChecks,
   };
 }

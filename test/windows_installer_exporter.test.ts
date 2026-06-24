@@ -12,6 +12,8 @@ import {
 
 const tempDirs: string[] = [];
 const RELEASE_INSTALLER_NAME = 'LumiOS-Windows-3.0.0-x64-setup.exe';
+const RELEASE_UNINSTALLER_CMD_NAME = 'LumiOS-Windows-3.0.0-uninstall.cmd';
+const RELEASE_UNINSTALLER_SCRIPT_NAME = 'LumiOS-Windows-3.0.0-uninstall.ps1';
 
 function makeTempProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-windows-export-'));
@@ -105,8 +107,17 @@ describe('windows installer exporter', () => {
     });
 
     expect(path.basename(result.installerPath)).toBe(RELEASE_INSTALLER_NAME);
+    expect(path.basename(result.uninstallerCmdPath)).toBe(RELEASE_UNINSTALLER_CMD_NAME);
+    expect(path.basename(result.uninstallerScriptPath)).toBe(RELEASE_UNINSTALLER_SCRIPT_NAME);
     expect(fs.readFileSync(result.checksumPath, 'utf8')).toMatch(
-      /^[a-f0-9]{64}  LumiOS-Windows-3\.0\.0-x64-setup\.exe\r?\n$/,
+      new RegExp(
+        [
+          '^[a-f0-9]{64}  LumiOS-Windows-3\\.0\\.0-x64-setup\\.exe',
+          '[a-f0-9]{64}  LumiOS-Windows-3\\.0\\.0-uninstall\\.cmd',
+          '[a-f0-9]{64}  LumiOS-Windows-3\\.0\\.0-uninstall\\.ps1',
+          '$',
+        ].join('\\r?\\n'),
+      ),
     );
 
     const manifest = JSON.parse(fs.readFileSync(result.manifestPath, 'utf8'));
@@ -115,16 +126,29 @@ describe('windows installer exporter', () => {
       version: '3.0.0',
       platform: 'windows-x64',
       installerName: RELEASE_INSTALLER_NAME,
+      uninstallerName: RELEASE_UNINSTALLER_CMD_NAME,
+      uninstallerScriptName: RELEASE_UNINSTALLER_SCRIPT_NAME,
       packageName: 'LumiOS-Windows-3.0.0.zip',
       size: 'installer-binary'.length,
       generatedAt: '2026-06-20T12:00:00.000Z',
     });
     expect(manifest.sha256).toMatch(/^[a-f0-9]{64}$/);
 
+    const uninstallerCmd = fs.readFileSync(result.uninstallerCmdPath, 'utf8');
+    expect(uninstallerCmd).toContain(RELEASE_UNINSTALLER_SCRIPT_NAME);
+    expect(uninstallerCmd).toContain('powershell');
+
+    const uninstallerScript = fs.readFileSync(result.uninstallerScriptPath, 'utf8');
+    expect(uninstallerScript).toContain('Lumi OS');
+    expect(uninstallerScript).toContain('UninstallString');
+    expect(uninstallerScript).toContain('RemoveUserData');
+
     const releaseNotes = fs.readFileSync(result.releaseNotesPath, 'utf8');
     expect(releaseNotes).toContain('Lumi OS 3.0.0 Windows Release');
     expect(releaseNotes).toContain(RELEASE_INSTALLER_NAME);
+    expect(releaseNotes).toContain(RELEASE_UNINSTALLER_CMD_NAME);
     expect(releaseNotes).toContain('Install');
+    expect(releaseNotes).toContain('Uninstall');
     expect(releaseNotes).toContain('One-machine license activation');
     expect(releaseNotes).toContain('First Launch Activation');
     expect(releaseNotes).toContain('First Launch Setup');
