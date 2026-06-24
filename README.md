@@ -2,10 +2,6 @@
 
 [中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
 
-灵序科技 / Lumi AI 官方桌面客户端
-
-**浙江灵序科技有限公司 · [lumiai.asia](https://lumiai.asia)**
-
 ---
 
 > LumiOS 不是又一个 AI 助手。
@@ -322,7 +318,7 @@ DASHSCOPE_API_KEY=      # CosyVoice 语音合成（TTS）
 
 ## 产品生态
 
-LumiOS 是灵序科技 Personal AI 生态的软件核心，配合以下硬件终端使用效果最佳：
+LumiOS 是 Personal AI 生态的软件核心，可配合以下硬件终端使用：
 
 | 终端 | 说明 |
 |------|------|
@@ -337,7 +333,6 @@ LumiOS 是灵序科技 Personal AI 生态的软件核心，配合以下硬件终
 
 ## 路线图
 
-- [x] Web 平台上线（lumiai.asia）
 - [x] Windows 桌面安装器 MVP
 - [ ] macOS 桌面版正式发布（开发中，内部测试包已生成，待 Apple 签名/公证）
 - [ ] Linux 桌面版
@@ -374,19 +369,8 @@ LumiOS 是灵序科技 Personal AI 生态的软件核心，配合以下硬件终
 如果你是 AI 工程方向的工程师，对 Personal AI 和孵化机制感兴趣，我们正在寻找技术联合创始人（CTO），股权 5%-15%，联合创始人身份。
 
 **联系创始人：毛先生**
-- 官网：[lumiai.asia](https://lumiai.asia)
 - 邮箱：3565286431@qq.com
 - 微信：Cap_William
-
----
-
-## 关于灵序科技
-
-浙江灵序科技有限公司，致力于构建 Personal AI 生态平台。
-
-我们相信人类本身应该得以延伸——记忆的延伸、人格的延伸、存在的延伸。通过真正属于每个人的 AI，在真实的空间里持续存在。
-
-**使命：让人类本身得以延伸。**
 
 ---
 

@@ -114,11 +114,11 @@ public/downloads/macos.html
 public/downloads/macos.json
 ```
 
-Recommended website route:
+Recommended release routes:
 
 ```text
-https://lumiai.asia/downloads/windows.html
-https://lumiai.asia/downloads/macos.html
+https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5
+https://github.com/hqwzhu/lumi.new/actions/workflows/ci.yml
 ```
 
 The Windows HTML page links directly to GitHub Release assets. The macOS HTML page intentionally marks macOS as in development until Apple Developer signing and notarization are complete. The JSON files can be used by a future website, updater service, or release monitor.
