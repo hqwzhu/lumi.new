@@ -7,8 +7,9 @@ describe('desktop server entry generation', () => {
     const scriptPath = path.resolve(process.cwd(), 'scripts', 'build-server.mjs');
     const source = fs.readFileSync(scriptPath, 'utf-8');
 
-    expect(source).toContain('function stripRelativeHideConsolePreload');
+    expect(source).toContain('function __lumiStripRelativeHideConsolePreload');
+    expect(source).not.toContain('function stripRelativeHideConsolePreload(nodeOptions)');
     expect(source).toContain('delete process.env.NODE_OPTIONS');
-    expect(source).toContain('sanitizeNodeOptionsForDesktopChildren();');
+    expect(source).toContain('__lumiSanitizeNodeOptionsForDesktopChildren();');
   });
 });

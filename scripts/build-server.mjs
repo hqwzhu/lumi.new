@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-const NODE_OPTIONS_SANITIZER = `function stripRelativeHideConsolePreload(nodeOptions) {
+const NODE_OPTIONS_SANITIZER = `function __lumiStripRelativeHideConsolePreload(nodeOptions) {
   if (!nodeOptions) return undefined;
   const tokens = nodeOptions.split(/\\s+/).filter(Boolean);
   const kept = [];
@@ -19,12 +19,12 @@ const NODE_OPTIONS_SANITIZER = `function stripRelativeHideConsolePreload(nodeOpt
   }
   return kept.length > 0 ? kept.join(' ') : undefined;
 }
-function sanitizeNodeOptionsForDesktopChildren() {
-  const cleaned = stripRelativeHideConsolePreload(process.env.NODE_OPTIONS);
+function __lumiSanitizeNodeOptionsForDesktopChildren() {
+  const cleaned = __lumiStripRelativeHideConsolePreload(process.env.NODE_OPTIONS);
   if (cleaned) process.env.NODE_OPTIONS = cleaned;
   else delete process.env.NODE_OPTIONS;
 }
-sanitizeNodeOptionsForDesktopChildren();
+__lumiSanitizeNodeOptionsForDesktopChildren();
 `;
 
 await build({
