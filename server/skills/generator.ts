@@ -440,7 +440,7 @@ export async function autoGenerateSkill(
     if (result.success && result.skillName) {
       // Install the generated skill
       try {
-        mcpManager.installSkill(result.skillName, result.directory!);
+        await mcpManager.installSkill(result.skillName, result.directory!);
         console.log(`[SkillGen] Auto-installed skill "${result.skillName}"`);
         // Clear processed workflows so they don't re-trigger
         removeWorkflows(cluster.workflows.map(w => w.id));

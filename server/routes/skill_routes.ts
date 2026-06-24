@@ -127,7 +127,7 @@ export function mountSkillRoutes(
         const skillName = name || url.split('/').pop()?.replace('.git', '') || 'unnamed';
         const tmpDir = path.join(os.tmpdir(), `lumi_skill_${Date.now()}`);
         execSync(`git clone "${url}" "${tmpDir}"`, { stdio: 'pipe', timeout: 30000 });
-        const destDir = mcpManager.installSkill(skillName, tmpDir);
+        const destDir = await mcpManager.installSkill(skillName, tmpDir);
         fs.rmSync(tmpDir, { recursive: true, force: true });
 
         // Restart to pick up new skill
@@ -136,7 +136,7 @@ export function mountSkillRoutes(
         res.json({ success: true, name: skillName, directory: destDir });
       } else if (source === 'local' && localPath) {
         const skillName = name || path.basename(localPath);
-        const destDir = mcpManager.installSkill(skillName, localPath);
+        const destDir = await mcpManager.installSkill(skillName, localPath);
         await mcpManager.restartServer(skillName);
         createAgentForSkill(skillName, { description: `Local install: ${localPath}`, category: 'general', installSource: 'local' }, io);
         res.json({ success: true, name: skillName, directory: destDir });

@@ -57,7 +57,7 @@ interface MCPConfigFile {
   [key: string]: any;
 }
 
-const SKILLS_DIR = path.join(os.homedir(), 'lumi_skills');
+const SKILLS_DIR = process.env.LUMI_SKILLS_DIR || path.join(os.homedir(), 'lumi_skills');
 const DEFAULT_RUNTIME_CONFIG = 'mcp_config.json';
 const LEGACY_REPO_CONFIG = path.join(process.cwd(), 'server', 'mcp', 'config.json');
 const FACTORY_CONFIG = path.join(process.cwd(), 'server', 'mcp', 'config.example.json');
@@ -102,7 +102,9 @@ function expandPortablePath(value: string): string {
 function toPortableSkillPath(filePath: string): string {
   const relative = path.relative(SKILLS_DIR, filePath);
   if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
-    return `~/lumi_skills/${relative.split(path.sep).join('/')}`;
+    const portableRelative = relative.split(path.sep).join('/');
+    if (process.env.LUMI_SKILLS_DIR) return `\${LUMI_SKILLS_DIR}/${portableRelative}`;
+    return `~/lumi_skills/${portableRelative}`;
   }
   return filePath;
 }
@@ -238,7 +240,7 @@ class MCPClientManager {
   }
 
   /** Install a skill from a source directory into ~/lumi_skills/ */
-  installSkill(name: string, sourceDir: string, allowUpgrade = false): string {
+  async installSkill(name: string, sourceDir: string, allowUpgrade = false): Promise<string> {
     this.ensureSkillsDir();
     const destDir = path.join(SKILLS_DIR, name);
 
@@ -264,7 +266,7 @@ class MCPClientManager {
     }
 
     this.copyDirSync(sourceDir, destDir);
-    this.installDepsInDir(destDir);
+    await this.installDepsSync(destDir);
     this.patchInstalledMetadata(destDir);
     // Also stamp the installed version from source
     const srcPkg = this.readPkg(sourceDir);
@@ -529,20 +531,6 @@ main().catch((err) => { console.error('[npm-skill] Fatal:', err); process.exit(1
     }
 
     this.saveConfig(config);
-  }
-
-  /** Run npm install in a skill directory (fire-and-forget, non-blocking) */
-  private installDepsInDir(dir: string): void {
-    exec('npm install --loglevel=error --no-audit --no-fund', {
-      timeout: 120000,
-      cwd: dir,
-    }, (error, _stdout, stderr) => {
-      if (error) {
-        console.warn(`[MCP] npm install failed in ${dir}:`, stderr.trim() || error.message);
-      } else {
-        console.log(`[MCP] Dependencies installed in ${path.basename(dir)}`);
-      }
-    });
   }
 
   private copyDirSync(src: string, dest: string): void {

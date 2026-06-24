@@ -90,7 +90,7 @@ async function installSkillHandler(args: Record<string, any>): Promise<string> {
   const name = String(args.name || '').trim() || dir.split(/[/\\]/).pop() || 'unknown';
 
   try {
-    const destDir = mcpManager.installSkill(name, dir);
+    const destDir = await mcpManager.installSkill(name, dir);
     return `Skill "${name}" installed successfully at ${destDir}. It will be available as a tool after reconnecting MCP servers (or on next server restart).`;
   } catch (err: any) {
     return `Install failed: ${err.message}. The skill may already be installed — check with list_skills.`;

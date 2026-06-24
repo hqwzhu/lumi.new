@@ -4,7 +4,7 @@ import { ProactiveNotifications } from '../components/ProactiveNotifications';
 import { LoginModal } from '../core/components/Auth';
 import { Toaster } from 'sonner';
 import { motion } from 'motion/react';
-import { Rocket } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Rocket } from 'lucide-react';
 import { installApiBridge } from '../services/apiBridge';
 import '@fontsource-variable/geist';
 import '../index.css';
@@ -23,6 +23,7 @@ import { SetupOnboarding } from '../setup/SetupOnboarding';
 import { getSetupStatus, type SetupStatus } from '../setup/setupApi';
 import { LicenseActivation } from '../license/LicenseActivation';
 import { getLicenseStatus, type LicenseStatus } from '../license/licenseApi';
+import { getDesktopStartupView } from './desktopStartup';
 
 installApiBridge();
 
@@ -35,6 +36,7 @@ export function DesktopApp() {
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [licenseLoading, setLicenseLoading] = useState(true);
   const [licenseError, setLicenseError] = useState('');
+  const [setupError, setSetupError] = useState('');
 
   useEffect(() => { document.body.classList.add('overflow-hidden'); return () => document.body.classList.remove('overflow-hidden'); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
@@ -59,10 +61,16 @@ export function DesktopApp() {
       });
     getSetupStatus()
       .then(status => {
-        if (!cancelled) setSetupStatus(status);
+        if (!cancelled) {
+          setSetupStatus(status);
+          setSetupError('');
+        }
       })
-      .catch(() => {
-        if (!cancelled) setSetupStatus({ state: { completed: false }, providers: {}, requiresSetup: true });
+      .catch(error => {
+        if (!cancelled) {
+          setSetupError(error?.message || '无法读取 Lumi OS 初始化配置。');
+          setSetupStatus(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setSetupLoading(false);
@@ -72,16 +80,48 @@ export function DesktopApp() {
     };
   }, []);
 
-  const showSetup = !setupLoading && setupStatus?.requiresSetup;
-  const showActivation = !licenseLoading && (licenseStatus?.requiresActivation !== false);
+  const startupView = getDesktopStartupView({
+    shellLoading: shell.loading,
+    licenseLoading,
+    setupLoading,
+    licenseStatus,
+    setupStatus,
+    licenseError,
+    setupError,
+  });
 
-  if (shell.loading || setupLoading || licenseLoading) {
+  if (startupView === 'loading') {
     return (
       <div className="flex items-center justify-center h-screen bg-transparent">
         <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }} className="flex flex-col items-center gap-4">
           <Rocket size={48} className="text-celestial-saturn" />
           <div className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-celestial-mars to-celestial-saturn">Lumi OS Booting...</div>
         </motion.div>
+      </div>
+    );
+  }
+
+  if (startupView === 'connection-error') {
+    const message = licenseError || setupError || '无法连接 Lumi OS 本地服务，请关闭后重新打开 Lumi OS。';
+    return (
+      <div className="flex h-screen items-center justify-center bg-[radial-gradient(circle_at_20%_15%,rgba(255,204,0,0.12),transparent_28%),#05050a] p-6 text-white">
+        <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-black/45 p-6 shadow-2xl shadow-black/30">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-1 shrink-0 text-celestial-saturn" size={22} />
+            <div className="space-y-3">
+              <h1 className="text-xl font-black">Lumi OS 本地服务未就绪</h1>
+              <p className="text-sm leading-6 text-white/60">{message}</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black transition hover:bg-white/90"
+              >
+                <RefreshCw size={16} />
+                重新检测
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -107,7 +147,7 @@ export function DesktopApp() {
     <div className="h-screen w-full bg-transparent overflow-hidden">
       <ProactiveNotifications />
       <Toaster position="top-right" theme="dark" />
-      {showActivation ? (
+      {startupView === 'activation' ? (
         <LicenseActivation
           initialStatus={licenseStatus}
           initialError={licenseError}
@@ -116,7 +156,7 @@ export function DesktopApp() {
             setLicenseError('');
           }}
         />
-      ) : showSetup ? (
+      ) : startupView === 'setup' ? (
         <SetupOnboarding
           initialProviders={setupStatus?.providers}
           onFinish={() => setSetupStatus(current => current ? {

@@ -13,7 +13,7 @@ import { createAgentForSkill } from './skill_agent';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BUNDLED_DIR = path.join(__dirname, '..', 'skills', 'bundled');
-const SKILLS_DIR = path.join(os.homedir(), 'lumi_skills');
+const SKILLS_DIR = process.env.LUMI_SKILLS_DIR || path.join(os.homedir(), 'lumi_skills');
 
 export interface InstallResult {
   skillId: string;
@@ -121,7 +121,7 @@ export async function autoInstallForTask(userText: string, io?: { emit: (event: 
 
 
       // Install or upgrade — allowUpgrade=true handles both cases
-      const installDir = mcpManager.installSkill(dirName, bundledPath, true);
+      const installDir = await mcpManager.installSkill(dirName, bundledPath, true);
       console.log(`[AutoInstall] ${actionVerb}完成: ${installDir}`);
 
       // Restart MCP server to pick up changed tools

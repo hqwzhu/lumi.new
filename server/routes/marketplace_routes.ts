@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { mcpManager, getMCPConfig, updateMCPConfig, SKILLS_DIR } from "../mcp";
-import { getMarketplaceSkills, getSkillById, searchSkills, getCategories, recordInstall, publishSkill, rateSkill, getSkillRatings } from "../marketplace/registry";
+import { getMarketplaceSkills, getSkillById, searchSkills, getCategories, recordInstall, publishSkill, rateSkill, getSkillRatings, getBundledSkillPath } from "../marketplace/registry";
 import { translateSkills } from "../skills/translations";
 import { createAgentForSkill } from "../agents/skill_agent";
 
@@ -120,7 +120,7 @@ export function mountMarketplaceRoutes(
       if (!skillId || !skillName) return res.status(400).json({ error: "skillId and skillName required" });
 
       // Bundled skills: copy from bundled directory into ~/lumi_skills/
-      if (installSource === 'bundled' && reqInstallPath) {
+      if (installSource === 'bundled') {
         const bundledSkill = getSkillById(skillId);
 
         // External-runtime skills (OpenClaw, Hermes, etc.) — no MCP server, just create team agent
@@ -139,9 +139,13 @@ export function mountMarketplaceRoutes(
         }
 
         const skillDirName = skillName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const installPath = getBundledSkillPath(skillId) || reqInstallPath;
+        if (!installPath || !fs.existsSync(installPath)) {
+          return res.status(404).json({ error: `Bundled skill "${skillId}" was not found in this Lumi OS package.` });
+        }
         io.emit('skill:installing', { skillId, name: skillName, stage: 'copying' });
         try {
-          const skillDir = mcpManager.installSkill(skillDirName, reqInstallPath);
+          const skillDir = await mcpManager.installSkill(skillDirName, installPath);
           io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
           await mcpManager.restartServer(skillDirName);
         } catch (err: any) {
@@ -183,7 +187,7 @@ export function mountMarketplaceRoutes(
         if (fs.existsSync(bundledPath)) {
           io.emit('skill:installing', { skillId, name: skillName, stage: 'copying' });
           try {
-            mcpManager.installSkill(skillDirName, bundledPath);
+            await mcpManager.installSkill(skillDirName, bundledPath);
             io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
             await mcpManager.restartServer(skillDirName);
           } catch (err: any) {

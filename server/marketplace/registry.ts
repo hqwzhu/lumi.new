@@ -16,8 +16,19 @@ import { getTranslation } from '../skills/translations';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const SKILLS_DIR = path.join(os.homedir(), 'lumi_skills');
-const BUNDLED_DIR = path.join(__dirname, '..', 'skills', 'bundled');
+export const SKILLS_DIR = process.env.LUMI_SKILLS_DIR || path.join(os.homedir(), 'lumi_skills');
+
+function resolveBundledDir(): string {
+  const candidates = [
+    path.join(process.cwd(), 'server', 'skills', 'bundled'),
+    path.join(__dirname, '..', 'skills', 'bundled'),
+    path.join(__dirname, 'server', 'skills', 'bundled'),
+    path.join(__dirname, '..', 'server', 'skills', 'bundled'),
+  ];
+  return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
+}
+
+const BUNDLED_DIR = resolveBundledDir();
 
 export interface MarketplaceSkill {
   id: string;
@@ -92,6 +103,12 @@ function discoverBundledSkills(): MarketplaceSkill[] {
     } catch { /* skip invalid packages */ }
   }
   return skills;
+}
+
+export function getBundledSkillPath(skillId: string): string | undefined {
+  const dirName = skillId.replace(/^skill-/, '');
+  const candidate = path.join(BUNDLED_DIR, dirName);
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : undefined;
 }
 
 /** Community skill registry stored in DB */

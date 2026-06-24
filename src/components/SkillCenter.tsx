@@ -235,6 +235,23 @@ export function SkillCenter({ t, lang, initialTab = 'featured' }: { t: any; lang
     finally { setInstalling(null); }
   };
 
+  const handleFeaturedInstall = (skill: typeof FEATURED_SKILLS[number]) => {
+    const skillId = `skill-${skill.id}`;
+    const skillData = marketSkills.find(s => s.id === skillId);
+    handleInstall(skillData || {
+      id: skillId,
+      name: skill.name,
+      description: skill.desc,
+      author: 'Lumi Official',
+      downloads: 0,
+      rating: 0,
+      category: '',
+      icon: skill.icon,
+      installSource: 'bundled' as const,
+      installed: false,
+    });
+  };
+
   const handleUninstall = async (name: string) => {
     try {
       const res = await fetch(`/api/skills/${name}`, { method: 'DELETE', credentials: 'include' });
@@ -441,8 +458,7 @@ export function SkillCenter({ t, lang, initialTab = 'featured' }: { t: any; lang
                           <Button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const skillData = marketSkills.find(s => s.id === `skill-${skill.id}`);
-                              if (skillData && !skillData.installed) handleInstall(skillData);
+                              handleFeaturedInstall(skill);
                             }}
                             disabled={isInstalled || isInstalling}
                             className={`text-xs font-bold px-5 py-2.5 h-auto rounded-xl transition-all ${
@@ -496,8 +512,7 @@ export function SkillCenter({ t, lang, initialTab = 'featured' }: { t: any; lang
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const skillData = marketSkills.find(s => s.id === `skill-${skill.id}`);
-                          if (skillData && !skillData.installed) handleInstall(skillData);
+                          handleFeaturedInstall(skill);
                         }}
                         disabled={isInstalled || isInstalling}
                         className={`text-xs font-bold px-3 py-1.5 h-auto rounded-lg shrink-0 transition-all ${
