@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import { execSync } from "child_process";
 import { readDB, writeDB } from "../../db_layer";
-import { mcpManager, getMCPConfig, updateMCPConfig, SKILLS_DIR } from "../mcp";
+import { mcpManager, getMCPConfig, SKILLS_DIR } from "../mcp";
 import { generateSkill } from "../skills/generator";
 import { getRecentWorkflows } from "../skills/worklog";
 import { getDataPath } from "../config/data_path";
@@ -45,6 +45,11 @@ export function mountSkillRoutes(
           installedAt: local?.installedAt || '',
           connected: mcpManager.getConnectedServers().includes(name),
           broken: local?.broken || false,
+          requiresApiKey: config.requiresApiKey || false,
+          apiKeyEnv: config.apiKeyEnv,
+          apiKeyUrl: config.apiKeyUrl,
+          requiresSetup: config.requiresSetup || false,
+          setupNote: config.setupNote,
         };
       });
       res.json({ skills: allSkills });
@@ -192,8 +197,17 @@ export function mountSkillRoutes(
       const config = getMCPConfig();
       if (!config[req.params.name]) return res.status(404).json({ error: 'Skill not found' });
       config[req.params.name].enabled = true;
-      updateMCPConfig(config);
-      try { await mcpManager.restartServer(req.params.name); } catch {} // start the process
+      mcpManager.saveConfig(config);
+      try {
+        await mcpManager.restartServer(req.params.name);
+      } catch (err: any) {
+        const rollback = getMCPConfig();
+        if (rollback[req.params.name]) {
+          rollback[req.params.name].enabled = false;
+          mcpManager.saveConfig(rollback);
+        }
+        throw err;
+      }
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -206,7 +220,7 @@ export function mountSkillRoutes(
       const config = getMCPConfig();
       if (!config[req.params.name]) return res.status(404).json({ error: 'Skill not found' });
       config[req.params.name].enabled = false;
-      updateMCPConfig(config);
+      mcpManager.saveConfig(config);
       try { await mcpManager.disconnectServer(req.params.name); } catch {} // stop the process
       res.json({ success: true });
     } catch (err: any) {

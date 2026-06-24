@@ -20,6 +20,7 @@ export function createAgentForSkill(
     installSource?: string;
     runtime?: 'internal' | 'external';
     externalCommand?: string;
+    skillSlug?: string;
   },
   io?: { emit: (event: string, data: any) => void },
 ): string | null {
@@ -27,7 +28,8 @@ export function createAgentForSkill(
     const db = readDB();
     if (!db.agents) db.agents = [];
 
-    const agentId = `skill_${skillName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+    const slug = skillInfo.skillSlug || skillName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const agentId = `skill_${slug}`;
 
     // Don't duplicate if already exists
     if (db.agents.find((a: any) => a.id === agentId)) return agentId;

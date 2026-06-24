@@ -77,6 +77,8 @@ function discoverBundledSkills(): MarketplaceSkill[] {
     try {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       const lumi = pkg.lumi || {};
+      const hasIndex = fs.existsSync(path.join(BUNDLED_DIR, entry.name, 'index.ts'));
+      const isExternalRuntime = !!lumi.runCommand && !hasIndex;
       const installed = fs.existsSync(path.join(SKILLS_DIR, entry.name));
       skills.push({
         id: `skill-${entry.name}`,
@@ -95,8 +97,10 @@ function discoverBundledSkills(): MarketplaceSkill[] {
         requiresApiKey: lumi.requiresApiKey || false,
         apiKeyEnv: lumi.apiKeyEnv,
         apiKeyUrl: lumi.apiKeyUrl,
-        requiresSetup: lumi.requiresSetup || false,
-        setupNote: lumi.setupNote,
+        requiresSetup: !!(lumi.requiresSetup || isExternalRuntime),
+        setupNote: lumi.setupNote || (isExternalRuntime
+          ? `External MCP runtime. Verify this command works before enabling: ${[lumi.runCommand, ...(lumi.runArgs || [])].join(' ')}`
+          : undefined),
         runtime: lumi.runtime || 'internal',
         externalCommand: lumi.externalCommand,
       });

@@ -12,6 +12,31 @@ const QWEN_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function skillDirNameFromId(skillId: string, fallbackName: string): string {
+  const fromId = skillId.replace(/^skill-/, '').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+  return fromId || fallbackName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+}
+
+function installMessage(skillName: string, activated: boolean): string {
+  if (activated) return `Skill "${skillName}" installed and activated!`;
+  return `Skill "${skillName}" installed. Complete setup/API key configuration and enable it when ready.`;
+}
+
+async function connectInstalledSkillIfEnabled(
+  skillDirName: string,
+  skillId: string,
+  skillName: string,
+  io: { emit: (event: string, data: any) => void },
+): Promise<boolean> {
+  const config = getMCPConfig();
+  const serverConfig = config[skillDirName];
+  if (!serverConfig?.enabled) return false;
+
+  io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
+  await mcpManager.restartServer(skillDirName);
+  return true;
+}
+
 export function mountMarketplaceRoutes(
   router: Router,
   jwtSecret: string,
@@ -126,6 +151,7 @@ export function mountMarketplaceRoutes(
         // External-runtime skills (OpenClaw, Hermes, etc.) — no MCP server, just create team agent
         if (bundledSkill?.runtime === 'external') {
           recordInstall(skillId);
+          const skillDirName = skillDirNameFromId(skillId, skillName);
           const agentId = createAgentForSkill(skillName, {
             description: bundledSkill?.description,
             category: bundledSkill?.category,
@@ -134,20 +160,21 @@ export function mountMarketplaceRoutes(
             runtime: 'external',
             externalCommand: bundledSkill?.externalCommand,
             installSource: 'bundled',
+            skillSlug: skillDirName,
           }, io);
           return res.json({ success: true, name: skillName, agentId, message: `External agent "${skillName}" connected! Use it in chat or assign tasks in the Team tab.` });
         }
 
-        const skillDirName = skillName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const skillDirName = skillDirNameFromId(skillId, skillName);
         const installPath = getBundledSkillPath(skillId) || reqInstallPath;
         if (!installPath || !fs.existsSync(installPath)) {
           return res.status(404).json({ error: `Bundled skill "${skillId}" was not found in this Lumi OS package.` });
         }
         io.emit('skill:installing', { skillId, name: skillName, stage: 'copying' });
+        let activated = false;
         try {
-          const skillDir = await mcpManager.installSkill(skillDirName, installPath);
-          io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
-          await mcpManager.restartServer(skillDirName);
+          await mcpManager.installSkill(skillDirName, installPath);
+          activated = await connectInstalledSkillIfEnabled(skillDirName, skillId, skillName, io);
         } catch (err: any) {
           // Clean up partial install so user can retry
           try { mcpManager.uninstallSkill(skillDirName); } catch {}
@@ -160,8 +187,9 @@ export function mountMarketplaceRoutes(
           category: bundledSkill?.category,
           toolCount: bundledSkill?.toolCount,
           installSource: 'bundled',
+          skillSlug: skillDirName,
         }, io);
-        return res.json({ success: true, name: skillName, message: `Skill "${skillName}" installed and activated!` });
+        return res.json({ success: true, name: skillName, activated, message: installMessage(skillName, activated) });
       }
 
       // Community skills: copy from bundled dir too (they are implemented there now)
@@ -173,6 +201,7 @@ export function mountMarketplaceRoutes(
         // External-runtime community skill — skip MCP, create external agent
         if (comSkill?.runtime === 'external') {
           recordInstall(skillId);
+          const skillDirName = skillDirNameFromId(skillId, skillName);
           createAgentForSkill(skillName, {
             description: comSkill?.description,
             category: comSkill?.category,
@@ -180,16 +209,17 @@ export function mountMarketplaceRoutes(
             runtime: 'external',
             externalCommand: comSkill?.externalCommand,
             installSource: 'community',
+            skillSlug: skillDirName,
           }, io);
           return res.json({ success: true, name: skillName, message: `External agent "${skillName}" connected!` });
         }
 
         if (fs.existsSync(bundledPath)) {
           io.emit('skill:installing', { skillId, name: skillName, stage: 'copying' });
+          let activated = false;
           try {
             await mcpManager.installSkill(skillDirName, bundledPath);
-            io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
-            await mcpManager.restartServer(skillDirName);
+            activated = await connectInstalledSkillIfEnabled(skillDirName, skillId, skillName, io);
           } catch (err: any) {
             try { mcpManager.uninstallSkill(skillDirName); } catch {}
             return res.status(500).json({ error: `Install failed: ${err.message}` });
@@ -201,8 +231,9 @@ export function mountMarketplaceRoutes(
             category: comSkill?.category,
             toolCount: comSkill?.toolCount,
             installSource: 'community',
+            skillSlug: skillDirName,
           }, io);
-          return res.json({ success: true, name: skillName, message: `Skill "${skillName}" installed and activated!` });
+          return res.json({ success: true, name: skillName, activated, message: installMessage(skillName, activated) });
         }
         // Fallback: mark as bookmarked
         const config = getMCPConfig();
@@ -229,10 +260,10 @@ export function mountMarketplaceRoutes(
         const npmPkg = req.body.npmPackage;
         io.emit('skill:installing', { skillId, name: npmPkg, stage: 'downloading' });
         let skillDirName = '';
+        let activated = false;
         try {
           skillDirName = path.basename(await mcpManager.installFromNpm(npmPkg));
-          io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
-          await mcpManager.restartServer(skillDirName);
+          activated = await connectInstalledSkillIfEnabled(skillDirName, skillId, skillName, io);
         } catch (err: any) {
           if (skillDirName) try { mcpManager.uninstallSkill(skillDirName); } catch {}
           return res.status(500).json({ error: `npm install failed: ${err.message}` });
@@ -244,7 +275,7 @@ export function mountMarketplaceRoutes(
           category: 'general',
           installSource: 'npm',
         }, io);
-        return res.json({ success: true, name: skillName, message: `Skill "${skillName}" installed from npm and activated!` });
+        return res.json({ success: true, name: skillName, activated, message: installMessage(skillName, activated) });
       }
 
       // GitHub repo install — clone + npm install + register
@@ -252,10 +283,10 @@ export function mountMarketplaceRoutes(
         const repoUrl = req.body.repoUrl;
         io.emit('skill:installing', { skillId, name: skillName, stage: 'cloning' });
         let skillDirName = '';
+        let activated = false;
         try {
           skillDirName = path.basename(await mcpManager.installFromGitHub(repoUrl));
-          io.emit('skill:installing', { skillId, name: skillName, stage: 'connecting' });
-          await mcpManager.restartServer(skillDirName);
+          activated = await connectInstalledSkillIfEnabled(skillDirName, skillId, skillName, io);
         } catch (err: any) {
           if (skillDirName) try { mcpManager.uninstallSkill(skillDirName); } catch {}
           return res.status(500).json({ error: `GitHub install failed: ${err.message}` });
@@ -267,7 +298,7 @@ export function mountMarketplaceRoutes(
           category: 'general',
           installSource: 'github',
         }, io);
-        return res.json({ success: true, name: skillName, message: `Skill "${skillName}" installed from GitHub and activated!` });
+        return res.json({ success: true, name: skillName, activated, message: installMessage(skillName, activated) });
       }
 
       res.status(400).json({ error: 'Invalid installSource' });
