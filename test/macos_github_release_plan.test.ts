@@ -14,6 +14,7 @@ function makeProject() {
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-macOS-3.0.4-arm64.zip'), 'zip');
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-macOS-3.0.4-arm64.dmg'), 'dmg');
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-macOS-3.0.4-arm64.app.tar.gz'), 'app');
+  fs.writeFileSync(path.join(releaseDir, 'LumiOS-macOS-3.0.4-arm64-uninstall.command'), 'uninstall');
   fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), 'sha');
   fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), '# notes');
   fs.writeFileSync(
@@ -26,6 +27,7 @@ function makeProject() {
         arch: 'arm64',
         dmgName: 'LumiOS-macOS-3.0.4-arm64.dmg',
         appArchiveName: 'LumiOS-macOS-3.0.4-arm64.app.tar.gz',
+        uninstallerName: 'LumiOS-macOS-3.0.4-arm64-uninstall.command',
         packageName: 'LumiOS-macOS-3.0.4-arm64.zip',
       },
       null,
@@ -56,6 +58,7 @@ describe('macOS GitHub release plan', () => {
       'LumiOS-macOS-3.0.4-arm64.zip',
       'LumiOS-macOS-3.0.4-arm64.dmg',
       'LumiOS-macOS-3.0.4-arm64.app.tar.gz',
+      'LumiOS-macOS-3.0.4-arm64-uninstall.command',
       'SHA256SUMS.txt',
       'manifest.json',
       'RELEASE_NOTES.md',

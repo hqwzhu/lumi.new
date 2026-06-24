@@ -1,4 +1,4 @@
-﻿# LumiOS
+# LumiOS
 
 [中文说明](README.zh-CN.md) | [Windows 下载 / Windows Download](https://github.com/hqwzhu/lumi.new/releases/tag/windows-v3.0.5) | [macOS 开发中 / macOS In Development](docs/productization/macos-user-guide.zh-CN.md)
 
@@ -22,7 +22,8 @@
 
 Windows 下载：
 
-- 普通用户下载：[`LumiOS-Windows-3.0.5-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/LumiOS-Windows-3.0.5-x64-setup.exe)
+- 普通用户下载：[`Lumi OS 安装.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/Lumi%20OS%20%E5%AE%89%E8%A3%85.exe)
+- 卸载工具：[`Lumi OS 卸载.cmd`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/Lumi%20OS%20%E5%8D%B8%E8%BD%BD.cmd)
 - 完整发布包：[`LumiOS-Windows-3.0.5.zip`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/LumiOS-Windows-3.0.5.zip)
 - 校验文件：[`SHA256SUMS.txt`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/SHA256SUMS.txt)
 
@@ -56,7 +57,7 @@ For normal users, the Windows installer is the only required download. Lumi OS b
 
 ## 用户快速使用 / Quick Use
 
-1. 下载 `LumiOS-Windows-3.0.5-x64-setup.exe`。
+1. 下载 `Lumi OS 安装.exe`。
 2. 双击安装，按 Windows 安装器提示完成安装。
 3. 从桌面快捷方式或开始菜单启动 Lumi OS。
 4. 在首次启动向导中选择一种配置模式：
@@ -68,6 +69,8 @@ For normal users, the Windows installer is the only required download. Lumi OS b
    - 国际推荐：OpenAI、Anthropic Claude、Google Gemini。
    - 本地模型：Ollama、LM Studio。
 6. 运行诊断，通过后进入 Lumi OS。
+
+To uninstall, run `Lumi OS 卸载.cmd` from the release package, or uninstall Lumi OS from Windows Settings.
 
 更多中文说明见 [README.zh-CN.md](README.zh-CN.md)。Windows 用户指南见 [docs/productization/windows-user-guide.md](docs/productization/windows-user-guide.md)。API Key 获取教程见 [docs/productization/api-key-guide.md](docs/productization/api-key-guide.md)。
 
@@ -379,4 +382,3 @@ LumiOS 是 Personal AI 生态的软件核心，可配合以下硬件终端使用
 GNU Affero General Public License v3.0 (AGPL-3.0)。详见 [LICENSE](./LICENSE)。
 
 **简言之：** 个人使用、修改和分发自由。若在网络服务中商用使用，必须以相同许可证开源你的修改。闭源商业许可请联系版权方。
-

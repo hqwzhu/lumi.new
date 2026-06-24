@@ -11,7 +11,7 @@ if (-not (Test-Path $ManifestPath)) {
   throw "Windows release manifest not found: $ManifestPath"
 }
 
-$Manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
+$Manifest = Get-Content -Raw -Encoding UTF8 -Path $ManifestPath | ConvertFrom-Json
 $PackageName = $Manifest.packageName
 if (-not $PackageName) {
   $PackageName = "LumiOS-Windows-$($Manifest.version).zip"
@@ -21,7 +21,6 @@ $PackagePath = Join-Path $ReleaseDir $PackageName
 $Files = @(
   (Join-Path $ReleaseDir $Manifest.installerName),
   (Join-Path $ReleaseDir $Manifest.uninstallerName),
-  (Join-Path $ReleaseDir $Manifest.uninstallerScriptName),
   (Join-Path $ReleaseDir "manifest.json"),
   (Join-Path $ReleaseDir "SHA256SUMS.txt"),
   (Join-Path $ReleaseDir "RELEASE_NOTES.md")

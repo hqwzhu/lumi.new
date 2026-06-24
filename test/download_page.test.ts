@@ -5,7 +5,8 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { generateWindowsDownloadPage } from '../scripts/generate-download-page.mjs';
 
 const tempDirs: string[] = [];
-const RELEASE_INSTALLER_NAME = 'LumiOS-Windows-3.0.0-x64-setup.exe';
+const RELEASE_INSTALLER_NAME = 'Lumi OS 安装.exe';
+const RELEASE_UNINSTALLER_NAME = 'Lumi OS 卸载.cmd';
 
 function makeProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-download-page-'));
@@ -13,8 +14,12 @@ function makeProject() {
   const releaseDir = path.join(projectDir, 'release', 'windows');
   fs.mkdirSync(releaseDir, { recursive: true });
   fs.writeFileSync(path.join(releaseDir, RELEASE_INSTALLER_NAME), 'installer');
+  fs.writeFileSync(path.join(releaseDir, RELEASE_UNINSTALLER_NAME), 'uninstaller');
   fs.writeFileSync(path.join(releaseDir, 'LumiOS-Windows-3.0.0.zip'), 'zip');
-  fs.writeFileSync(path.join(releaseDir, 'SHA256SUMS.txt'), `abc123  ${RELEASE_INSTALLER_NAME}\n`);
+  fs.writeFileSync(
+    path.join(releaseDir, 'SHA256SUMS.txt'),
+    `abc123  ${RELEASE_INSTALLER_NAME}\ndef456  ${RELEASE_UNINSTALLER_NAME}\n`,
+  );
   fs.writeFileSync(path.join(releaseDir, 'RELEASE_NOTES.md'), '# Notes');
   fs.writeFileSync(
     path.join(releaseDir, 'manifest.json'),
@@ -24,9 +29,11 @@ function makeProject() {
         version: '3.0.0',
         platform: 'windows-x64',
         installerName: RELEASE_INSTALLER_NAME,
+        uninstallerName: RELEASE_UNINSTALLER_NAME,
         packageName: 'LumiOS-Windows-3.0.0.zip',
         size: 9,
         sha256: 'abc123',
+        uninstallerSha256: 'def456',
       },
       null,
       2,
@@ -62,20 +69,27 @@ describe('official download page generator', () => {
       repo: 'hqwzhu/lumi.new',
       tag: 'windows-v3.0.0',
       installerName: RELEASE_INSTALLER_NAME,
+      uninstallerName: RELEASE_UNINSTALLER_NAME,
       packageName: 'LumiOS-Windows-3.0.0.zip',
       sha256: 'abc123',
+      uninstallerSha256: 'def456',
     });
     expect(metadata.downloads.installer).toBe(
-      'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe',
+      'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/Lumi%20OS%20%E5%AE%89%E8%A3%85.exe',
     );
     expect(metadata.downloads.package).toBe(
       'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0.zip',
+    );
+    expect(metadata.downloads.uninstaller).toBe(
+      'https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/Lumi%20OS%20%E5%8D%B8%E8%BD%BD.cmd',
     );
 
     const html = fs.readFileSync(result.htmlPath, 'utf8');
     expect(html).toContain('Lumi OS 3.0.0');
     expect(html).toContain(metadata.downloads.installer);
+    expect(html).toContain(metadata.downloads.uninstaller);
     expect(html).toContain('abc123');
+    expect(html).toContain('def456');
     expect(html).toContain('Windows 10 / Windows 11');
   });
 });

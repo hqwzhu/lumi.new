@@ -7,12 +7,19 @@ This directory is the operating manual for Windows and macOS desktop releases.
 For normal Windows users, send the Windows installer:
 
 ```text
-release/windows/LumiOS-Windows-3.0.0-x64-setup.exe
+release/windows/Lumi OS 安装.exe
+```
+
+If the user needs to remove Lumi OS, send the uninstall helper:
+
+```text
+release/windows/Lumi OS 卸载.cmd
 ```
 
 For a formal Windows release channel, publish all files in `release/windows/`:
 
-- `LumiOS-Windows-3.0.0-x64-setup.exe`
+- `Lumi OS 安装.exe`
+- `Lumi OS 卸载.cmd`
 - `LumiOS-Windows-3.0.0.zip`
 - `manifest.json`
 - `RELEASE_NOTES.md`

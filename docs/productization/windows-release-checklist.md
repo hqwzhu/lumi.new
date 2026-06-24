@@ -44,7 +44,7 @@ release\windows\
 - `release\windows\LumiOS-Windows-<version>.zip` is created for sharing.
 - `public\downloads\windows.html` and `public\downloads\windows.json` are generated for the website download page.
 - `release:windows:check` confirms the installer checksum and required desktop server resources.
-- `package:windows-release:check` confirms the zip contains the installer, manifest, checksum file, and release notes.
+- `package:windows-release:check` confirms the zip contains the installer, uninstall helper, manifest, checksum file, and release notes.
 - `smoke:windows-installer` silently installs to `release\windows-smoke-install\` and confirms the installed desktop executable, uninstaller, and backend resources exist.
 - `github:release:windows -- --dry-run` prints the GitHub Release tag, notes file, and upload assets without publishing.
 
@@ -93,13 +93,14 @@ Deferred:
 
 ## Release Artifact Naming
 
-Use this installer naming pattern:
+Use these user-facing artifact names:
 
 ```text
-Lumi OS_<version>_x64-setup.exe
+Lumi OS 安装.exe
+Lumi OS 卸载.cmd
 ```
 
-Use the exported file under `release\windows\` for manual testing and release uploads. The deep `src-tauri\target\release\bundle\nsis\` path is an internal Tauri build output.
+Use the exported files under `release\windows\` for manual testing and release uploads. The deep `src-tauri\target\release\bundle\nsis\` path is an internal Tauri build output.
 
 For user distribution, prefer the zip package:
 
@@ -107,7 +108,7 @@ For user distribution, prefer the zip package:
 LumiOS-Windows-<version>.zip
 ```
 
-It includes the installer, manifest, checksum file, and release notes.
+It includes the installer, uninstall helper, manifest, checksum file, and release notes.
 
 ## GitHub Release Publishing
 
@@ -124,7 +125,7 @@ gh auth login
 npm run github:release:windows
 ```
 
-The command publishes to `hqwzhu/lumi.new` with tag `windows-v<version>` and uploads the zip package, installer, checksum file, manifest, and release notes.
+The command publishes to `hqwzhu/lumi.new` with tag `windows-v<version>` and uploads the zip package, installer, uninstall helper, checksum file, manifest, and release notes.
 
 Attach a short release note that tells users:
 

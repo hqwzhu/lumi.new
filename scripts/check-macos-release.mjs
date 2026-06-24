@@ -11,9 +11,11 @@ try {
   console.log('macOS release kit check:');
   console.log(`  DMG:         ${result.dmgName}`);
   console.log(`  App archive: ${result.appArchiveName}`);
+  console.log(`  Uninstaller: ${result.uninstallerName}${result.uninstallerExists ? '' : ' (missing)'}`);
   console.log(`  Package:     ${result.packageName}${result.packageExists ? '' : ' (not created)'}`);
   console.log(`  DMG SHA256:  ${result.dmgSha256}`);
   console.log(`  App SHA256:  ${result.appArchiveSha256}`);
+  console.log(`  Uninstall SHA256: ${result.uninstallerSha256}`);
 
   for (const check of result.resourceChecks) {
     console.log(`  ${check.ok ? 'OK' : 'MISSING'}: ${check.path}`);

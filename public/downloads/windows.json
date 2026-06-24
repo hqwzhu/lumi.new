@@ -1,19 +1,22 @@
 {
   "appName": "Lumi OS",
-  "version": "3.0.0",
+  "version": "3.0.5",
   "platform": "windows-x64",
   "repo": "hqwzhu/lumi.new",
-  "tag": "windows-v3.0.0",
-  "generatedAt": "2026-06-21T09:48:47.693Z",
-  "installerName": "LumiOS-Windows-3.0.0-x64-setup.exe",
-  "packageName": "LumiOS-Windows-3.0.0.zip",
-  "sha256": "89b10e4b127105ad2026f4f3e1664aadeab0bd23a25062a2055a15c6950485db",
-  "size": 13520780,
+  "tag": "windows-v3.0.5",
+  "generatedAt": "2026-06-24T09:11:54.252Z",
+  "installerName": "Lumi OS 安装.exe",
+  "uninstallerName": "Lumi OS 卸载.cmd",
+  "packageName": "LumiOS-Windows-3.0.5.zip",
+  "sha256": "bbe2f4fa40df389c259830c40df78bcaab7df66ef3da7338c9fa977724ec5559",
+  "uninstallerSha256": "7cbcd4dfa5bb192ca86794ededcbdd07dad9bc494bdf2105351fa4987547b22b",
+  "size": 38098761,
   "downloads": {
-    "installer": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe",
-    "package": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0.zip",
-    "checksums": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/SHA256SUMS.txt",
-    "manifest": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/manifest.json",
-    "releaseNotes": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/RELEASE_NOTES.md"
+    "installer": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/Lumi%20OS%20%E5%AE%89%E8%A3%85.exe",
+    "uninstaller": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/Lumi%20OS%20%E5%8D%B8%E8%BD%BD.cmd",
+    "package": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/LumiOS-Windows-3.0.5.zip",
+    "checksums": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/SHA256SUMS.txt",
+    "manifest": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/manifest.json",
+    "releaseNotes": "https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.5/RELEASE_NOTES.md"
   }
 }

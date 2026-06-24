@@ -11,6 +11,10 @@ import {
 } from '../scripts/macos-release-exporter.mjs';
 
 const tempDirs: string[] = [];
+const RELEASE_DMG_NAME = 'LumiOS-macOS-3.0.0-arm64.dmg';
+const RELEASE_APP_ARCHIVE_NAME = 'LumiOS-macOS-3.0.0-arm64.app.tar.gz';
+const RELEASE_UNINSTALLER_NAME = 'LumiOS-macOS-3.0.0-arm64-uninstall.command';
+const RELEASE_PACKAGE_NAME = 'LumiOS-macOS-3.0.0-arm64.zip';
 
 function makeTempProject() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumi-macos-export-'));
@@ -91,26 +95,48 @@ describe('macOS release exporter', () => {
       generatedAt: new Date('2026-06-20T12:00:00Z'),
     });
 
-    expect(path.basename(result.dmgPath)).toBe('LumiOS-macOS-3.0.0-arm64.dmg');
-    expect(path.basename(result.appArchivePath)).toBe('LumiOS-macOS-3.0.0-arm64.app.tar.gz');
-    expect(fs.readFileSync(result.checksumPath, 'utf8')).toContain('LumiOS-macOS-3.0.0-arm64.dmg');
-    expect(fs.readFileSync(result.checksumPath, 'utf8')).toContain('LumiOS-macOS-3.0.0-arm64.app.tar.gz');
+    expect(path.basename(result.dmgPath)).toBe(RELEASE_DMG_NAME);
+    expect(path.basename(result.appArchivePath)).toBe(RELEASE_APP_ARCHIVE_NAME);
+    expect(path.basename(result.uninstallerPath)).toBe(RELEASE_UNINSTALLER_NAME);
+    expect(fs.readFileSync(result.checksumPath, 'utf8')).toMatch(
+      new RegExp(
+        [
+          `^[a-f0-9]{64}  ${RELEASE_DMG_NAME.replace(/\./g, '\\.')}`,
+          `[a-f0-9]{64}  ${RELEASE_APP_ARCHIVE_NAME.replace(/\./g, '\\.')}`,
+          `[a-f0-9]{64}  ${RELEASE_UNINSTALLER_NAME.replace(/\./g, '\\.')}`,
+          '$',
+        ].join('\\r?\\n'),
+      ),
+    );
 
     const manifest = JSON.parse(fs.readFileSync(result.manifestPath, 'utf8'));
     expect(manifest).toMatchObject({
       appName: 'Lumi OS',
       version: '3.0.0',
       platform: 'macos-arm64',
-      dmgName: 'LumiOS-macOS-3.0.0-arm64.dmg',
-      appArchiveName: 'LumiOS-macOS-3.0.0-arm64.app.tar.gz',
-      packageName: 'LumiOS-macOS-3.0.0-arm64.zip',
+      dmgName: RELEASE_DMG_NAME,
+      appArchiveName: RELEASE_APP_ARCHIVE_NAME,
+      uninstallerName: RELEASE_UNINSTALLER_NAME,
+      packageName: RELEASE_PACKAGE_NAME,
       generatedAt: '2026-06-20T12:00:00.000Z',
     });
+    expect(manifest.uninstallerSha256).toMatch(/^[a-f0-9]{64}$/);
+
+    const uninstaller = fs.readFileSync(result.uninstallerPath, 'utf8');
+    expect(uninstaller).toContain('/Applications/Lumi OS.app');
+    expect(uninstaller).toContain('REMOVE_USER_DATA');
+    expect(uninstaller).toContain('~/LumiOS');
+    expect(uninstaller).toContain('~/lumi_skills');
 
     const releaseNotes = fs.readFileSync(result.releaseNotesPath, 'utf8');
     expect(releaseNotes).toContain('Lumi OS 3.0.0 macOS Release');
     expect(releaseNotes).toContain('Apple Developer signing');
-    expect(releaseNotes).toContain('LumiOS-macOS-3.0.0-arm64.dmg');
+    expect(releaseNotes).toContain(RELEASE_DMG_NAME);
+    expect(releaseNotes).toContain(RELEASE_UNINSTALLER_NAME);
+    expect(releaseNotes).toContain('Uninstall');
+    expect(releaseNotes).toContain('One-machine license activation');
+    expect(releaseNotes).toContain('First Launch Activation');
+    expect(releaseNotes).toContain('Troubleshooting');
   });
 
   test('creates an app archive from a macOS .app directory when no archive exists', () => {
@@ -145,9 +171,11 @@ describe('macOS release exporter', () => {
 
     expect(validateMacosReleaseKit(projectDir)).toMatchObject({
       ok: true,
-      dmgName: 'LumiOS-macOS-3.0.0-arm64.dmg',
-      appArchiveName: 'LumiOS-macOS-3.0.0-arm64.app.tar.gz',
-      packageName: 'LumiOS-macOS-3.0.0-arm64.zip',
+      dmgName: RELEASE_DMG_NAME,
+      appArchiveName: RELEASE_APP_ARCHIVE_NAME,
+      uninstallerName: RELEASE_UNINSTALLER_NAME,
+      uninstallerExists: true,
+      packageName: RELEASE_PACKAGE_NAME,
       packageExists: true,
     });
   });
@@ -163,7 +191,7 @@ describe('macOS release exporter', () => {
 
     expect(validateMacosReleaseKit(projectDir)).toMatchObject({
       ok: false,
-      packageName: 'LumiOS-macOS-3.0.0-arm64.zip',
+      packageName: RELEASE_PACKAGE_NAME,
       packageExists: false,
     });
   });

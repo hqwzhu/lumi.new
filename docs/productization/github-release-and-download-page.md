@@ -1,4 +1,4 @@
-﻿# GitHub Release And Download Page
+# GitHub Release And Download Page
 
 This workflow publishes desktop releases through GitHub Releases and generates a static download page for the official website.
 
@@ -43,7 +43,8 @@ npm run github:release:windows -- --dry-run
 Expected outputs:
 
 ```text
-release/windows/Lumi OS_<version>_x64-setup.exe
+release/windows/Lumi OS 安装.exe
+release/windows/Lumi OS 卸载.cmd
 release/windows/LumiOS-Windows-<version>.zip
 release/windows/manifest.json
 release/windows/RELEASE_NOTES.md

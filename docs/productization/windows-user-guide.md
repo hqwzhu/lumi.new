@@ -1,4 +1,4 @@
-﻿# Lumi OS Windows User Guide / Windows 用户使用指南
+# Lumi OS Windows User Guide / Windows 用户使用指南
 
 This guide is for the Windows productized build of Lumi OS.
 
@@ -12,22 +12,23 @@ Release page:
 
 For normal users, download:
 
-[`LumiOS-Windows-3.0.0-x64-setup.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/LumiOS-Windows-3.0.0-x64-setup.exe)
+[`Lumi OS 安装.exe`](https://github.com/hqwzhu/lumi.new/releases/download/windows-v3.0.0/Lumi%20OS%20%E5%AE%89%E8%A3%85.exe)
 
-普通用户只需要下载 `LumiOS-Windows-3.0.0-x64-setup.exe`。
+普通用户只需要下载 `Lumi OS 安装.exe`。
+需要卸载时，使用发布包里的 `Lumi OS 卸载.cmd`。
 
 ## Install / 安装
 
 English:
 
-1. Run `LumiOS-Windows-3.0.0-x64-setup.exe`.
+1. Run `Lumi OS 安装.exe`.
 2. Follow the Windows installer prompts.
 3. Launch Lumi OS from the Start Menu or desktop shortcut.
 4. Complete the first-launch setup wizard.
 
 中文：
 
-1. 双击运行 `LumiOS-Windows-3.0.0-x64-setup.exe`。
+1. 双击运行 `Lumi OS 安装.exe`。
 2. 按安装器提示完成安装。
 3. 从开始菜单或桌面快捷方式启动 Lumi OS。
 4. 第一次启动时完成配置向导。
@@ -35,6 +36,20 @@ English:
 If Windows SmartScreen appears, continue only when the installer came from the official GitHub Release or a trusted release channel.
 
 如果 Windows SmartScreen 弹出提示，请只在安装器来自官方 GitHub Release 或可信下载渠道时继续。
+
+## Uninstall / 卸载
+
+English:
+
+1. Close Lumi OS.
+2. Run `Lumi OS 卸载.cmd` from the release package, or uninstall Lumi OS from Windows Settings.
+3. When prompted, choose whether to remove local setup data and installed skills. User data is kept by default.
+
+中文：
+
+1. 先退出 Lumi OS。
+2. 双击运行发布包里的 `Lumi OS 卸载.cmd`，或在 Windows 设置里卸载 Lumi OS。
+3. 如果提示是否删除本地配置和已安装技能，按需要选择。默认会保留用户数据。
 
 
 ## License Activation / 授权激活
@@ -195,4 +210,3 @@ npm run build:desktop
 ```
 
 普通用户请使用官方发布的安装器。开发环境可重新构建桌面资源。
-

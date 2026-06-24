@@ -12,7 +12,7 @@ if (-not (Test-Path $ManifestPath)) {
   throw "Windows release manifest not found: $ManifestPath"
 }
 
-$Manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
+$Manifest = Get-Content -Raw -Encoding UTF8 -Path $ManifestPath | ConvertFrom-Json
 $InstallerPath = Join-Path $ReleaseDir $Manifest.installerName
 
 if (-not (Test-Path $InstallerPath)) {

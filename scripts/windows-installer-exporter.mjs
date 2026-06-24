@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+const WINDOWS_INSTALLER_NAME = 'Lumi OS 安装.exe';
+const WINDOWS_UNINSTALLER_NAME = 'Lumi OS 卸载.cmd';
+
 export function getWindowsReleaseDir(projectDir) {
   return path.join(projectDir, 'release', 'windows');
 }
@@ -41,8 +44,7 @@ export function exportWindowsInstaller(projectDir) {
 
   const sourceName = path.basename(source);
   const version = getInstallerVersion(sourceName);
-  const installerName =
-    version === 'unknown' ? sourceName.replace(/\s+/g, '-') : `LumiOS-Windows-${version}-x64-setup.exe`;
+  const installerName = WINDOWS_INSTALLER_NAME;
   const destination = path.join(releaseDir, installerName);
   fs.copyFileSync(source, destination);
 
@@ -52,6 +54,8 @@ export function exportWindowsInstaller(projectDir) {
   return {
     source,
     destination,
+    installerName,
+    version,
     size: fs.statSync(destination).size,
   };
 }
@@ -74,10 +78,8 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function createWindowsUninstaller(releaseDir, version) {
-  const uninstallerScriptName = `LumiOS-Windows-${version}-uninstall.ps1`;
-  const uninstallerName = `LumiOS-Windows-${version}-uninstall.cmd`;
-  const scriptPath = path.join(releaseDir, uninstallerScriptName);
+function createWindowsUninstaller(releaseDir) {
+  const uninstallerName = WINDOWS_UNINSTALLER_NAME;
   const cmdPath = path.join(releaseDir, uninstallerName);
 
   const script = String.raw`param(
@@ -220,20 +222,29 @@ try {
 }
 `;
 
-  const cmd = `@echo off\r\nsetlocal\r\nset "SCRIPT=%~dp0${uninstallerScriptName}"\r\nif not exist "%SCRIPT%" (\r\n  echo Lumi OS uninstall script not found: "%SCRIPT%"\r\n  pause\r\n  exit /b 1\r\n)\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*\r\nset "EXITCODE=%ERRORLEVEL%"\r\nif not "%EXITCODE%"=="0" (\r\n  echo.\r\n  echo Lumi OS uninstall helper exited with code %EXITCODE%.\r\n)\r\npause\r\nexit /b %EXITCODE%\r\n`;
+  const cmd = [
+    '@echo off',
+    'setlocal',
+    'set "SELF=%~f0"',
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference = 'Stop'; $marker = ':LUMI_PS_PAYLOAD'; $lines = Get-Content -LiteralPath $env:SELF -Encoding UTF8; $start = [Array]::IndexOf($lines, $marker); if ($start -lt 0) { throw 'Lumi OS uninstall payload not found.' }; $script = ($lines[($start + 1)..($lines.Length - 1)] -join [Environment]::NewLine); $tmp = Join-Path $env:TEMP ('lumi-os-uninstall-' + [Guid]::NewGuid().ToString('N') + '.ps1'); Set-Content -LiteralPath $tmp -Encoding UTF8 -Value $script; try { & powershell -NoProfile -ExecutionPolicy Bypass -File $tmp @args; exit $LASTEXITCODE } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }\" %*",
+    'set "EXITCODE=%ERRORLEVEL%"',
+    'if not "%EXITCODE%"=="0" (',
+    '  echo.',
+    '  echo Lumi OS uninstall helper exited with code %EXITCODE%.',
+    ')',
+    'pause',
+    'exit /b %EXITCODE%',
+    ':LUMI_PS_PAYLOAD',
+    script,
+  ].join('\r\n');
 
-  fs.writeFileSync(scriptPath, script.replace(/\n/g, '\r\n'));
   fs.writeFileSync(cmdPath, cmd);
 
   return {
     uninstallerName,
-    uninstallerScriptName,
     cmdPath,
-    scriptPath,
     cmdSize: fs.statSync(cmdPath).size,
-    scriptSize: fs.statSync(scriptPath).size,
     cmdSha256: getFileSha256(cmdPath),
-    scriptSha256: getFileSha256(scriptPath),
   };
 }
 
@@ -267,7 +278,7 @@ function createReleaseNotes(manifest) {
 
 ## Install
 
-1. Run \`${manifest.installerName}\`.
+1. Run \`${manifest.installerName}\`. This is the only file normal users need to click for installation.
 2. Follow the Windows installer prompts.
 3. Launch Lumi OS from the Start Menu or desktop shortcut.
 4. If Windows SmartScreen appears, choose more info and run anyway only when this installer came from the official release channel.
@@ -319,9 +330,12 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
   const installerName = path.basename(installer.destination);
   const sha256 = getFileSha256(installer.destination);
   const generatedAt = options.generatedAt ?? new Date();
-  const version = installerName.match(/^LumiOS-Windows-(.+)-x64-setup\.exe$/)?.[1] ?? getInstallerVersion(installerName);
+  const version = installer.version;
+  if (!version || version === 'unknown') {
+    throw new Error(`Unable to derive Windows release version from installer source: ${path.basename(installer.source)}`);
+  }
   const packageName = `LumiOS-Windows-${version}.zip`;
-  const uninstaller = createWindowsUninstaller(releaseDir, version);
+  const uninstaller = createWindowsUninstaller(releaseDir);
 
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
   const manifestPath = path.join(releaseDir, 'manifest.json');
@@ -333,21 +347,17 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
     platform: 'windows-x64',
     installerName,
     uninstallerName: uninstaller.uninstallerName,
-    uninstallerScriptName: uninstaller.uninstallerScriptName,
     packageName,
     size: installer.size,
     sha256,
     uninstallerSize: uninstaller.cmdSize,
     uninstallerSha256: uninstaller.cmdSha256,
-    uninstallerScriptSize: uninstaller.scriptSize,
-    uninstallerScriptSha256: uninstaller.scriptSha256,
     generatedAt: generatedAt.toISOString(),
   };
 
   fs.writeFileSync(checksumPath, [
     `${sha256}  ${installerName}`,
     `${uninstaller.cmdSha256}  ${uninstaller.uninstallerName}`,
-    `${uninstaller.scriptSha256}  ${uninstaller.uninstallerScriptName}`,
   ].join('\n') + '\n');
   writeJson(manifestPath, manifest);
   fs.writeFileSync(releaseNotesPath, createReleaseNotes(manifest));
@@ -355,7 +365,6 @@ export function exportWindowsReleaseKit(projectDir, options = {}) {
   return {
     installerPath: installer.destination,
     uninstallerCmdPath: uninstaller.cmdPath,
-    uninstallerScriptPath: uninstaller.scriptPath,
     checksumPath,
     manifestPath,
     releaseNotesPath,
@@ -378,14 +387,11 @@ export function validateWindowsReleaseKit(projectDir) {
     throw new Error(`Windows release installer not found: ${installerPath}`);
   }
   const uninstallerPath = manifest.uninstallerName ? path.join(releaseDir, manifest.uninstallerName) : null;
-  const uninstallerScriptPath = manifest.uninstallerScriptName ? path.join(releaseDir, manifest.uninstallerScriptName) : null;
 
   const size = fs.statSync(installerPath).size;
   const sha256 = getFileSha256(installerPath);
   const uninstallerExists = !!(uninstallerPath && fs.existsSync(uninstallerPath));
-  const uninstallerScriptExists = !!(uninstallerScriptPath && fs.existsSync(uninstallerScriptPath));
   const uninstallerSha256 = uninstallerExists ? getFileSha256(uninstallerPath) : '';
-  const uninstallerScriptSha256 = uninstallerScriptExists ? getFileSha256(uninstallerScriptPath) : '';
   const resourceChecks = [
     path.join(projectDir, 'desktop-resources', 'dist-server', 'node.exe'),
     path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
@@ -401,8 +407,6 @@ export function validateWindowsReleaseKit(projectDir) {
     sha256 === manifest.sha256 &&
     uninstallerExists &&
     uninstallerSha256 === manifest.uninstallerSha256 &&
-    uninstallerScriptExists &&
-    uninstallerScriptSha256 === manifest.uninstallerScriptSha256 &&
     packageExists &&
     resourceChecks.every((check) => check.ok);
 
@@ -418,10 +422,6 @@ export function validateWindowsReleaseKit(projectDir) {
     uninstallerExists,
     uninstallerSha256,
     expectedUninstallerSha256: manifest.uninstallerSha256,
-    uninstallerScriptName: manifest.uninstallerScriptName,
-    uninstallerScriptExists,
-    uninstallerScriptSha256,
-    expectedUninstallerScriptSha256: manifest.uninstallerScriptSha256,
     resourceChecks,
   };
 }

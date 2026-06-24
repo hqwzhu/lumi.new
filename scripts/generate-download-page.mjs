@@ -23,6 +23,7 @@ function writeJson(filePath, value) {
 
 function createDownloadHtml(metadata) {
   const installerUrl = escapeHtml(metadata.downloads.installer);
+  const uninstallerUrl = escapeHtml(metadata.downloads.uninstaller);
   const packageUrl = escapeHtml(metadata.downloads.package);
   const notesUrl = escapeHtml(metadata.downloads.releaseNotes);
   const checksumUrl = escapeHtml(metadata.downloads.checksums);
@@ -141,6 +142,7 @@ function createDownloadHtml(metadata) {
         </div>
         <div class="actions">
           <a class="button" href="${installerUrl}">Download Windows Installer</a>
+          <a class="button secondary" href="${uninstallerUrl}">Download Uninstall Helper</a>
           <a class="button secondary" href="${packageUrl}">Download Release Package</a>
           <a class="button secondary" href="${notesUrl}">Release Notes</a>
         </div>
@@ -160,8 +162,10 @@ function createDownloadHtml(metadata) {
           <dt>Platform</dt><dd>${escapeHtml(metadata.platform)}</dd>
           <dt>Version</dt><dd>${escapeHtml(metadata.version)}</dd>
           <dt>Installer</dt><dd><code>${escapeHtml(metadata.installerName)}</code></dd>
+          <dt>Uninstaller</dt><dd><code>${escapeHtml(metadata.uninstallerName)}</code></dd>
           <dt>Package</dt><dd><code>${escapeHtml(metadata.packageName)}</code></dd>
           <dt>SHA256</dt><dd><code>${escapeHtml(metadata.sha256)}</code></dd>
+          <dt>Uninstaller SHA256</dt><dd><code>${escapeHtml(metadata.uninstallerSha256)}</code></dd>
           <dt>Checksums</dt><dd><a href="${checksumUrl}">${checksumUrl}</a></dd>
         </dl>
       </section>
@@ -189,11 +193,14 @@ export function generateWindowsDownloadPage(projectDir, options = {}) {
     tag,
     generatedAt: (options.generatedAt ?? new Date()).toISOString(),
     installerName: manifest.installerName,
+    uninstallerName: manifest.uninstallerName,
     packageName: manifest.packageName,
     sha256: manifest.sha256,
+    uninstallerSha256: manifest.uninstallerSha256,
     size: manifest.size,
     downloads: {
       installer: releaseAssetUrl(repo, tag, manifest.installerName),
+      uninstaller: releaseAssetUrl(repo, tag, manifest.uninstallerName),
       package: releaseAssetUrl(repo, tag, manifest.packageName),
       checksums: releaseAssetUrl(repo, tag, 'SHA256SUMS.txt'),
       manifest: releaseAssetUrl(repo, tag, 'manifest.json'),

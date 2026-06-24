@@ -117,6 +117,97 @@ function copyOrCreateAppArchive(projectDir, destination) {
   return fs.statSync(destination).size;
 }
 
+function createMacosUninstaller(releaseDir, version, arch) {
+  const uninstallerName = `LumiOS-macOS-${version}-${arch}-uninstall.command`;
+  const uninstallerPath = path.join(releaseDir, uninstallerName);
+  const script = `#!/bin/bash
+set -euo pipefail
+
+REMOVE_USER_DATA="\${REMOVE_USER_DATA:-0}"
+ASSUME_YES="\${ASSUME_YES:-0}"
+
+for arg in "$@"; do
+  case "$arg" in
+    --remove-user-data)
+      REMOVE_USER_DATA=1
+      ;;
+    --yes|-y)
+      ASSUME_YES=1
+      ;;
+    --help|-h)
+      echo "Usage: ./$(basename "$0") [--remove-user-data] [--yes]"
+      echo "By default, user data is kept unless you confirm removal."
+      exit 0
+      ;;
+  esac
+done
+
+echo "Lumi OS macOS uninstall helper"
+
+remove_path() {
+  local target="$1"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    echo "Removing: $target"
+    if rm -rf "$target" 2>/dev/null; then
+      return 0
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+      sudo rm -rf "$target"
+      return 0
+    fi
+    echo "Permission denied and sudo is not available: $target" >&2
+    return 1
+  fi
+}
+
+APP_CANDIDATES=(
+  "/Applications/Lumi OS.app"
+  "$HOME/Applications/Lumi OS.app"
+)
+
+for app in "\${APP_CANDIDATES[@]}"; do
+  remove_path "$app"
+done
+
+# User data paths: ~/LumiOS, ~/lumi_skills, ~/Library/Application Support/com.lumiai.os
+if [ "$REMOVE_USER_DATA" != "1" ] && [ "$ASSUME_YES" != "1" ] && [ -t 0 ]; then
+  read -r -p "Remove local Lumi OS data, API Key settings, and installed skills? [y/N] " answer
+  case "$answer" in
+    y|Y|yes|YES)
+      REMOVE_USER_DATA=1
+      ;;
+  esac
+fi
+
+if [ "$REMOVE_USER_DATA" = "1" ]; then
+  DATA_CANDIDATES=(
+    "$HOME/LumiOS"
+    "$HOME/lumi_skills"
+    "$HOME/Library/Application Support/com.lumiai.os"
+    "$HOME/Library/Application Support/Lumi OS"
+    "$HOME/Library/Logs/Lumi OS"
+  )
+  for data_path in "\${DATA_CANDIDATES[@]}"; do
+    remove_path "$data_path"
+  done
+else
+  echo "Local user data was kept."
+fi
+
+echo "Lumi OS uninstall helper finished."
+`;
+
+  fs.writeFileSync(uninstallerPath, script, { mode: 0o755 });
+  fs.chmodSync(uninstallerPath, 0o755);
+
+  return {
+    uninstallerName,
+    uninstallerPath,
+    uninstallerSize: fs.statSync(uninstallerPath).size,
+    uninstallerSha256: getFileSha256(uninstallerPath),
+  };
+}
+
 function createReleaseNotes(manifest) {
   return `# Lumi OS ${manifest.version} macOS Release
 
@@ -124,17 +215,21 @@ function createReleaseNotes(manifest) {
 
 - DMG: ${manifest.dmgName}
 - App archive: ${manifest.appArchiveName}
+- Uninstaller: ${manifest.uninstallerName}
 - Platform: ${manifest.platform}
 - DMG SHA256: ${manifest.dmgSha256}
 - App archive SHA256: ${manifest.appArchiveSha256}
+- Uninstaller SHA256: ${manifest.uninstallerSha256}
 
 ## What Users Get
 
 - macOS desktop app bundle built with Tauri.
 - Bundled Node.js backend runtime and desktop resources.
+- One-machine license activation before first-launch setup.
 - First-launch setup wizard with Essential, Practical, and Full modes.
 - China, international, and local model provider recommendations.
 - Bilingual API key help for provider setup.
+- Skills are installed disabled when they need setup-only or external runtime configuration, so users can configure them before enabling.
 
 ## Signing Status
 
@@ -147,11 +242,39 @@ This build pipeline supports Apple Developer signing and notarization when the r
 3. Launch Lumi OS from Applications.
 4. If macOS blocks the app because it is unsigned or not notarized, use this build only for internal testing or configure Apple Developer signing before distributing to normal users.
 
+## Uninstall
+
+1. Quit Lumi OS.
+2. Run \`${manifest.uninstallerName}\` from the release package, or delete \`/Applications/Lumi OS.app\` manually.
+3. The helper removes the app from \`/Applications\` and \`~/Applications\`.
+4. Local setup data, API Key settings, and installed skills are kept by default. Run \`./${manifest.uninstallerName} --remove-user-data\` when a clean test environment is needed.
+
+## First Launch Activation
+
+1. Copy the machine code shown by Lumi OS.
+2. Generate an authorization code at the admin license generator.
+3. Paste the authorization code into Lumi OS and activate.
+
 ## First Launch Setup
 
 1. Choose Essential for the fastest start, Practical for daily use, or Full for all provider options.
 2. Configure at least one cloud model API key, or start Ollama / LM Studio with a loaded local chat model.
-3. Run diagnostics and continue when at least one model source is available.
+3. Use the bilingual API key help beside each provider field when you need provider-specific instructions.
+4. Run diagnostics and continue when at least one model source is available.
+
+## Troubleshooting
+
+### No model source detected
+
+Save one supported cloud provider API key, or start Ollama / LM Studio with a loaded model and run diagnostics again.
+
+### Relay provider test fails
+
+OpenAI-compatible relay providers require both an API key and a Base URL ending in a compatible API path such as \`/v1\`.
+
+### Skill install reports setup requirements
+
+Some skills require local binaries or provider configuration. Install them from Skill Center, open the skill details, complete the shown setup steps, then enable the skill.
 
 Lumi OS stores local setup data under:
 
@@ -179,6 +302,7 @@ export function exportMacosReleaseKit(projectDir, options = {}) {
   const appArchiveSize = copyOrCreateAppArchive(projectDir, appArchivePath);
   const dmgSha256 = getFileSha256(dmgPath);
   const appArchiveSha256 = getFileSha256(appArchivePath);
+  const uninstaller = createMacosUninstaller(releaseDir, version, arch);
   const generatedAt = options.generatedAt ?? new Date();
 
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
@@ -192,21 +316,32 @@ export function exportMacosReleaseKit(projectDir, options = {}) {
     arch,
     dmgName,
     appArchiveName,
+    uninstallerName: uninstaller.uninstallerName,
     packageName: `LumiOS-macOS-${version}-${arch}.zip`,
     dmgSize,
     appArchiveSize,
+    uninstallerSize: uninstaller.uninstallerSize,
     dmgSha256,
     appArchiveSha256,
+    uninstallerSha256: uninstaller.uninstallerSha256,
     generatedAt: generatedAt.toISOString(),
   };
 
-  fs.writeFileSync(checksumPath, `${dmgSha256}  ${dmgName}\n${appArchiveSha256}  ${appArchiveName}\n`);
+  fs.writeFileSync(
+    checksumPath,
+    [
+      `${dmgSha256}  ${dmgName}`,
+      `${appArchiveSha256}  ${appArchiveName}`,
+      `${uninstaller.uninstallerSha256}  ${uninstaller.uninstallerName}`,
+    ].join('\n') + '\n',
+  );
   writeJson(manifestPath, manifest);
   fs.writeFileSync(releaseNotesPath, createReleaseNotes(manifest));
 
   return {
     dmgPath,
     appArchivePath,
+    uninstallerPath: uninstaller.uninstallerPath,
     checksumPath,
     manifestPath,
     releaseNotesPath,
@@ -227,6 +362,7 @@ export function packageMacosRelease(projectDir) {
   const files = [
     path.join(releaseDir, manifest.dmgName),
     path.join(releaseDir, manifest.appArchiveName),
+    path.join(releaseDir, manifest.uninstallerName),
     path.join(releaseDir, 'manifest.json'),
     path.join(releaseDir, 'SHA256SUMS.txt'),
     path.join(releaseDir, 'RELEASE_NOTES.md'),
@@ -269,6 +405,7 @@ export function validateMacosReleaseKit(projectDir) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const dmgPath = path.join(releaseDir, manifest.dmgName);
   const appArchivePath = path.join(releaseDir, manifest.appArchiveName);
+  const uninstallerPath = manifest.uninstallerName ? path.join(releaseDir, manifest.uninstallerName) : null;
   const checksumPath = path.join(releaseDir, 'SHA256SUMS.txt');
   const releaseNotesPath = path.join(releaseDir, 'RELEASE_NOTES.md');
 
@@ -280,14 +417,26 @@ export function validateMacosReleaseKit(projectDir) {
 
   const dmgSha256 = getFileSha256(dmgPath);
   const appArchiveSha256 = getFileSha256(appArchivePath);
+  const uninstallerExists = !!(uninstallerPath && fs.existsSync(uninstallerPath));
+  const uninstallerSha256 = uninstallerExists ? getFileSha256(uninstallerPath) : '';
+  const nodeRuntimePath = path.join(projectDir, 'desktop-resources', 'dist-server', 'node');
+  const nodeRuntimeFallbackPath = path.join(projectDir, 'desktop-resources', 'dist-server', 'node.exe');
   const resourceChecks = [
-    path.join(projectDir, 'desktop-resources', 'dist-server', 'node'),
+    {
+      path: nodeRuntimePath,
+      ok:
+        fs.existsSync(nodeRuntimePath) ||
+        (process.platform === 'win32' && fs.existsSync(nodeRuntimeFallbackPath)),
+    },
     path.join(projectDir, 'desktop-resources', 'dist-server', 'entry.cjs'),
     path.join(projectDir, 'desktop-resources', 'dist-server', 'server.mjs'),
-  ].map((resourcePath) => ({
-    path: resourcePath,
-    ok: fs.existsSync(resourcePath),
-  }));
+  ].map((resourcePath) => {
+    if (typeof resourcePath !== 'string') return resourcePath;
+    return {
+      path: resourcePath,
+      ok: fs.existsSync(resourcePath),
+    };
+  });
 
   const packageName = manifest.packageName ?? `LumiOS-macOS-${manifest.version}-${manifest.arch}.zip`;
   const packagePath = path.join(releaseDir, packageName);
@@ -296,8 +445,11 @@ export function validateMacosReleaseKit(projectDir) {
   const ok =
     dmgSha256 === manifest.dmgSha256 &&
     appArchiveSha256 === manifest.appArchiveSha256 &&
+    uninstallerExists &&
+    uninstallerSha256 === manifest.uninstallerSha256 &&
     fs.statSync(dmgPath).size === manifest.dmgSize &&
     fs.statSync(appArchivePath).size === manifest.appArchiveSize &&
+    fs.statSync(uninstallerPath).size === manifest.uninstallerSize &&
     packageExists &&
     resourceChecks.every((check) => check.ok);
 
@@ -305,12 +457,16 @@ export function validateMacosReleaseKit(projectDir) {
     ok,
     dmgName: manifest.dmgName,
     appArchiveName: manifest.appArchiveName,
+    uninstallerName: manifest.uninstallerName,
+    uninstallerExists,
     packageName,
     packageExists,
     dmgSha256,
     appArchiveSha256,
+    uninstallerSha256,
     expectedDmgSha256: manifest.dmgSha256,
     expectedAppArchiveSha256: manifest.appArchiveSha256,
+    expectedUninstallerSha256: manifest.uninstallerSha256,
     resourceChecks,
   };
 }

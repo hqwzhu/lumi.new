@@ -1,4 +1,4 @@
-﻿# Diagnostics And Feedback
+# Diagnostics And Feedback
 
 This guide explains how Lumi OS collects local diagnostics and how support should handle user reports.
 
@@ -60,7 +60,7 @@ The support bundle includes app version context, setup state, configured key fla
 
 Check:
 
-- Is the file name `Lumi OS_<version>_x64-setup.exe`?
+- Is the file name `Lumi OS 安装.exe`?
 - Was it downloaded from the official GitHub Release?
 - Does SHA256 match `SHA256SUMS.txt`?
 - Did SmartScreen block the app?

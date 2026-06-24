@@ -153,9 +153,11 @@ jobs:
         run: |
           VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.version)")"
           INSTALLER="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.installerName)")"
+          UNINSTALLER="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.uninstallerName)")"
           PACKAGE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/windows/manifest.json','utf8')); process.stdout.write(m.packageName)")"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "installer=${INSTALLER}" >> "$GITHUB_OUTPUT"
+          echo "uninstaller=${UNINSTALLER}" >> "$GITHUB_OUTPUT"
           echo "package=${PACKAGE}" >> "$GITHUB_OUTPUT"
           echo "tag=windows-v${VERSION}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
@@ -166,6 +168,7 @@ jobs:
           files: |
             artifacts/release/windows/${{ steps.meta.outputs.package }}
             artifacts/release/windows/${{ steps.meta.outputs.installer }}
+            artifacts/release/windows/${{ steps.meta.outputs.uninstaller }}
             artifacts/release/windows/SHA256SUMS.txt
             artifacts/release/windows/manifest.json
             artifacts/release/windows/RELEASE_NOTES.md
@@ -270,11 +273,13 @@ jobs:
           ARCH="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.arch)")"
           DMG="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.dmgName)")"
           APP_ARCHIVE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.appArchiveName)")"
+          UNINSTALLER="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.uninstallerName)")"
           PACKAGE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('artifacts/release/macos/manifest.json','utf8')); process.stdout.write(m.packageName)")"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "arch=${ARCH}" >> "$GITHUB_OUTPUT"
           echo "dmg=${DMG}" >> "$GITHUB_OUTPUT"
           echo "app_archive=${APP_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "uninstaller=${UNINSTALLER}" >> "$GITHUB_OUTPUT"
           echo "package=${PACKAGE}" >> "$GITHUB_OUTPUT"
           echo "tag=macos-v${VERSION}-${ARCH}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
@@ -286,6 +291,7 @@ jobs:
             artifacts/release/macos/${{ steps.meta.outputs.package }}
             artifacts/release/macos/${{ steps.meta.outputs.dmg }}
             artifacts/release/macos/${{ steps.meta.outputs.app_archive }}
+            artifacts/release/macos/${{ steps.meta.outputs.uninstaller }}
             artifacts/release/macos/SHA256SUMS.txt
             artifacts/release/macos/manifest.json
             artifacts/release/macos/RELEASE_NOTES.md

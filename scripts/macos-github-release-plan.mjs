@@ -34,10 +34,12 @@ export function createMacosGitHubReleasePlan(projectDir, options = {}) {
   }
 
   const packageName = manifest.packageName ?? `LumiOS-macOS-${version}-${arch}.zip`;
+  const uninstallerName = manifest.uninstallerName ?? `LumiOS-macOS-${version}-${arch}-uninstall.command`;
   const assets = [
     requireAsset(path.join(releaseDir, packageName)),
     requireAsset(path.join(releaseDir, manifest.dmgName)),
     requireAsset(path.join(releaseDir, manifest.appArchiveName)),
+    requireAsset(path.join(releaseDir, uninstallerName)),
     requireAsset(path.join(releaseDir, 'SHA256SUMS.txt')),
     requireAsset(path.join(releaseDir, 'manifest.json')),
     requireAsset(path.join(releaseDir, 'RELEASE_NOTES.md')),
@@ -53,6 +55,7 @@ export function createMacosGitHubReleasePlan(projectDir, options = {}) {
     manifest: {
       ...manifest,
       packageName,
+      uninstallerName,
     },
   };
 }
