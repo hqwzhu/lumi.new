@@ -1359,15 +1359,18 @@ pub fn run() {
                     normalized_cwd.display(),
                 );
                 let mut node_cmd = Command::new(&normalized_node);
+                #[cfg(target_os = "windows")]
+                {
+                    let hide_console = normalized_cwd.join("hide-console.cjs");
+                    if hide_console.exists() {
+                        node_cmd.arg("--require").arg(hide_console);
+                    }
+                }
                 node_cmd.arg(&normalized_entry)
                     .env("LUMI_DESKTOP", "1")
                     .env("HOST", "127.0.0.1")
+                    .env_remove("NODE_OPTIONS")
                     .current_dir(&normalized_cwd);
-                // Only set NODE_OPTIONS if hide-console.cjs exists (Windows only)
-                #[cfg(target_os = "windows")]
-                if normalized_cwd.join("hide-console.cjs").exists() {
-                    node_cmd.env("NODE_OPTIONS", "--require ./hide-console.cjs");
-                }
                 match spawn_hidden(&mut node_cmd)
                 {
                     Ok(child) => {
@@ -1462,14 +1465,18 @@ pub fn run() {
                             if let Some(ref cfg) = state.node_config {
                                 eprintln!("[LumiOS] Restarting Node backend (attempt {}/{})", state.node_restarts + 1, max_restarts);
                                 let mut restart_cmd = Command::new(&cfg.exe);
+                                #[cfg(target_os = "windows")]
+                                {
+                                    let hide_console = cfg.work_dir.join("hide-console.cjs");
+                                    if hide_console.exists() {
+                                        restart_cmd.arg("--require").arg(hide_console);
+                                    }
+                                }
                                 restart_cmd.arg(&cfg.entry)
                                     .env("LUMI_DESKTOP", "1")
                                     .env("HOST", "127.0.0.1")
+                                    .env_remove("NODE_OPTIONS")
                                     .current_dir(&cfg.work_dir);
-                                #[cfg(target_os = "windows")]
-                                if cfg.work_dir.join("hide-console.cjs").exists() {
-                                    restart_cmd.env("NODE_OPTIONS", "--require ./hide-console.cjs");
-                                }
                                 match spawn_hidden(&mut restart_cmd)
                                 {
                                     Ok(child) => {

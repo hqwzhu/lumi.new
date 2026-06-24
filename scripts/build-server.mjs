@@ -1,6 +1,32 @@
 import { build } from 'esbuild';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
+const NODE_OPTIONS_SANITIZER = `function stripRelativeHideConsolePreload(nodeOptions) {
+  if (!nodeOptions) return undefined;
+  const tokens = nodeOptions.split(/\\s+/).filter(Boolean);
+  const kept = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    const next = tokens[i + 1];
+    const isSeparateRequire = (token === '--require' || token === '-r') && next && next.includes('hide-console.cjs');
+    const isInlineRequire = /^(--require=|-r=).*[\\\\/]?hide-console\\.cjs$/.test(token);
+    if (isSeparateRequire) {
+      i += 1;
+      continue;
+    }
+    if (isInlineRequire) continue;
+    kept.push(token);
+  }
+  return kept.length > 0 ? kept.join(' ') : undefined;
+}
+function sanitizeNodeOptionsForDesktopChildren() {
+  const cleaned = stripRelativeHideConsolePreload(process.env.NODE_OPTIONS);
+  if (cleaned) process.env.NODE_OPTIONS = cleaned;
+  else delete process.env.NODE_OPTIONS;
+}
+sanitizeNodeOptionsForDesktopChildren();
+`;
+
 await build({
   entryPoints: ['server.ts'],
   bundle: true,
@@ -9,13 +35,16 @@ await build({
   outfile: 'dist-server/server.mjs',
   external: ['sqlite3', 'sharp', '@img/sharp-win32-x64', '@img/sharp-libvips-win32-x64', 'lightningcss'],
   banner: {
-    js: "import { createRequire as __lumiCreateRequire } from 'module'; const require = __lumiCreateRequire(import.meta.url);",
+    js: `import { createRequire as __lumiCreateRequire } from 'module'; const require = __lumiCreateRequire(import.meta.url);
+${NODE_OPTIONS_SANITIZER}`,
   },
 });
 
 // Generate entry.cjs for CommonJS environments (Tauri node.exe, production serve)
 mkdirSync('dist-server', { recursive: true });
 writeFileSync('dist-server/entry.cjs', `// CJS entry point - dynamically imports the ESM server bundle.
+
+${NODE_OPTIONS_SANITIZER}
 
 // Monkey-patch child_process to hide console windows on Windows (desktop app)
 if (process.platform === 'win32') {

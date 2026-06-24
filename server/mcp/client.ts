@@ -109,6 +109,41 @@ function toPortableSkillPath(filePath: string): string {
   return filePath;
 }
 
+function stripRelativeHideConsolePreload(nodeOptions?: string): string | undefined {
+  if (!nodeOptions) return undefined;
+
+  const tokens = nodeOptions.split(/\s+/).filter(Boolean);
+  const kept: string[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    const next = tokens[i + 1];
+    const isSeparateRequire = (token === '--require' || token === '-r') && next?.includes('hide-console.cjs');
+    const isInlineRequire = /^(--require=|-r=).*[\\/]?hide-console\.cjs$/.test(token);
+
+    if (isSeparateRequire) {
+      i += 1;
+      continue;
+    }
+    if (isInlineRequire) continue;
+
+    kept.push(token);
+  }
+
+  return kept.length > 0 ? kept.join(' ') : undefined;
+}
+
+function childProcessEnvForNpmInstall(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const nodeOptions = stripRelativeHideConsolePreload(env.NODE_OPTIONS);
+  if (nodeOptions) {
+    env.NODE_OPTIONS = nodeOptions;
+  } else {
+    delete env.NODE_OPTIONS;
+  }
+  return env;
+}
+
 interface CrashTracker {
   consecutiveCrashes: number;
   lastCrashTime: string;
@@ -436,6 +471,7 @@ main().catch((err) => { console.error('[npm-skill] Fatal:', err); process.exit(1
       exec('npm install --loglevel=error --no-audit --no-fund', {
         timeout: 120000,
         cwd: dir,
+        env: childProcessEnvForNpmInstall(),
       }, (error, _stdout, stderr) => {
         if (error) {
           console.warn(`[MCP] npm install failed in ${path.basename(dir)}:`, stderr.trim() || error.message);
