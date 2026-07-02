@@ -30,7 +30,7 @@ export interface VerifyLicenseOptions {
 }
 
 const DEFAULT_LICENSE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEANVv1/fdhRiyVfM2f1eTVKjuH0cO04m+Nr7PKkhp6NOQ=
+MCowBQYDK2VwAyEA7CCVJf2LARDdWTCREIUejGGIheH7WnhHhqkgbxjgC/8=
 -----END PUBLIC KEY-----`;
 
 function base64UrlJson(value: unknown): string {
