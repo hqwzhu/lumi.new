@@ -34,6 +34,31 @@ export function quoteNcmArg(value: string): string {
   return `"${raw.replace(/"/g, '\\"').replace(/([&|<>^%])/g, '^$1')}"`;
 }
 
+export function normalizeNcmAppId(value: unknown): string | null {
+  const appId = String(value ?? '').trim();
+  return /^[A-Za-z0-9_-]{4,64}$/.test(appId) ? appId : null;
+}
+
+export function normalizeNcmPrivateKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  let privateKey = value
+    .replace(/^\uFEFF/, '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+  if (privateKey.length < 16 || privateKey.length > 12000) return null;
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey)) {
+    return `${privateKey}\n`;
+  }
+
+  const compact = privateKey.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/=]+$/.test(compact) || compact.length < 800) return null;
+  const body = compact.match(/.{1,64}/g)?.join('\n');
+  return body ? `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----\n` : null;
+}
+
 export function extractNcmJson(text: string): any {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -79,6 +104,18 @@ export async function runNcmCli(args: string[], timeout = 15000): Promise<{ stdo
     if (e.stdout) return { stdout: String(e.stdout || ''), stderr: String(e.stderr || '') };
     throw new Error(e.stderr || e.message || String(e));
   }
+}
+
+export async function configureNcmCredentials(appId: string, privateKeyPem: string, timeout = 10000): Promise<void> {
+  const safeAppId = normalizeNcmAppId(appId);
+  const safePrivateKey = normalizeNcmPrivateKey(privateKeyPem);
+  if (!safeAppId || !safePrivateKey) throw new Error('Invalid NetEase appId or privateKey');
+
+  process.env.NETEASE_APP_ID = safeAppId;
+  process.env.NETEASE_PRIVATE_KEY = safePrivateKey;
+
+  await runNcmCli(['config', 'set', 'appId', safeAppId], timeout);
+  await runNcmCli(['config', 'set', 'privateKey', safePrivateKey], timeout);
 }
 
 export function normalizeNcmAccountProfile(payload: any): NcmAccountProfile | null {

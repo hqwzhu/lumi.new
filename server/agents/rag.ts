@@ -1,11 +1,19 @@
 import path from 'path';
 import { addMemory } from '../memory/store';
 import { Memory } from '../memory/types';
+import type { MarkdownKnowledgeMetadata } from '../knowledge/markdown';
 
 export interface ChunkOptions {
   maxChunkSize?: number;
   overlapSize?: number;
   agentId?: string;
+}
+
+export interface IngestDocumentOptions {
+  chunkSize?: number;
+  tier?: 'episodic' | 'internalized';
+  filePath?: string;
+  sourceMetadata?: MarkdownKnowledgeMetadata;
 }
 
 /**
@@ -39,7 +47,7 @@ export async function ingestDocument(
   agentId: string,
   documentTitle: string,
   content: string,
-  options?: { chunkSize?: number; tier?: 'episodic' | 'internalized'; filePath?: string },
+  options?: IngestDocumentOptions,
 ): Promise<{ chunkCount: number; memoryIds: string[] }> {
   const chunks = chunkText(content, {
     maxChunkSize: options?.chunkSize || 500,
@@ -48,6 +56,7 @@ export async function ingestDocument(
 
   const memoryIds: string[] = [];
   const sourceFile = options?.filePath || documentTitle;
+  const metadataKeywords = buildSourceMetadataKeywords(options?.sourceMetadata);
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -62,6 +71,7 @@ export async function ingestDocument(
           `chunk:${i + 1}/${chunks.length}`,
           'ingested',
           'document',
+          ...metadataKeywords,
         ],
         confidence: 0.7,
         sourceInteractionId: sourceFile,
@@ -78,6 +88,28 @@ export async function ingestDocument(
 
   console.log(`[RAG] Ingested "${documentTitle}" → ${chunks.length} chunks for agent ${agentId}`);
   return { chunkCount: chunks.length, memoryIds };
+}
+
+function buildSourceMetadataKeywords(metadata?: MarkdownKnowledgeMetadata): string[] {
+  if (!metadata) return [];
+  const values = [
+    metadata.title ? `title:${metadata.title}` : '',
+    ...metadata.aliases.map(alias => `alias:${alias}`),
+    ...metadata.tags.map(tag => `tag:${tag.replace(/^#/, '')}`),
+    ...metadata.wikiLinks.map(link => `wikilink:${link}`),
+    ...metadata.markdownLinks.map(link => `link:${link}`),
+  ];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const cleaned = String(value || '').trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+  }
+  return result.slice(0, 120);
 }
 
 /**
